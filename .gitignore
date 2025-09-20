@@ -27,4 +27,9 @@ Engine/Source/compile_commands.json
 Engine/Source/ThirdParty/DirectXTK/Src/Shaders/Compiled/*
 Engine/Source/ThirdParty/DirectXTex/Shaders/Compiled/*
 
-bazel-*/
+# bazel files
+bazel-bin/
+bazel-out/
+bazel-testlogs/
+
+MODULE.bazel.lock
