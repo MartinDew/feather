@@ -1,0 +1,30 @@
+.idea/
+*.pdb
+*.dll
+*.lib
+*.exp
+*.exe
+*.so
+*.bff
+*.ifc
+*.fdb
+*std.*
+*.vcxproj
+*.sln
+*DotSettings.user
+.vs/
+compile_commands.json
+
+# Ignore files used when running build_tool with -hidevsfiles=false
+Engine/Source/Scythe.vcxproj
+Engine/Source/Scythe.vcxproj.filters
+Engine/Source/compile_commands.json
+
+*runtimedependencies.txt
+*imgui.ini
+
+# Ignore DXTK built compiled shaders
+Engine/Source/ThirdParty/DirectXTK/Src/Shaders/Compiled/*
+Engine/Source/ThirdParty/DirectXTex/Shaders/Compiled/*
+
+bazel-*/
