@@ -1,4 +1,6 @@
 .idea/
+.vscode/
+.vs/
 *.pdb
 *.dll
 *.lib
@@ -31,5 +33,6 @@ Engine/Source/ThirdParty/DirectXTex/Shaders/Compiled/*
 bazel-bin/
 bazel-out/
 bazel-testlogs/
+bazel-*/
 
 MODULE.bazel.lock
