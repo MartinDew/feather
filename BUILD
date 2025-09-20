@@ -6,7 +6,7 @@ refresh_compile_commands(
     # Specify the targets of interest.
     # For example, specify a dict of targets and any flags required to build.
     targets = {
-        "//src:feather": "",
+        "//:feather": "",
         # "//:my_output_2": "",
     },
     # No need to add flags already in .bazelrc. They're automatically picked up.
@@ -18,5 +18,8 @@ refresh_compile_commands(
 
 cc_binary(
     name = "feather",
-    deps = ["//src:feather"],
+    srcs = glob([
+        "core/*.cpp",
+        "core/*.h*",
+    ]),
 )
