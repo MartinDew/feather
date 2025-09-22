@@ -17,3 +17,14 @@ git_override(
     # Replace the commit hash (above) with the latest (https://github.com/hedronvision/bazel-compile-commands-extractor/commits/main).
     # Even better, set up Renovate and let it do the work for you (see "Suggestion: Updates" in the README).
 )
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "sdl",
+    urls = [
+        "https://github.com/libsdl-org/SDL/releases/download/release-3.2.22/SDL3-3.2.22.zip",
+    ],
+    build_file = "//thirdparty/sdl:BUILD",
+    # visibility = ["//visibility:public", "//:__pkg__", "//:__subpackages__"],
+)
