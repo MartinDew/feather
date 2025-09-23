@@ -36,3 +36,4 @@ bazel-testlogs/
 bazel-*/
 
 MODULE.bazel.lock
+env/
