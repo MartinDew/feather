@@ -1,0 +1,9 @@
+[requires]
+sdl/3.2.20
+
+[generators]
+BazelDeps
+BazelToolchain
+
+[layout]
+bazel_layout

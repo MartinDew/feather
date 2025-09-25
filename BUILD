@@ -1,5 +1,9 @@
 load("@hedron_compile_commands//:refresh_compile_commands.bzl", "refresh_compile_commands")
 
+package(default_visibility = [
+    "//:__pkg__",
+])
+
 refresh_compile_commands(
     name = "refresh_compile_commands",
 
@@ -8,6 +12,7 @@ refresh_compile_commands(
     targets = {
         "//:feather": "",
         # "//:my_output_2": "",
+        "@sdl//:sdl": "",
     },
     # No need to add flags already in .bazelrc. They're automatically picked up.
     # If you don't need flags, a list of targets is also okay, as is a single target string.
@@ -22,4 +27,7 @@ cc_binary(
         "core/*.cpp",
         "core/*.h*",
     ]),
+    deps = [
+        "@sdl",
+    ],
 )
