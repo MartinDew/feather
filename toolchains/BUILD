@@ -1,4 +1,14 @@
 load(":cc_toolchain_config.bzl", "cc_toolchain_config")
+load(":toolchain_helper.bzl",
+    "get_msvc_tool_paths",
+    "get_msvc_paths",
+    "get_clang_windows_tool_paths",
+    "get_clang_windows_include_dirs",
+    "get_clang_linux_tool_paths",
+    "get_clang_linux_paths",
+    "get_gcc_linux_tool_paths",
+    "get_gcc_linux_paths",
+)
 
 package(default_visibility = ["//visibility:public"])
 
@@ -34,26 +44,11 @@ cc_toolchain_config(
     name = "clang_linux_x86_64_config",
     compiler = "clang",
     cpu = "x86_64",
-    cxx_builtin_include_directories = [
-        "/usr/lib/clang/18/include",
-        "/usr/lib/clang/17/include",
-        "/usr/lib/clang/16/include",
-        "/usr/lib/clang/15/include",
-        "/usr/include",
-    ],
+    cxx_builtin_include_directories = get_clang_linux_paths()["include_dirs"],
     host_system_name = "linux",
     target_libc = "glibc",
     target_system_name = "linux",
-    tool_paths = {
-        "ar": "/usr/bin/ar",
-        "cpp": "/usr/bin/clang-cpp",
-        "gcc": "/usr/bin/clang",
-        "gcov": "/usr/bin/llvm-cov",
-        "ld": "/usr/bin/ld.lld",
-        "nm": "/usr/bin/llvm-nm",
-        "objdump": "/usr/bin/llvm-objdump",
-        "strip": "/usr/bin/strip",
-    },
+    tool_paths = get_clang_linux_tool_paths(),
 )
 
 # Linux arm64 - Clang
@@ -87,26 +82,11 @@ cc_toolchain_config(
     name = "clang_linux_arm64_config",
     compiler = "clang",
     cpu = "arm64",
-    cxx_builtin_include_directories = [
-        "/usr/lib/clang/18/include",
-        "/usr/lib/clang/17/include",
-        "/usr/lib/clang/16/include",
-        "/usr/lib/clang/15/include",
-        "/usr/include",
-    ],
+    cxx_builtin_include_directories = get_clang_linux_paths()["include_dirs"],
     host_system_name = "linux",
     target_libc = "glibc",
     target_system_name = "linux",
-    tool_paths = {
-        "ar": "/usr/bin/ar",
-        "cpp": "/usr/bin/clang-cpp",
-        "gcc": "/usr/bin/clang",
-        "gcov": "/usr/bin/llvm-cov",
-        "ld": "/usr/bin/ld.lld",
-        "nm": "/usr/bin/llvm-nm",
-        "objdump": "/usr/bin/llvm-objdump",
-        "strip": "/usr/bin/strip",
-    },
+    tool_paths = get_clang_linux_tool_paths(),
 )
 
 # Linux x86_64 - GCC
@@ -141,28 +121,11 @@ cc_toolchain_config(
     name = "gcc_linux_x86_64_config",
     compiler = "gcc",
     cpu = "x86_64",
-    cxx_builtin_include_directories = [
-        "/usr/include/c++/13",
-        "/usr/include/c++/12",
-        "/usr/include/c++/11",
-        "/usr/include/x86_64-linux-gnu/c++/13",
-        "/usr/include/x86_64-linux-gnu/c++/12",
-        "/usr/include/x86_64-linux-gnu/c++/11",
-        "/usr/include",
-    ],
+    cxx_builtin_include_directories = get_gcc_linux_paths()["include_dirs"],
     host_system_name = "linux",
     target_libc = "glibc",
     target_system_name = "linux",
-    tool_paths = {
-        "ar": "/usr/bin/ar",
-        "cpp": "/usr/bin/cpp",
-        "gcc": "/usr/bin/gcc",
-        "gcov": "/usr/bin/gcov",
-        "ld": "/usr/bin/ld",
-        "nm": "/usr/bin/nm",
-        "objdump": "/usr/bin/objdump",
-        "strip": "/usr/bin/strip",
-    },
+    tool_paths = get_gcc_linux_tool_paths(),
 )
 
 # Linux arm64 - GCC
@@ -196,28 +159,11 @@ cc_toolchain_config(
     name = "gcc_linux_arm64_config",
     compiler = "gcc",
     cpu = "arm64",
-    cxx_builtin_include_directories = [
-        "/usr/include/c++/13",
-        "/usr/include/c++/12",
-        "/usr/include/c++/11",
-        "/usr/include/aarch64-linux-gnu/c++/13",
-        "/usr/include/aarch64-linux-gnu/c++/12",
-        "/usr/include/aarch64-linux-gnu/c++/11",
-        "/usr/include",
-    ],
+    cxx_builtin_include_directories = get_gcc_linux_paths()["include_dirs"],
     host_system_name = "linux",
     target_libc = "glibc",
     target_system_name = "linux",
-    tool_paths = {
-        "ar": "/usr/bin/ar",
-        "cpp": "/usr/bin/cpp",
-        "gcc": "/usr/bin/gcc",
-        "gcov": "/usr/bin/gcov",
-        "ld": "/usr/bin/ld",
-        "nm": "/usr/bin/nm",
-        "objdump": "/usr/bin/objdump",
-        "strip": "/usr/bin/strip",
-    },
+    tool_paths = get_gcc_linux_tool_paths(),
 )
 
 # Windows x86_64 - Clang

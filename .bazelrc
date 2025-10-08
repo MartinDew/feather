@@ -25,6 +25,9 @@ build:macos --host_cxxopt=-std=c++26
 build:clang --repo_env=CC=clang
 build:clang --repo_env=CXX=clang++
 
+build:clang-cl --repo_env=CXX=clang-cl
+build:clang-cl --repo_env=CC=clang-cl
+
 build:gcc --repo_env=CC=gcc
 build:gcc --repo_env=CXX=g++
 

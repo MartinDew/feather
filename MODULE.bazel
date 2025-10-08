@@ -25,6 +25,11 @@ use_repo(load_conan_dependencies, "opengl", "sdl")
 
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
+
+# Detect compilers
+compiler_detection = use_extension("//toolchains:compiler_detection.bzl", "detect_compilers_extension")
+use_repo(compiler_detection, "detected_compilers")
+
 # Register toolchains
 register_toolchains(
     "//toolchains:clang_linux_x86_64_toolchain",

@@ -31,7 +31,9 @@ your_project/
 │   └── BUILD.bazel                 # Platform definitions
 ├── toolchains/
 │   ├── BUILD.bazel                 # Toolchain definitions
-│   └── cc_toolchain_config.bzl     # Toolchain configuration logic
+│   ├── cc_toolchain_config.bzl     # Toolchain configuration logic
+│   ├── compiler_detection.bzl      # Auto-detection of compilers
+│   └── toolchain_helper.bzl        # Helper to use detected paths
 └── BUILD.bazel                     # Your project BUILD files
 ```
 
@@ -39,7 +41,7 @@ your_project/
 
 ### Linux
 ```bash
-# For Clang toolchain
+# For Clang toolchain (recommended)
 sudo apt-get install clang lld llvm
 
 # For GCC toolchain
@@ -50,16 +52,80 @@ sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 ```
 
 ### Windows
-- Install Visual Studio 2022 Build Tools with C++ support
-- Install LLVM/Clang for Windows (optional, for clang-cl)
+
+**Option 1: clang-cl (Recommended)**
+1. Install Visual Studio 2022 Build Tools or Community Edition with C++ support
+2. Install LLVM for Windows from https://releases.llvm.org/
+   - Download the Windows installer (e.g., LLVM-18.1.0-win64.exe)
+   - Install to default location (`C:\Program Files\LLVM`)
+   - Add to PATH when prompted
+
+**Option 2: MSVC only**
+- Install Visual Studio 2022 Build Tools or Community Edition with C++ support
+
+**Verification:**
+```cmd
+# Check if compilers are found
+where cl        # Should find MSVC
+where clang-cl  # Should find clang-cl if installed
+
+# Or run the detection script
+test_compiler_detection.bat
+```
 
 ### Path Adjustments
 
-The toolchain files contain common installation paths. You may need to adjust paths in `toolchains/BUILD.bazel`:
+The toolchain automatically detects compiler paths. If detection fails or you want to override:
 
-**Linux Clang**: Check `/usr/lib/clang/*/include` for your version
-**Windows MSVC**: Check your Visual Studio installation path
-**Windows Clang**: Check `C:/Program Files/LLVM/`
+**Option 1: Check detection results**
+```bash
+bazel build //... 2>&1 | grep "Detected compilers"
+```
+
+**Option 2: Manually override in `toolchains/toolchain_helper.bzl`**
+Edit the fallback paths in the `get_*_paths()` functions for your specific installation.
+
+## Quick Reference
+
+### Compiler Selection
+```bash
+# Linux
+bazel build --config=clang //...      # Clang
+bazel build --config=gcc //...        # GCC
+
+# Windows
+bazel build --config=clang-cl //...   # Clang-cl (recommended)
+bazel build --config=msvc //...       # MSVC
+
+# Let Bazel choose (uses system default)
+bazel build //...
+```
+
+### Build Modes
+```bash
+bazel build --config=opt //...        # Optimized (-O3)
+bazel build --config=dbg //...        # Debug (-g)
+bazel build --config=fastbuild //...  # Fast build (default)
+```
+
+### Platform Targeting
+```bash
+bazel build --platforms=//platforms:linux_x86_64 //...
+bazel build --platforms=//platforms:linux_arm64 //...
+bazel build --platforms=//platforms:windows_x86_64 //...
+```
+
+### Common Combinations
+```bash
+# Windows, clang-cl, optimized
+bazel build --config=clang-cl --config=opt //...
+
+# Linux, GCC, ARM64, debug
+bazel build --config=gcc --platforms=//platforms:linux_arm64 --config=dbg //...
+
+# Cross-compile Windows from Linux (requires appropriate toolchain)
+bazel build --config=clang --platforms=//platforms:windows_x86_64 //...
+```
 
 ## Usage Examples
 
@@ -84,6 +150,17 @@ bazel build --config=clang //...
 bazel build --config=gcc //...
 ```
 
+### Specify Compiler (Windows)
+```bash
+# Use clang-cl (Clang with MSVC compatibility)
+bazel build --config=clang-cl //...
+
+# Use MSVC
+bazel build --config=msvc //...
+
+# Note: Both clang-cl and MSVC require Visual Studio or Build Tools installed
+```
+
 ### Cross-Platform Builds
 ```bash
 # Target Linux x86_64 from any platform
@@ -104,8 +181,11 @@ bazel build --platforms=//platforms:macos_arm64 //...
 # Linux, Clang, ARM64, Optimized
 bazel build --config=clang --platforms=//platforms:linux_arm64 --config=opt //...
 
-# Windows, MSVC, Debug
-bazel build --platforms=//platforms:windows_x86_64 --config=dbg //...
+# Windows, clang-cl, Debug
+bazel build --config=clang-cl --config=dbg //...
+
+# Windows, MSVC, Optimized
+bazel build --config=msvc --config=opt //...
 ```
 
 ### Verbose Toolchain Debugging
@@ -177,9 +257,10 @@ toolchain(
 - Use `--config=verbose` to debug
 
 ### "Compiler not found"
-- Verify compiler installation
-- Check paths in `toolchains/BUILD.bazel`
-- Ensure executables are in PATH
+- Run auto-detection check: `bazel build //... 2>&1 | grep "Detected"`
+- Verify compiler installation and it's in PATH
+- Check fallback paths in `toolchains/toolchain_helper.bzl`
+- On Windows, ensure Visual Studio or LLVM is properly installed
 
 ### C++26 not supported
 - Update to GCC 14+ or Clang 17+
