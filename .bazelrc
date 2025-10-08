@@ -1,1 +1,59 @@
 build --incompatible_disallow_empty_glob=False
+
+# Common flags
+build --enable_platform_specific_config
+build --incompatible_enable_cc_toolchain_resolution
+
+# C++ standard (fallback if toolchain doesn't set it)
+build --cxxopt=-std=c++26
+build --host_cxxopt=-std=c++26
+
+# Linux-specific settings
+build:linux --cxxopt=-std=c++26
+build:linux --host_cxxopt=-std=c++26
+
+# Windows-specific settings
+build:windows --cxxopt=/std:c++latest
+build:windows --host_cxxopt=/std:c++latest
+
+# macOS-specific settings (for future use)
+build:macos --cxxopt=-std=c++26
+build:macos --host_cxxopt=-std=c++26
+
+# Compiler selection flags
+# Use with: bazel build --config=clang
+build:clang --repo_env=CC=clang
+build:clang --repo_env=CXX=clang++
+
+build:gcc --repo_env=CC=gcc
+build:gcc --repo_env=CXX=g++
+
+# Architecture-specific builds
+# Use with: bazel build --platforms=//platforms:linux_x86_64
+build:x86_64 --cpu=x86_64
+build:arm64 --cpu=arm64
+
+# Optimization modes
+build:opt --compilation_mode=opt
+build:dbg --compilation_mode=dbg
+build:fastbuild --compilation_mode=fastbuild
+
+# Verbose output for debugging toolchain issues
+build:verbose --toolchain_resolution_debug='.*'
+build:verbose --verbose_failures
+
+# Try remote cache (optional, comment out if not using)
+# build --remote_cache=...
+
+# Output configuration
+build --show_timestamps
+build --color=yes
+
+# Conan
+build:conan-config --cxxopt=/std:c++14
+
+
+build:conan-config --dynamic_mode=off
+build:conan-config --compilation_mode=opt
+
+

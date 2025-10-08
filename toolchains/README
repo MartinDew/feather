@@ -1,0 +1,232 @@
+# Bazel Cross-Platform C++ Toolchain
+
+This project provides a comprehensive Bazel toolchain configuration supporting multiple platforms, architectures, and compilers with C++23/26 support.
+
+## Supported Configurations
+
+### Platforms
+- **Linux**: x86_64, arm64
+- **Windows**: x86_64
+- **macOS**: x86_64, arm64 (scaffolding ready)
+- **Android**: arm64, x86_64 (scaffolding ready)
+- **WASM**: wasm32 (scaffolding ready)
+
+### Compilers
+- **Clang** (Linux, Windows via clang-cl)
+- **GCC** (Linux)
+- **MSVC** (Windows)
+
+### C++ Standards
+- C++26 (where supported: GCC 14+, Clang 17+)
+- C++23 (fallback)
+- MSVC uses `/std:c++latest`
+
+## Project Structure
+
+```
+your_project/
+├── MODULE.bazel                    # Bazel module definition
+├── .bazelrc                        # Bazel configuration
+├── platforms/
+│   └── BUILD.bazel                 # Platform definitions
+├── toolchains/
+│   ├── BUILD.bazel                 # Toolchain definitions
+│   └── cc_toolchain_config.bzl     # Toolchain configuration logic
+└── BUILD.bazel                     # Your project BUILD files
+```
+
+## Installation Requirements
+
+### Linux
+```bash
+# For Clang toolchain
+sudo apt-get install clang lld llvm
+
+# For GCC toolchain
+sudo apt-get install gcc g++
+
+# For cross-compilation to ARM64
+sudo apt-get install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+```
+
+### Windows
+- Install Visual Studio 2022 Build Tools with C++ support
+- Install LLVM/Clang for Windows (optional, for clang-cl)
+
+### Path Adjustments
+
+The toolchain files contain common installation paths. You may need to adjust paths in `toolchains/BUILD.bazel`:
+
+**Linux Clang**: Check `/usr/lib/clang/*/include` for your version
+**Windows MSVC**: Check your Visual Studio installation path
+**Windows Clang**: Check `C:/Program Files/LLVM/`
+
+## Usage Examples
+
+### Build for Current Platform
+```bash
+# Default build (uses system default compiler)
+bazel build //...
+
+# Build in debug mode
+bazel build --config=dbg //...
+
+# Build optimized
+bazel build --config=opt //...
+```
+
+### Specify Compiler (Linux)
+```bash
+# Use Clang
+bazel build --config=clang //...
+
+# Use GCC
+bazel build --config=gcc //...
+```
+
+### Cross-Platform Builds
+```bash
+# Target Linux x86_64 from any platform
+bazel build --platforms=//platforms:linux_x86_64 //...
+
+# Target Linux ARM64
+bazel build --platforms=//platforms:linux_arm64 //...
+
+# Target Windows x86_64
+bazel build --platforms=//platforms:windows_x86_64 //...
+
+# Target macOS ARM64 (Apple Silicon)
+bazel build --platforms=//platforms:macos_arm64 //...
+```
+
+### Combine Flags
+```bash
+# Linux, Clang, ARM64, Optimized
+bazel build --config=clang --platforms=//platforms:linux_arm64 --config=opt //...
+
+# Windows, MSVC, Debug
+bazel build --platforms=//platforms:windows_x86_64 --config=dbg //...
+```
+
+### Verbose Toolchain Debugging
+```bash
+# See which toolchain is being used
+bazel build --config=verbose //...
+```
+
+## Toolchain Selection Logic
+
+Bazel automatically selects toolchains based on:
+
+1. **Execution platform** (where build runs)
+2. **Target platform** (where binary runs)
+3. **Compatibility constraints**
+
+The toolchains are registered in `MODULE.bazel` and resolved automatically.
+
+## Customization
+
+### Adding C++ Standard Flags
+
+Edit `toolchains/cc_toolchain_config.bzl` in the `_get_cpp_standard_flags()` function:
+
+```python
+def _get_cpp_standard_flags(compiler):
+    if compiler == "msvc" or compiler == "clang-cl":
+        return ["/std:c++23"]  # Force C++23 on MSVC
+    else:
+        return ["-std=c++23"]  # Force C++23 on GCC/Clang
+```
+
+### Adding Compiler-Specific Flags
+
+Modify the relevant function in `cc_toolchain_config.bzl`:
+- `_get_compile_flags()` - Compilation flags
+- `_get_link_flags()` - Linker flags
+- `_get_warning_flags()` - Warning flags
+
+### Adding a New Toolchain
+
+1. Add toolchain definition in `toolchains/BUILD.bazel`
+2. Create corresponding `cc_toolchain_config()` instance
+3. Register in `MODULE.bazel`
+
+Example for macOS Clang:
+```python
+# In toolchains/BUILD.bazel
+toolchain(
+    name = "clang_macos_arm64_toolchain",
+    exec_compatible_with = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+    target_compatible_with = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+    toolchain = ":clang_macos_arm64",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+```
+
+## Common Issues
+
+### "No matching toolchain found"
+- Ensure the target platform is registered
+- Check that tool paths exist on your system
+- Use `--config=verbose` to debug
+
+### "Compiler not found"
+- Verify compiler installation
+- Check paths in `toolchains/BUILD.bazel`
+- Ensure executables are in PATH
+
+### C++26 not supported
+- Update to GCC 14+ or Clang 17+
+- Fallback to C++23 by modifying `.bazelrc`
+
+### Windows path issues
+- Use forward slashes in paths
+- Verify Visual Studio version matches paths
+- Check Windows SDK version
+
+## Testing the Setup
+
+Create a simple test file:
+
+```cpp
+// main.cpp
+#include <iostream>
+#include <print>  // C++23 feature
+
+int main() {
+    std::println("Hello from C++23/26!");
+    return 0;
+}
+```
+
+Build and run:
+```bash
+bazel build //:example
+bazel run //:example
+```
+
+## Future Extensions
+
+The scaffolding includes platforms for:
+- **Android** (NDK required)
+- **WebAssembly** (Emscripten required)
+- **macOS** (Xcode required)
+
+To activate these, add appropriate toolchain configurations following the existing patterns.
+
+## Performance Tips
+
+1. Use `--config=opt` for production builds
+2. Enable build caching in `.bazelrc`
+3. Consider remote caching for teams
+4. Use `--jobs=N` to control parallelism
+
+## License
+
+Adjust according to your project's license.

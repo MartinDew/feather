@@ -23,7 +23,14 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 load_conan_dependencies = use_extension("//thirdparty/conan:conan_deps_module_extension.bzl", "conan_extension")
 use_repo(load_conan_dependencies, "opengl", "sdl")
 
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "platforms", version = "0.0.10")
+# Register toolchains
 register_toolchains(
-    "//toolchains:*"
+    "//toolchains:clang_linux_x86_64_toolchain",
+    "//toolchains:clang_linux_arm64_toolchain",
+    "//toolchains:gcc_linux_x86_64_toolchain",
+    "//toolchains:gcc_linux_arm64_toolchain",
+    "//toolchains:msvc_windows_x86_64_toolchain",
+    "//toolchains:clang_windows_x86_64_toolchain",
 )

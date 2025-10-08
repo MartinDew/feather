@@ -1,189 +1,269 @@
-load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
+load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
+    "action_config",
+    "feature",
+    "feature_set",
+    "flag_group",
+    "flag_set",
+    "tool",
+    "tool_path",
+    "with_feature_set",
+)
+load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 
 def _impl(ctx):
+    tool_paths = [
+        tool_path(name = name, path = path)
+        for name, path in ctx.attr.tool_paths.items()
+    ]
+
+    compiler = ctx.attr.compiler
+    cpu = ctx.attr.cpu
+
+    # Common feature for C++23/26 support
+    cpp_standard_feature = feature(
+        name = "cpp_standard",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_cpp_standard_flags(compiler),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Compiler-specific flags
+    default_compile_flags_feature = feature(
+        name = "default_compile_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_compile_flags(compiler, cpu),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Linker flags
+    default_link_flags_feature = feature(
+        name = "default_link_flags",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.cpp_link_executable,
+                    ACTION_NAMES.cpp_link_dynamic_library,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_link_flags(compiler, cpu),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Optimization features
+    opt_feature = feature(
+        name = "opt",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_opt_flags(compiler),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    dbg_feature = feature(
+        name = "dbg",
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_dbg_flags(compiler),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    # Warning flags
+    warnings_feature = feature(
+        name = "warnings",
+        enabled = True,
+        flag_sets = [
+            flag_set(
+                actions = [
+                    ACTION_NAMES.c_compile,
+                    ACTION_NAMES.cpp_compile,
+                ],
+                flag_groups = [
+                    flag_group(
+                        flags = _get_warning_flags(compiler),
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    features = [
+        cpp_standard_feature,
+        default_compile_flags_feature,
+        default_link_flags_feature,
+        opt_feature,
+        dbg_feature,
+        warnings_feature,
+    ]
+
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
-        toolchain_identifier = "k8-toolchain",
-        host_system_name = "local",
-        target_system_name = "local",
-        target_cpu = "k8",
-        target_libc = "unknown",
-        compiler = "clang",
+        features = features,
+        toolchain_identifier = ctx.attr.toolchain_identifier,
+        host_system_name = ctx.attr.host_system_name,
+        target_system_name = ctx.attr.target_system_name,
+        target_cpu = cpu,
+        target_libc = ctx.attr.target_libc,
+        compiler = compiler,
         abi_version = "unknown",
         abi_libc_version = "unknown",
+        tool_paths = tool_paths,
+        cxx_builtin_include_directories = ctx.attr.cxx_builtin_include_directories,
     )
+
+def _get_cpp_standard_flags(compiler):
+    """Get C++ standard flags based on compiler."""
+    if compiler == "msvc" or compiler == "clang-cl":
+        return ["/std:c++latest"]  # MSVC C++23/26
+    else:
+        # Try C++26 first, fallback to C++23
+        return ["-std=c++26"]  # GCC 14+, Clang 17+ support c++26
+
+def _get_compile_flags(compiler, cpu):
+    """Get compiler-specific compilation flags."""
+    flags = []
+    
+    if compiler == "msvc":
+        flags.extend([
+            "/DWIN32",
+            "/D_WINDOWS",
+            "/EHsc",  # Exception handling
+            "/MD",    # Multithreaded DLL runtime
+            "/nologo",
+            "/bigobj",
+        ])
+    elif compiler == "clang-cl":
+        flags.extend([
+            "/DWIN32",
+            "/D_WINDOWS",
+            "/EHsc",
+            "/MD",
+            "-Wno-unused-command-line-argument",
+        ])
+    else:  # GCC or Clang on Unix
+        flags.extend([
+            "-fPIC",
+            "-fno-omit-frame-pointer",
+        ])
+        if cpu == "x86_64":
+            flags.append("-m64")
+        elif cpu == "arm64":
+            flags.append("-march=armv8-a")
+    
+    return flags
+
+def _get_link_flags(compiler, cpu):
+    """Get linker flags."""
+    flags = []
+    
+    if compiler == "msvc" or compiler == "clang-cl":
+        flags.extend([
+            "/MACHINE:X64",
+            "/SUBSYSTEM:CONSOLE",
+        ])
+    else:
+        if cpu == "x86_64":
+            flags.append("-m64")
+    
+    return flags
+
+def _get_opt_flags(compiler):
+    """Get optimization flags."""
+    if compiler == "msvc" or compiler == "clang-cl":
+        return [
+            "/O2",
+            "/DNDEBUG",
+        ]
+    else:
+        return [
+            "-O3",
+            "-DNDEBUG",
+        ]
+
+def _get_dbg_flags(compiler):
+    """Get debug flags."""
+    if compiler == "msvc" or compiler == "clang-cl":
+        return [
+            "/Od",
+            "/Zi",
+            "/DEBUG",
+        ]
+    else:
+        return [
+            "-g",
+            "-O0",
+        ]
+
+def _get_warning_flags(compiler):
+    """Get warning flags."""
+    if compiler == "msvc":
+        return [
+            "/W3",
+        ]
+    elif compiler == "clang-cl":
+        return [
+            "/W3",
+            "-Wno-unused-command-line-argument",
+        ]
+    else:
+        return [
+            "-Wall",
+            "-Wextra",
+        ]
 
 cc_toolchain_config = rule(
     implementation = _impl,
-    attrs = {},
+    attrs = {
+        "compiler": attr.string(mandatory = True),
+        "cpu": attr.string(mandatory = True),
+        "cxx_builtin_include_directories": attr.string_list(),
+        "host_system_name": attr.string(mandatory = True),
+        "target_libc": attr.string(mandatory = True),
+        "target_system_name": attr.string(mandatory = True),
+        "tool_paths": attr.string_dict(),
+        "toolchain_identifier": attr.string(),
+    },
     provides = [CcToolchainConfigInfo],
 )
-
-# Base features for C++
-def common_features():
-    return [
-        feature(
-            name = "c++23_standard",
-            enabled = True,
-            flags = [
-                flag_set(
-                    actions = ["c++-compile"],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["-std=c++23", "/std:c++latest"],
-                        ),
-                    ],
-                ),
-            ],
-        ),
-        feature(
-            name = "c++26_standard",
-            enabled = True,
-            flags = [
-                flag_set(
-                    actions = ["c++-compile"],
-                    flag_groups = [
-                        flag_group(
-                            flags = ["-std=c++26", "/std:c++latest"],
-                        ),
-                    ],
-                ),
-            ],
-        ),
-        # Add other common features like 'fastbuild', 'dbg', 'opt', 'dynamic_linking', etc.
-    ]
-
-# ------------------------------------------------------------------------------
-# LINUX TOOLCHAINS
-# ------------------------------------------------------------------------------
-
-def linux_gcc_toolchain_config():
-    return cc_toolchain_config(
-        name = "linux_gcc_toolchain",
-        toolchain_identifier = "linux-x86_64-gcc",
-        host_system_name = "local",
-        target_system_name = "local",
-        target_cpu = "x86_64",
-        target_libc = "glibc",
-        compiler = "gcc",
-        abi_version = "v2",
-        tool_paths = [
-            tool_path(name = "gcc", path = "/usr/bin/gcc"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "ar", path = "/usr/bin/ar"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-        ],
-        cxx_builtin_include_directories = [
-            # ⚠️ IMPORTANT: Replace these with your system's actual GCC include paths.
-            "/usr/lib/gcc/x86_64-linux-gnu/13/include",
-            "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed",
-            "/usr/include/x86_64-linux-gnu",
-            "/usr/include",
-        ],
-        unfiltered_compile_flags = ["-fPIC"],
-        features = common_features() + [
-            # Add GCC-specific features here
-        ],
-    )
-
-def linux_clang_toolchain_config():
-    return cc_toolchain_config(
-        name = "linux_clang_toolchain",
-        toolchain_identifier = "linux-x86_64-clang",
-        host_system_name = "local",
-        target_system_name = "local",
-        target_cpu = "x86_64",
-        target_libc = "glibc",
-        compiler = "clang",
-        abi_version = "v2",
-        tool_paths = [
-            tool_path(name = "clang", path = "/usr/bin/clang"),
-            tool_path(name = "ld", path = "/usr/bin/ld"),
-            tool_path(name = "ar", path = "/usr/bin/ar"),
-            tool_path(name = "cpp", path = "/usr/bin/cpp"),
-            tool_path(name = "gcov", path = "/usr/bin/gcov"),
-            tool_path(name = "strip", path = "/usr/bin/strip"),
-            tool_path(name = "objcopy", path = "/usr/bin/objcopy"),
-        ],
-        cxx_builtin_include_directories = [
-            # ⚠️ IMPORTANT: Replace with your system's actual Clang include paths.
-            "/usr/lib/llvm-18/lib/clang/18/include",
-            "/usr/include/x86_64-linux-gnu",
-            "/usr/include",
-        ],
-        unfiltered_compile_flags = ["-fPIC"],
-        features = common_features() + [
-            # Add Clang-specific features here
-        ],
-    )
-
-# ------------------------------------------------------------------------------
-# WINDOWS TOOLCHAINS
-# ------------------------------------------------------------------------------
-
-def windows_msvc_clangcl_toolchain_config():
-    return cc_toolchain_config(
-        name = "windows_msvc_clangcl_toolchain",
-        toolchain_identifier = "windows-x86_64-msvc-clangcl",
-        host_system_name = "local",
-        target_system_name = "local",
-        target_cpu = "x86_64",
-        compiler = "clang-cl",
-        abi_version = "v2",
-        tool_paths = [
-            tool_path(name = "clang-cl", path = "C:/Program Files/LLVM/bin/clang-cl.exe"),
-            tool_path(name = "lld-link", path = "C:/Program Files/LLVM/bin/lld-link.exe"),
-            tool_path(name = "lib", path = "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/lib.exe"),
-        ],
-        cxx_builtin_include_directories = [
-            # ⚠️ IMPORTANT: These paths must match your Visual Studio installation.
-            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/include",
-            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/atl/include",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/ucrt",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/shared",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/um",
-        ],
-        unfiltered_compile_flags = [
-            "/EHsc",
-            "/nologo",
-            "/W3",
-        ],
-        features = common_features() + [
-            feature(name = "vc_msvc_runtime_library", enabled = True),
-        ],
-    )
-
-def windows_msvc_toolchain_config():
-    return cc_toolchain_config(
-        name = "windows_msvc_toolchain",
-        toolchain_identifier = "windows-x86_64-msvc",
-        host_system_name = "local",
-        target_system_name = "local",
-        target_cpu = "x86_64",
-        compiler = "msvc",
-        abi_version = "v2",
-        tool_paths = [
-            tool_path(name = "cl", path = "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/cl.exe"),
-            tool_path(name = "link", path = "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/link.exe"),
-            tool_path(name = "lib", path = "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/Hostx64/x64/lib.exe"),
-        ],
-        cxx_builtin_include_directories = [
-            # ⚠️ IMPORTANT: These paths must match your Visual Studio installation.
-            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/include",
-            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.39.33519/atl/include",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/ucrt",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/shared",
-            "C:/Program Files (x86)/Windows Kits/10/Include/10.0.22621.0/um",
-        ],
-        unfiltered_compile_flags = [
-            "/EHsc",
-            "/nologo",
-            "/W3",
-        ],
-        features = common_features() + [
-            feature(name = "vc_msvc_runtime_library", enabled = True),
-        ],
-    )
