@@ -1,9 +1,12 @@
 [requires]
 sdl/3.2.20
 
+[tool_requires]
+cmake/4.1.0
+
 [generators]
-BazelDeps
-BazelToolchain
+CMakeDeps
+CMakeToolchain
 
 [layout]
-bazel_layout
+cmake_layout

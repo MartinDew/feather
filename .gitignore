@@ -37,3 +37,4 @@ bazel-*/
 
 MODULE.bazel.lock
 env/
+build/

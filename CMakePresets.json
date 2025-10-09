@@ -1,0 +1,163 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "include": [
+        "./thirdparty/CMakeUserPresets.json"
+    ],
+    "configurePresets": [
+        {
+            "name": "default",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            },
+            "inherits": "conan-default"
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "description": "Debug build with full debug symbols and no optimization",
+            "inherits": [
+                "default"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "description": "Release build with full optimization",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "development",
+            "displayName": "Development",
+            "description": "Development build with optimization and debug symbols",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Development"
+            }
+        },
+        {
+            "name": "windows-debug",
+            "displayName": "Windows Debug",
+            "description": "Debug build for Windows with MSVC",
+            "inherits": "debug",
+            "generator": "Visual Studio 17 2022",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "windows-release",
+            "displayName": "Windows Release",
+            "description": "Release build for Windows with MSVC",
+            "inherits": "release",
+            "generator": "Visual Studio 17 2022",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "windows-development",
+            "displayName": "Windows Development",
+            "description": "Development build for Windows with MSVC",
+            "inherits": "development",
+            "generator": "Visual Studio 17 2022",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "displayName": "Debug Build",
+            "configurePreset": "debug",
+            "configuration": "Debug",
+            "inherits": "conan-debug"
+        },
+        {
+            "name": "release",
+            "displayName": "Release Build",
+            "configurePreset": "release",
+            "configuration": "Release"
+        },
+        {
+            "name": "development",
+            "displayName": "Development Build",
+            "configurePreset": "development",
+            "configuration": "Development"
+        },
+        {
+            "name": "editor-debug",
+            "displayName": "Editor (Debug)",
+            "configurePreset": "debug",
+            "configuration": "Debug",
+            "targets": [
+                "Editor"
+            ]
+        },
+        {
+            "name": "editor-release",
+            "displayName": "Editor (Release)",
+            "configurePreset": "release",
+            "configuration": "Release",
+            "targets": [
+                "Editor"
+            ]
+        },
+        {
+            "name": "editor-development",
+            "displayName": "Editor (Development)",
+            "configurePreset": "development",
+            "configuration": "Development",
+            "targets": [
+                "Editor"
+            ]
+        },
+        {
+            "name": "standalone-debug",
+            "displayName": "Standalone (Debug)",
+            "configurePreset": "debug",
+            "configuration": "Debug",
+            "targets": [
+                "Standalone"
+            ]
+        },
+        {
+            "name": "standalone-release",
+            "displayName": "Standalone (Release)",
+            "configurePreset": "release",
+            "configuration": "Release",
+            "targets": [
+                "Standalone"
+            ]
+        },
+        {
+            "name": "standalone-development",
+            "displayName": "Standalone (Development)",
+            "configurePreset": "development",
+            "configuration": "Development",
+            "targets": [
+                "Standalone"
+            ]
+        }
+    ]
+}
