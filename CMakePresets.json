@@ -20,11 +20,25 @@
             "inherits": "conan-default"
         },
         {
+            "name": "multi",
+            "displayName": "Multi Config",
+            "description": "Multi-configuration generator (e.g. Visual Studio, Xcode)",
+            "inherits": [
+                "conan-default",
+                "default"
+            ],
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "generator": "Ninja Multi-Config"
+        },
+        {
             "name": "debug",
             "displayName": "Debug",
             "description": "Debug build with full debug symbols and no optimization",
             "inherits": [
-                "default"
+                "default",
+                "conan-debug"
             ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
@@ -34,7 +48,10 @@
             "name": "release",
             "displayName": "Release",
             "description": "Release build with full optimization",
-            "inherits": "default",
+            "inherits": [
+                "default",
+                "conan-release"
+            ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }

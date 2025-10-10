@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(Feather VERSION 1.0.0 LANGUAGES CXX)
 
-add_subdirectory(thirdparty)
+# add_subdirectory(thirdparty)
+include(thirdparty/thirdparties.cmake)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 23)
@@ -13,6 +14,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # find_package(sdl REQUIRED)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Configuration types for multi-config generators
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Development" CACHE STRING "" FORCE)
@@ -33,9 +36,9 @@ set(PROJECT_HEADERS
 
 # Editor target
 add_executable(Editor ${PROJECT_SOURCES} ${PROJECT_HEADERS})
-target_include_directories(Editor PRIVATE include)
+target_include_directories(Editor PRIVATE core)
 target_compile_definitions(Editor PRIVATE EDITOR_MODE)
-target_link_libraries(Editor PRIVATE ${THIRDPARTIES})
+target_link_libraries(Editor PUBLIC ${THIRDPARTIES})
 
 # Compiler options for Editor
 target_compile_options(Editor PRIVATE
@@ -46,7 +49,7 @@ target_compile_options(Editor PRIVATE
 
 # Standalone target
 add_executable(Standalone ${PROJECT_SOURCES} ${PROJECT_HEADERS})
-target_include_directories(Standalone PRIVATE include)
+target_include_directories(Standalone PRIVATE core)
 target_compile_definitions(Standalone PRIVATE STANDALONE_MODE)
 target_link_libraries(Standalone PRIVATE ${THIRDPARTIES})
 

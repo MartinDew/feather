@@ -11,14 +11,14 @@ class FeatherRecipe(ConanFile):
         self.requires("sdl/3.2.20")
 
     def build_requirements(self):
-        self.tool_requires("cmake/4.1.0")
+        self.tool_requires("cmake/3.27.9")
         self.tool_requires("ninja/1.13.0")
 
     def layout(self):
         # self.folders.source = ".."
         # self.folders.build = "conan/build"
         # self.folders.generators = "conan/build"
-        cmake_layout(self, src_folder="..")
+        cmake_layout(self, src_folder="..", generator="Ninja")
         # self.folders.root = ".."
         # self.folders.source = "."
         # # self.folders.build = "./conan"
@@ -28,5 +28,6 @@ class FeatherRecipe(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.user_presets_path = 'ConanPresets.json'
+        
         tc.absolute_paths = True
         tc.generate()
