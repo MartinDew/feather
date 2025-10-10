@@ -16,21 +16,7 @@
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-            },
-            "inherits": "conan-default"
-        },
-        {
-            "name": "multi",
-            "displayName": "Multi Config",
-            "description": "Multi-configuration generator (e.g. Visual Studio, Xcode)",
-            "inherits": [
-                "conan-default",
-                "default"
-            ],
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            },
-            "generator": "Ninja Multi-Config"
+            }
         },
         {
             "name": "debug",

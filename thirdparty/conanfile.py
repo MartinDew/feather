@@ -28,6 +28,6 @@ class FeatherRecipe(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.user_presets_path = 'ConanPresets.json'
-        
+        tc.generator="Ninja"
         tc.absolute_paths = True
         tc.generate()
