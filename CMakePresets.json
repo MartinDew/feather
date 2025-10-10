@@ -6,7 +6,7 @@
         "patch": 0
     },
     "include": [
-        "./thirdparty/CMakeUserPresets.json"
+        "ConanPresets.json"
     ],
     "configurePresets": [
         {
@@ -110,6 +110,7 @@
             "displayName": "Editor (Debug)",
             "configurePreset": "debug",
             "configuration": "Debug",
+            "inherits": "conan-debug",
             "targets": [
                 "Editor"
             ]
