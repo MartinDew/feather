@@ -60,40 +60,19 @@
             "name": "development",
             "displayName": "Development",
             "description": "Development build with optimization and debug symbols",
-            "inherits": "default",
+            "inherits": [
+                "default",
+                "conan-relwithdebinfo"
+            ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Development"
             }
         },
         {
-            "name": "windows-debug",
+            "name": "windows",
             "displayName": "Windows Debug",
-            "description": "Debug build for Windows with MSVC",
+            "description": "Multi config build for Windows with MSVC",
             "inherits": "debug",
-            "generator": "Visual Studio 17 2022",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "windows-release",
-            "displayName": "Windows Release",
-            "description": "Release build for Windows with MSVC",
-            "inherits": "release",
-            "generator": "Visual Studio 17 2022",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "windows-development",
-            "displayName": "Windows Development",
-            "description": "Development build for Windows with MSVC",
-            "inherits": "development",
             "generator": "Visual Studio 17 2022",
             "condition": {
                 "type": "equals",
@@ -114,68 +93,15 @@
             "name": "release",
             "displayName": "Release Build",
             "configurePreset": "release",
-            "configuration": "Release"
+            "configuration": "Release",
+            "inherits": "conan-release"
         },
         {
             "name": "development",
             "displayName": "Development Build",
             "configurePreset": "development",
-            "configuration": "Development"
-        },
-        {
-            "name": "editor-debug",
-            "displayName": "Editor (Debug)",
-            "configurePreset": "debug",
-            "configuration": "Debug",
-            "inherits": "conan-debug",
-            "targets": [
-                "Editor"
-            ]
-        },
-        {
-            "name": "editor-release",
-            "displayName": "Editor (Release)",
-            "configurePreset": "release",
-            "configuration": "Release",
-            "targets": [
-                "Editor"
-            ]
-        },
-        {
-            "name": "editor-development",
-            "displayName": "Editor (Development)",
-            "configurePreset": "development",
             "configuration": "Development",
-            "targets": [
-                "Editor"
-            ]
-        },
-        {
-            "name": "standalone-debug",
-            "displayName": "Standalone (Debug)",
-            "configurePreset": "debug",
-            "configuration": "Debug",
-            "targets": [
-                "Standalone"
-            ]
-        },
-        {
-            "name": "standalone-release",
-            "displayName": "Standalone (Release)",
-            "configurePreset": "release",
-            "configuration": "Release",
-            "targets": [
-                "Standalone"
-            ]
-        },
-        {
-            "name": "standalone-development",
-            "displayName": "Standalone (Development)",
-            "configurePreset": "development",
-            "configuration": "Development",
-            "targets": [
-                "Standalone"
-            ]
+            "inherits": "conan-relwithdebinfo"
         }
     ]
 }
