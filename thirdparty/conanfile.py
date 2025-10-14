@@ -8,8 +8,8 @@ class FeatherRecipe(ConanFile):
     generators = "CMakeDeps"
 
     def requirements(self):
-        self.requires("")
-
+        pass
+    
     def build_requirements(self):
         self.tool_requires("cmake/3.27.9")
         self.tool_requires("ninja/1.13.0")

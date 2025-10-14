@@ -28,9 +28,7 @@ set(PROJECT_HEADERS
 )
 
 # Source files (shared between both targets)
-set(PROJECT_SOURCES
-        core/main.cpp
-)
+set(PROJECT_SOURCES core/main.cpp)
 
 # Editor target
 add_executable(Editor ${PROJECT_SOURCES} ${PROJECT_HEADERS})
