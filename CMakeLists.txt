@@ -1,19 +1,17 @@
 cmake_minimum_required(VERSION 3.15)
 project(Feather VERSION 1.0.0 LANGUAGES CXX)
 
-# add_subdirectory(thirdparty)
+add_subdirectory(thirdparty)
 include(thirdparty/thirdparties.cmake)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
-
-# find_package(sdl REQUIRED)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -25,17 +23,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Source files (shared between both targets)
-set(PROJECT_SOURCES
-    core/main.cpp
-)
-
 set(PROJECT_HEADERS
     core/main.h
 )
 
+# Source files (shared between both targets)
+set(PROJECT_SOURCES
+        core/main.cpp
+)
+
 # Editor target
 add_executable(Editor ${PROJECT_SOURCES} ${PROJECT_HEADERS})
+
 target_include_directories(Editor PRIVATE core)
 target_compile_definitions(Editor PRIVATE EDITOR_MODE)
 target_link_libraries(Editor PUBLIC ${THIRDPARTIES})
