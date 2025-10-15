@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(Feather VERSION 1.0.0 LANGUAGES CXX)
 
+include(tools/options.cmake)
+
 add_subdirectory(thirdparty)
 include(thirdparty/thirdparties.cmake)
 

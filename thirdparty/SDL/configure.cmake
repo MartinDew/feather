@@ -4,11 +4,13 @@ FetchContent_Declare(SDL3
         # EXCLUDE_FROM_ALL
 )
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 set(THIRDPARTY_PACKAGES SDL3)
 set(THIRDPARTIES SDL3::SDL3 PARENT_SCOPE)
 
 # if release build then use static linking
-IF (CMAKE_BUILD_TYPE STREQUAL "Release")
+IF (${STATIC_CPP})
     set(SDL_SHARED OFF CACHE BOOL "Use shared SDL library" FORCE)
     set(SDL_STATIC ON CACHE BOOL "Use shared SDL library" FORCE)
 ELSE()
