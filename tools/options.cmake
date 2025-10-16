@@ -1,0 +1,1 @@
+option(STATIC_CPP "STATIC_CPP" ON)

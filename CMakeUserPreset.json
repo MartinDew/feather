@@ -1,0 +1,41 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 25,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "user-debug",
+            "displayName": "User Debug",
+            "description": "User-specific debug configuration",
+            "inherits": "debug",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install"
+            },
+            "environment": {
+                "MY_CUSTOM_VAR": "value"
+            }
+        },
+        {
+            "name": "custom-compiler",
+            "displayName": "Custom Compiler",
+            "description": "Example preset with custom compiler paths",
+            "inherits": "development",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "user-quick",
+            "displayName": "Quick Build",
+            "configurePreset": "user-debug",
+            "configuration": "Debug",
+            "jobs": 8
+        }
+    ]
+}

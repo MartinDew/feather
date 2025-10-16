@@ -37,3 +37,6 @@ bazel-*/
 
 MODULE.bazel.lock
 env/
+build/
+ConanPresets.json
+CMakeUserPresets.json
