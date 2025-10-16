@@ -20,19 +20,25 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Install latest update
+    - name: Install dependencies
       run: |
-        sudo apt-get update -y
-        sudo apt-get install -y ninja-build
+        sudo apt-get update
+        sudo apt-get install -y ninja-build cmake
         sudo apt-get install build-essential git make \
-        pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
+        pkg-config cmake gnome-desktop-testing libasound2-dev libpulse-dev \
         libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
         libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
         libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
         libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
     
+    - name: Setup cmake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '4.1.x'
+
     - name: Configure CMake
       run: |
+        cmake --version
         cmake --preset ${{ matrix.config == 'Debug' && 'debug' || matrix.config == 'Release' && 'release' || 'development' }}
     
     - name: Build Editor
