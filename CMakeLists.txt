@@ -61,8 +61,8 @@ target_compile_options(Standalone PRIVATE
 
 # Platform-specific settings
 if(MSVC)
-    target_compile_options(Editor PRIVATE /W4)
-    target_compile_options(Standalone PRIVATE /W4)
+    target_compile_options(Editor PRIVATE /W4 /wd4100)
+    target_compile_options(Standalone PRIVATE /W4 /wd4100)
     
     # MSVC-specific config flags
     target_compile_options(Editor PRIVATE
@@ -76,8 +76,8 @@ if(MSVC)
         $<$<CONFIG:Development>:/O2 /Zi>
     )
 else()
-    target_compile_options(Editor PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(Standalone PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(Editor PRIVATE -Wall -Wextra -pedantic -Wno-unused-parameter)
+    target_compile_options(Standalone PRIVATE -Wall -Wextra -pedantic -Wno-unused-parameter)
 endif()
 
 # Print build configuration
