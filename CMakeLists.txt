@@ -27,10 +27,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(PROJECT_HEADERS
     core/main.h
+    core/launch_settings.h
 )
 
 # Source files (shared between both targets)
-set(PROJECT_SOURCES core/main.cpp)
+set(PROJECT_SOURCES
+    core/main.cpp
+    core/launch_settings.cpp
+ )
 
 # Editor target
 add_executable(Editor ${PROJECT_SOURCES} ${PROJECT_HEADERS})
