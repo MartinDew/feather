@@ -1,16 +1,10 @@
-#include "main.h"
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_video.h>
-
-#include <chrono>
-#include <thread>
+#include "engine.h"
+#include "launch_settings.h"
 
 int main(int argc, char* argv[]) {
-	std::cout << "hello world\n";
+	feather::LaunchSettings launch_settings{ argc, argv };
 
-	SDL_Window* w = SDL_CreateWindow("Win", 1280, 720, SDL_WINDOW_RESIZABLE);
+	feather::Engine engine;
 
-	std::this_thread::sleep_for(std::chrono::seconds(5));
-
-	return 0;
+	engine.run();
 }

@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 project(Feather VERSION 1.0.0 LANGUAGES CXX)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 include(tools/options.cmake)
 
 add_subdirectory(thirdparty)
-include(thirdparty/thirdparties.cmake)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 26)
@@ -26,11 +27,18 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(PROJECT_HEADERS
-    core/main.h
+    core/launch_settings.h
+    core/window.h
+    core/engine.h
 )
 
 # Source files (shared between both targets)
-set(PROJECT_SOURCES core/main.cpp)
+set(PROJECT_SOURCES
+    core/main.cpp
+    core/launch_settings.cpp
+    core/window.cpp
+    core/engine.cpp
+ )
 
 # Editor target
 add_executable(Editor ${PROJECT_SOURCES} ${PROJECT_HEADERS})
