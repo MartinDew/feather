@@ -11,8 +11,6 @@ class LaunchSettings {
 
 	static LaunchSettings* instance;
 
-	args::HelpFlag _help{ _parser, "help", "display this help menu", { 'h', "help" } };
-
 public:
 	LaunchSettings(int argc, char* argv[]);
 
@@ -27,6 +25,9 @@ public:
 	args::ValueFlag<std::string> windowed{ _parser, "window mode", "the window mode to use (windowed {default} | headless )", { "w" }, "windowed" };
 
 	static LaunchSettings& get() { return *instance; }
+
+private:
+	args::HelpFlag _help{ _parser, "help", "display this help menu", { 'h', "help" } };
 };
 
 } //namespace feather
