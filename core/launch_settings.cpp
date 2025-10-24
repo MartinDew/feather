@@ -10,11 +10,12 @@ LaunchSettings::LaunchSettings(int argc, char* argv[]) {
 
 	instance = this;
 
-	parser.ParseCLI(argc, argv);
+	_parser.ParseCLI(argc, argv);
 
-	switch (parser.GetError()) {
+	switch (_parser.GetError()) {
 	case args::Error::Help:
-		std ::cout << parser;
+		std ::cout << _parser;
+		exit(0);
 		break;
 	default:
 		break;

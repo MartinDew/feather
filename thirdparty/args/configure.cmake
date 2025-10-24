@@ -4,4 +4,5 @@ FetchContent_Declare(args
 )
 
 list(APPEND THIRDPARTY_PACKAGES args)
-list(APPEND THIRDPARTIES args)
+list(APPEND THIRDPARTIES taywee::args)
+

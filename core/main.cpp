@@ -1,6 +1,10 @@
-#include "main.h"
+#include "engine.h"
 #include "launch_settings.h"
 
 int main(int argc, char* argv[]) {
-	new feather::LaunchSettings{ argc, argv };
+	feather::LaunchSettings launch_settings{ argc, argv };
+
+	feather::Engine engine;
+
+	engine.run();
 }
