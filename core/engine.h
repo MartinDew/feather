@@ -9,7 +9,7 @@
 namespace feather {
 
 using Clock = std::chrono::high_resolution_clock;
-using TimePoint = std::chrono::time_point<std::chrono::steady_clock>;
+using TimePoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
 class Engine {
 	Window _main_window;
