@@ -203,13 +203,22 @@ package("vex")
             if not os.isfile(path.join(libdir, "libVex.a")) then
                 return nil
             end
+            -- Vex headers include <vulkan/vulkan.hpp>; expose the Vulkan SDK include
+            -- dir so consumers don't need to add it themselves.  VULKAN_SDK is set by
+            -- humbletim/setup-vulkan-sdk on CI and by the LunarG SDK installer locally.
+            -- Fall back to /usr/include for distros that ship vulkan-headers system-wide.
+            local vulkan_includedirs = {}
+            local vulkan_sdk = os.getenv("VULKAN_SDK")
+            if vulkan_sdk and os.isdir(path.join(vulkan_sdk, "include")) then
+                table.insert(vulkan_includedirs, path.join(vulkan_sdk, "include"))
+            elseif os.isdir("/usr/include/vulkan") then
+                table.insert(vulkan_includedirs, "/usr/include")
+            end
             return {
-                includedirs = {
-                    inc,
-                    path.join(inc, "magic_enum"),
-                    path.join(inc, "dxc"),
-                    path.join(inc, "slang"),
-                },
+                includedirs = table.join(
+                    {inc, path.join(inc, "magic_enum"), path.join(inc, "dxc"), path.join(inc, "slang")},
+                    vulkan_includedirs
+                ),
                 linkdirs = {libdir},
                 links    = {"Vex", "slang", "dxcompiler"},
                 syslinks = {"vulkan"},
