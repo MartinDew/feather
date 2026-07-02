@@ -124,14 +124,6 @@ jobs:
         if: runner.os == 'Windows'
         run: chcp 65001
 
-      # ── xmake package cache ───────────────────────────────────────────────
-      - name: Cache xmake packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.xmake
-          key: xmake-${{ runner.os }}-${{ hashFiles('thirdparty/xmake.lua', 'thirdparty/packages/*.lua') }}
-          restore-keys: xmake-${{ runner.os }}-
-
       # ── Configure ─────────────────────────────────────────────────────────
       - name: Configure
         run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
