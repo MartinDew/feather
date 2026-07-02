@@ -112,7 +112,7 @@ package("assimp")
 
         if package:is_plat("windows") then
             -- fix ninja debug build pdb dir
-            os.mkdir(path.join(package:buildir(), "code/pdb"))
+            os.mkdir(path.join(package:builddir(), "code/pdb"))
             -- MDd == _DEBUG + _MT + _DLL: drop /D_DEBUG to avoid redefinition
             if package:is_debug() and package:has_runtime("MD", "MT") then
                 io.replace("CMakeLists.txt", "/D_DEBUG", "", {plain = true})
@@ -149,24 +149,33 @@ package("assimp")
             -- Match the libc++ stdlib used by the rest of the project on Linux+LLVM
             -- to avoid C++ ABI mismatches when linking assimp into the executables.
             table.insert(configs, "-DCMAKE_CXX_FLAGS=-stdlib=libc++")
+            table.insert(configs, "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++")
+            table.insert(configs, "-DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++")
         end
 
         import("package.tools.cmake").install(package, configs)
 
         if package:is_plat("windows") then
             if package:config("shared") then
-                os.trycp(path.join(package:buildir(), "bin", "**.pdb"), package:installdir("bin"))
+                os.trycp(path.join(package:builddir(), "bin", "**.pdb"), package:installdir("bin"))
             else
-                os.trycp(path.join(package:buildir(), "lib", "**.pdb"), package:installdir("lib"))
+                os.trycp(path.join(package:builddir(), "lib", "**.pdb"), package:installdir("lib"))
             end
         end
     end)
 
     on_test(function (package)
+        local configs = {languages = "c++17"}
+        if package:is_plat("linux") then
+            -- libassimp.a is compiled with -stdlib=libc++; the link step must also
+            -- pull in libc++ or std::__1 symbols from the .a are left unresolved.
+            configs.cxxflags = "-stdlib=libc++"
+            configs.ldflags  = "-stdlib=libc++"
+        end
         assert(package:check_cxxsnippets({test = [[
             #include <cassert>
             void test() {
                 Assimp::Importer importer;
             }
-        ]]}, {configs = {languages = "c++17"}, includes = "assimp/Importer.hpp"}))
+        ]]}, {configs = configs, includes = "assimp/Importer.hpp"}))
     end)
