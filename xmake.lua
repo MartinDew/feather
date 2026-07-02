@@ -210,11 +210,6 @@ for _, variant in ipairs({"editor", "standalone"}) do
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end
-        -- NDEBUG: xmake's mode.releasedbg adds NDEBUG by default, but CMake's Development
-        -- config does not define it. Remove it to match CMake behaviour.
-        if is_mode("releasedbg") then
-            remove_defines("NDEBUG")
-        end
 
         -- PRODUCTION for release builds (mirrors CMake option)
         if is_mode("release") then
