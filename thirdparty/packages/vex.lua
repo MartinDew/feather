@@ -207,12 +207,15 @@ package("vex")
             -- dir so consumers don't need to add it themselves.  VULKAN_SDK is set by
             -- humbletim/setup-vulkan-sdk on CI and by the LunarG SDK installer locally.
             -- Fall back to /usr/include for distros that ship vulkan-headers system-wide.
+            -- Only add an explicit include dir when VULKAN_SDK points at an
+            -- out-of-tree SDK.  Do NOT add /usr/include for distro-packaged
+            -- vulkan-headers: it is already on the default search path, and
+            -- passing it as -isystem /usr/include reorders it ahead of the
+            -- libstdc++ headers, breaking their `#include_next <stdlib.h>`.
             local vulkan_includedirs = {}
             local vulkan_sdk = os.getenv("VULKAN_SDK")
             if vulkan_sdk and os.isdir(path.join(vulkan_sdk, "include")) then
                 table.insert(vulkan_includedirs, path.join(vulkan_sdk, "include"))
-            elseif os.isdir("/usr/include/vulkan") then
-                table.insert(vulkan_includedirs, "/usr/include")
             end
             return {
                 includedirs = table.join(
