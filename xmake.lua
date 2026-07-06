@@ -140,34 +140,29 @@ local function apply_compile_flags(target)
     local want_lto     = has_config("production") or has_config("use_lto")
     local want_static  = has_config("production") or has_config("static_cpp")
 
-    -- LLD linker on POSIX with LLVM toolchain
-    if is_toolchain("llvm") and not is_plat("windows", "macosx") then
-        target:add("ldflags", "-fuse-ld=lld", {force = true})
-        -- Ubuntu 24.04 ships libstdc++ 13 which lacks <print>; the LLVM tarball
-        -- includes libc++ which does. Forces libc++ for ABI consistency with the
-        -- Vex and assimp cmake builds which also compile with -stdlib=libc++.
-        target:add("cxflags", "-stdlib=libc++", {force = true})
-        target:add("ldflags", "-stdlib=libc++", {force = true})
-    end
+    -- Detect the compiler from the resolved target. is_toolchain() is a
+    -- description-scope global and is nil inside on_config, so query the tool.
+    local function is_msvc()  return target:has_tool("cxx", "cl", "clang_cl") end
+    local function is_clang() return target:has_tool("cxx", "clang", "clangxx") end
 
     -- ThinLTO on non-MSVC
-    if want_lto and not is_toolchain("msvc", "clang-cl") then
+    if want_lto and not is_msvc() then
         target:add("cxflags", "-flto=thin", {force = true})
         target:add("ldflags", "-flto=thin", {force = true})
     end
 
-    -- Static C++ runtime on Linux (LLVM toolchain uses libc++; skip for non-GCC)
-    if want_static and is_plat("linux") and not is_toolchain("llvm") then
+    -- Static C++ runtime on Linux (clang uses libc++; skip it for non-GCC)
+    if want_static and is_plat("linux") and not is_clang() then
         target:add("ldflags", "-static-libgcc", "-static-libstdc++", {force = true})
     end
 
     -- Sanitizers (debug + non-MSVC only)
-    if has_config("enable_sanitizers") and is_mode("debug") and not is_toolchain("msvc", "clang-cl") then
+    if has_config("enable_sanitizers") and is_mode("debug") and not is_msvc() then
         target:add("cxflags", "-fsanitize=address,undefined", "-fno-omit-frame-pointer", {force = true})
         target:add("ldflags", "-fsanitize=address,undefined", {force = true})
     end
 
-    if is_toolchain("msvc", "clang-cl") then
+    if is_msvc() then
         target:add("cxflags", "/W4", "/wd4100", {force = true})
         if is_mode("debug") then
             target:add("cxflags", "/Od", "/Zi", {force = true})
@@ -234,7 +229,9 @@ for _, variant in ipairs({"editor", "standalone"}) do
                 path.join(t:targetdir(), "shaders"))
         end)
 
-        on_load(apply_compile_flags)
+        -- on_config, not on_load: toolchain-conditional flags (libc++/lld) need
+        -- the resolved toolchain, which isn't available at load time.
+        on_config(apply_compile_flags)
 
         -- Windows symbol export for runtime plugin/module loading.
         -- CMake used WINDOWS_EXPORT_ALL_SYMBOLS + ENABLE_EXPORTS on the executables.

@@ -1,8 +1,13 @@
+add_requires("slang")
+if is_plat("windows") then
+    add_requires("winpixevent")
+end
+
 package("vex")
     set_kind("library")
     set_homepage("https://github.com/Narvin-Chana/Vex")
     set_urls("https://github.com/Narvin-Chana/Vex.git", {branch = "main"})
-
+    add_deps("slang")
     -- D3D12 Agility SDK version embedded in Vex (VexDX12.cmake: DX_AGILITY_VERSION = "618")
     local AGILITY_VERSION = "618"
 
@@ -39,20 +44,15 @@ package("vex")
             "-DCMAKE_CXX_STANDARD=23",
         }
         if package:is_plat("linux") then
-            -- cmake auto-detects /usr/bin/c++ (GCC) on Ubuntu; force clang so that
-            -- -stdlib=libc++ is accepted and C++23 <print> is available.
-            -- LLVM_PATH is set by KyleMayes/install-llvm-action on CI; fall back to
-            -- PATH-resident clang/clang++ on local dev (e.g. Arch Linux).
-            local llvm_path = os.getenv("LLVM_PATH")
-            local clangxx = llvm_path and path.join(llvm_path, "bin", "clang++") or "clang++"
-            local clang   = llvm_path and path.join(llvm_path, "bin", "clang")   or "clang"
-            table.insert(cmake_args, "-DCMAKE_CXX_COMPILER=" .. clangxx)
-            table.insert(cmake_args, "-DCMAKE_C_COMPILER="   .. clang)
-            -- Ubuntu 24.04 ships libstdc++ 13 which lacks <print>; the LLVM tarball
-            -- bundles libc++ which does. Force libc++ for ABI consistency.
-            table.insert(cmake_args, "-DCMAKE_CXX_FLAGS=-stdlib=libc++")
-            table.insert(cmake_args, "-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++")
-            table.insert(cmake_args, "-DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++")
+            -- cmake would otherwise auto-detect /usr/bin/c++, ignoring the project
+            -- toolchain. Follow whatever compiler xmake resolved for this package
+            -- so Vex builds with the same compiler family as the engine. Both use
+            -- the system libstdc++, whose ABI is shared across gcc and clang, so no
+            -- -stdlib override is needed (a modern libstdc++ has <print>/<format>).
+            local cc  = package:tool("cc")
+            local cxx = package:tool("cxx")
+            if cc  then table.insert(cmake_args, "-DCMAKE_C_COMPILER="   .. cc)  end
+            if cxx then table.insert(cmake_args, "-DCMAKE_CXX_COMPILER=" .. cxx) end
         end
         os.vrunv("cmake", cmake_args)
         os.vrunv("cmake", {"--build",   builddir, "--config", build_type})
