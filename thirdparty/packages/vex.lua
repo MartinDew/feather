@@ -24,12 +24,8 @@ package("vex")
         end
 
         -- ---- cmake configure + build + install ---------------------------
-        local build_type = package:debug() and "Debug" or "Release"
-        local cmake_args = {
-            "-S", ".",
-            "-B", builddir,
-            "-DCMAKE_BUILD_TYPE="     .. build_type,
-            "-DCMAKE_INSTALL_PREFIX=" .. installdir,
+
+        local configs = {
             "-DVEX_ENABLE_SLANG=ON",
             "-DVEX_BUILD_EXAMPLES=OFF",
             "-DVEX_BUILD_TESTS=OFF",
@@ -45,12 +41,13 @@ package("vex")
             -- -stdlib override is needed (a modern libstdc++ has <print>/<format>).
             local cc  = package:tool("cc")
             local cxx = package:tool("cxx")
-            if cc  then table.insert(cmake_args, "-DCMAKE_C_COMPILER="   .. cc)  end
-            if cxx then table.insert(cmake_args, "-DCMAKE_CXX_COMPILER=" .. cxx) end
+            if cc  then table.insert(configs, "-DCMAKE_C_COMPILER="   .. cc)  end
+            if cxx then table.insert(configs, "-DCMAKE_CXX_COMPILER=" .. cxx) end
         end
-        os.vrunv("cmake", cmake_args)
-        os.vrunv("cmake", {"--build",   builddir, "--config", build_type})
-        os.vrunv("cmake", {"--install", builddir, "--config", build_type})
+        import("package.tools.cmake").install(package, configs, {
+            builddir        = builddir,
+            cmake_generator = "Ninja",
+        })
 
         -- ---- Collect runtime artifacts from cmake's _deps ----------------
         local deps = path.join(builddir, "_deps")
@@ -92,19 +89,28 @@ package("vex")
             end
         end
 
-        -- DXC: same treatment — search recursively for DLLs and the import lib.
         local dxc_src = path.join(deps, "dxc-src")
         if os.isdir(dxc_src) then
+            local arch = package:arch()
+            local dxc_lib_dir = path.join(dxc_src, "lib", arch)
+            local dxc_bin_dir = path.join(dxc_src, "bin", arch)
+            if not os.isdir(dxc_lib_dir) then
+                -- Fallback for source builds that don't nest by arch
+                dxc_lib_dir = dxc_src
+            end
+            if not os.isdir(dxc_bin_dir) then
+                dxc_bin_dir = dxc_src
+            end
+
             -- DLLs → runtime/
-            for _, dll in ipairs(os.files(path.join(dxc_src, "**.dll"))) do
-                -- Skip dxil.dll copies that live next to dxcompiler; they are system-managed
+            for _, dll in ipairs(os.files(path.join(dxc_bin_dir, "*.dll"))) do
                 os.cp(dll, package:installdir("runtime"))
             end
-            -- dxcompiler.lib → lib/  (search x64 subdir first, then anywhere)
+            -- dxcompiler.lib → lib/
             local libdir = package:installdir("lib")
-            for _, lib in ipairs(os.files(path.join(dxc_src, "**", "dxcompiler.lib"))) do
-                os.cp(lib, libdir)
-                break
+            local dxc_lib = path.join(dxc_lib_dir, "dxcompiler.lib")
+            if os.isfile(dxc_lib) then
+                os.cp(dxc_lib, libdir)
             end
         end
 

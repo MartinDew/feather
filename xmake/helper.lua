@@ -23,7 +23,7 @@ function feather_module_target(name, module_dir, files)
             for _, f in ipairs(files or {}) do
                 add_files(path.join(module_dir, f))
             end
-            add_defines(name .. "_ENABLED")
+            add_defines(name .. "_ENABLED", {public = true})
             add_defines("EDITOR_BUILD=" .. (variant == "editor" and "1" or "0"))
             if is_mode("debug", "releasedbg") then
                 add_defines("BETA")
