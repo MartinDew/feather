@@ -26,7 +26,7 @@ jobs:
           # ── Linux (LLVM/Clang) ───────────────────────────────────────────
           - name: Linux
             os: ubuntu-24.04
-            toolchain_flag: "--toolchain=llvm"
+            toolchain_flag: "--toolchain=gcc"
 
           # ── Windows (clang-cl) ───────────────────────────────────────────
           - name: Windows LLVM
@@ -79,6 +79,12 @@ jobs:
             libxrandr-dev \
             libxi-dev \
             libudev-dev
+
+      - name: Install GCC
+        uses: egor-tensin/setup-gcc@v2
+        if: runner.os == 'Linux'
+        with:
+          version: "15"
 
       - name: Install SDL deps (Linux)
         if: runner.os == 'Linux'
