@@ -1,13 +1,7 @@
-add_requires("slang")
-if is_plat("windows") then
-    add_requires("winpixevent")
-end
-
 package("vex")
     set_kind("library")
     set_homepage("https://github.com/Narvin-Chana/Vex")
     set_urls("https://github.com/Narvin-Chana/Vex.git", {branch = "main"})
-    add_deps("slang")
     -- D3D12 Agility SDK version embedded in Vex (VexDX12.cmake: DX_AGILITY_VERSION = "618")
     local AGILITY_VERSION = "618"
 
@@ -139,7 +133,7 @@ package("vex")
             local libdir = package:installdir("lib")
             local runtimedir = package:installdir("runtime")
             os.mkdir(runtimedir)
-            for _, so in ipairs(os.files(path.join(deps, "slang-src", "lib", "libslang.so*"))) do
+            for _, so in ipairs(os.files(path.join(deps, "slang-src", "lib", "libslang*.so*"))) do
                 os.cp(so, libdir)
                 os.cp(so, runtimedir)
             end

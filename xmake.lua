@@ -219,6 +219,15 @@ for _, variant in ipairs({"editor", "standalone"}) do
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
 
+        -- Runtime library search path. Vex ships slang/dxc/dxil as shared objects,
+        -- which xmake mirrors into <targetdir>/lib and <targetdir>/runtime next to the
+        -- executable. Without an rpath the loader can't find them (e.g. libslang fails
+        -- with "cannot open shared object file"). $ORIGIN resolves relative to the
+        -- executable, so the binary is relocatable.
+        if is_plat("linux") then
+            add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
+        end
+
         -- Code generation: run both Python scripts before compilation
         before_build(run_codegen)
 
