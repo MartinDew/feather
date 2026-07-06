@@ -94,7 +94,7 @@ consteval VariantType get_variant_type() {
 template <typename T>
 concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
 
-class ClassInfo;
+struct ClassInfo;
 
 class Variant {
 	using InternalVariant = std::variant<
