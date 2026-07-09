@@ -33,6 +33,17 @@ package("vex")
             "-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON",
             "-DCMAKE_CXX_STANDARD=23",
         }
+        if package:is_plat("windows") then
+            local vs_runtime = package:has_runtime() or "MT"
+            local runtime_map = {
+                MT = "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+                MD = "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+            }
+            -- Force CMake's modern runtime-selection policy so the variable below
+            -- actually takes effect instead of being silently ignored.
+            table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW")
+            table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. runtime_map[vs_runtime])
+        end
         if package:is_plat("linux") then
             -- cmake would otherwise auto-detect /usr/bin/c++, ignoring the project
             -- toolchain. Follow whatever compiler xmake resolved for this package
