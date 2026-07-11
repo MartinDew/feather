@@ -1,7 +1,6 @@
 #include "vex_renderer.h"
 
-#include "Vex/Texture.h"
-#include "framework/bytes.h"
+#include <Vex/Texture.h>
 #include <core/main/engine.h>
 #include <core/main/engine_settings.h>
 #include <core/main/window.h>
@@ -11,6 +10,8 @@
 #include <core/resources/shader.h>
 #include <core/resources/texture.h>
 #include <core/world/components/light.h>
+#include <framework/assert.h>
+#include <framework/bytes.h>
 
 #include <raw_resources/shaders/depth_prepass.slang.gen.h>
 #include <raw_resources/shaders/pbr_forward.slang.gen.h>
@@ -303,6 +304,7 @@ void VexRenderer::_compile_engine_shaders() {
 					   std::string_view entry_point,
 					   vex::ShaderType type,
 					   const auto* embedded_src) {
+		fassert(embedded_src != nullptr, std::format("Embedded shader source is null for {}", filepath));
 		vex::ShaderKey key {
 			.filepath = filepath,
 			.entryPoint = std::string(entry_point),
@@ -310,7 +312,8 @@ void VexRenderer::_compile_engine_shaders() {
 			.compiler = vex::ShaderCompilerBackend::Slang,
 		};
 		if (filepath.starts_with("engine://")) {
-			_shader_compiler.CompileShaderFromSourceCode(key, reinterpret_cast<const char*>(embedded_src));
+			std::string_view content = reinterpret_cast<const char*>(embedded_src);
+			_shader_compiler.CompileShaderFromSourceCode(key, content);
 		}
 		else {
 			_shader_compiler.CompileShaderFromFilepath(key);
