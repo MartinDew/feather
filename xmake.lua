@@ -115,8 +115,8 @@ local GENERATED_SOURCE = {
     "core/rendering/register_rendering_types.gen.cpp",
     "core/resources/register_resources_types.gen.cpp",
     "core/world/register_world_types.gen.cpp",
-    -- Generated embedded resources
-    "raw_resources/resources.gen.cpp",
+    -- NOTE: Embedded resources are now header-only (self-contained *.gen.h
+    -- files under raw_resources/), so there is no generated .cpp to compile.
 }
 
 -- ---- Shared codegen function --------------------------------------------
