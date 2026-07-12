@@ -1,5 +1,3 @@
-add_requires("directx12-agility 1.618.1")
-
 package("vex")
     set_kind("library")
     set_homepage("https://github.com/Narvin-Chana/Vex")
