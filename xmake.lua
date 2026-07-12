@@ -193,7 +193,7 @@ for _, variant in ipairs({"editor", "standalone"}) do
         set_targetdir("$(builddir)/bin")
         add_files(CORE_SOURCES)
         add_files(GENERATED_SOURCE, {always_added=true})
-        -- modules.gen.cpp is hand-authored (despite the .gen extension); include as regular source
+
         add_files("modules/modules.gen.cpp")
         add_includedirs("$(projectdir)", "$(projectdir)/core")
 
@@ -219,11 +219,6 @@ for _, variant in ipairs({"editor", "standalone"}) do
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
 
-        -- Runtime library search path. Vex ships slang/dxc/dxil as shared objects,
-        -- which xmake mirrors into <targetdir>/lib and <targetdir>/runtime next to the
-        -- executable. Without an rpath the loader can't find them (e.g. libslang fails
-        -- with "cannot open shared object file"). $ORIGIN resolves relative to the
-        -- executable, so the binary is relocatable.
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
         end
@@ -231,37 +226,15 @@ for _, variant in ipairs({"editor", "standalone"}) do
         -- Code generation: run both Python scripts before compilation
         before_build(run_codegen)
 
-        -- Copy shaders directory next to the executable after every build.
-        -- NOTE: if a module re-opens this target and calls after_build() again
-        -- (e.g. modules/vex_renderer/xmake.lua), that registration REPLACES this
-        -- one rather than stacking — xmake's after_build() DSL sugar is a single
-        -- script slot per target, not an additive hook list. Any module that
-        -- reopens feather.editor/standalone and defines its own after_build must
-        -- re-do this copy itself.
-        after_build(function(t)
-            os.cp(
-                path.join(os.projectdir(), "raw_resources", "shaders"),
-                path.join(t:targetdir(), "shaders"))
-        end)
+        -- Copy raw_resources/shaders next to the executable after every build.
+        -- Rules stack (unlike after_build() closures), so modules can attach
+        -- their own deploy rules without disturbing this one — see
+        -- xmake/helper.lua for feather_module_target()'s exe_rules option.
+        add_rules("feather.deploy_shaders")
 
         -- on_config, not on_load: toolchain-conditional flags (libc++/lld) need
         -- the resolved toolchain, which isn't available at load time.
         on_config(apply_compile_flags)
-
-        -- Windows symbol export for runtime plugin/module loading.
-        -- CMake used WINDOWS_EXPORT_ALL_SYMBOLS + ENABLE_EXPORTS on the executables.
-        -- Phase 1: point at a pre-generated .def file extracted from the CMake build.
-        --   1. Build once with CMake: cmake --preset multi && cmake --build --preset multi-development
-        --   2. Extract: dumpbin /EXPORTS build\multi\bin\Development\feather.editor.exe
-        --   3. Keep only the EXPORTS section, save as tools/feather.{variant}.def
-        --   4. Uncomment the add_ldflags line below.
-        -- Phase 2 (long-term): add FEATHER_API __declspec(dllexport/import) decorators.
-        --
-        -- if is_plat("windows") then
-        --     add_ldflags(
-        --         "/DEF:" .. path.join(os.projectdir(), "tools", "feather." .. variant .. ".def"),
-        --         {force = true})
-        -- end
     target_end()
 end
 
