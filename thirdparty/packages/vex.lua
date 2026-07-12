@@ -1,9 +1,12 @@
+add_requires("directx12-agility 1.618.1")
+
 package("vex")
     set_kind("library")
     set_homepage("https://github.com/Narvin-Chana/Vex")
     set_urls("https://github.com/Narvin-Chana/Vex.git", {branch = "main"})
     -- D3D12 Agility SDK version embedded in Vex (VexDX12.cmake: DX_AGILITY_VERSION = "618")
     local AGILITY_VERSION = "618"
+    add_deps("directx12-agility 1.618.1")
 
     on_install(function(package)
         -- CWD is the package source dir in on_install
@@ -132,14 +135,12 @@ package("vex")
                 os.cp(path.join(pix_bin, "WinPixEventRuntime.dll"), package:installdir("runtime"))
             end
 
-            -- D3D12 Agility SDK DLLs (x64) → D3D12/
-            for _, agility_dir in ipairs(os.dirs(path.join(deps, "DirectX-AgilitySDK-*"))) do
-                local x64_dir = path.join(agility_dir, "build", "native", "bin", "x64")
-                if os.isdir(x64_dir) then
-                    os.cp(path.join(x64_dir, "D3D12Core.dll"),       package:installdir("D3D12"))
-                    os.cp(path.join(x64_dir, "d3d12SDKLayers.dll"),  package:installdir("D3D12"))
-                end
-            end
+            -- D3D12 Agility SDK redistributable DLLs are NOT collected here: Vex's own
+            -- CMake build still fetches its own internal copy to compile Vex.lib against
+            -- (VexDX12.cmake's FetchContent, unavoidable), but the DLLs we actually deploy
+            -- next to the exe come from the xrepo "directx12-agility" package instead
+            -- (see thirdparty/xmake.lua and modules/vex_renderer/xmake.lua) so we don't
+            -- depend on Vex's internal _deps/ layout for a deployable artifact.
 
             -- PIX import lib
             local libdir = package:installdir("lib")

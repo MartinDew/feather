@@ -58,5 +58,21 @@ if not is_plat("macosx") then
     })
 end
 
+-- DirectX 12 Agility SDK redistributable (D3D12Core.dll, d3d12SDKLayers.dll).
+-- Vex's own CMake build fetches its own internal copy to compile Vex.lib against
+-- (unavoidable, baked into Vex's VexDX12.cmake), but we source the DLLs we actually
+-- deploy from this official xrepo package instead of reaching into Vex's internal
+-- FetchContent _deps/ layout, which is an implementation detail that could change.
+-- Version must match Vex's vendored DIRECTX_AGILITY_SDK_VERSION (currently 618,
+-- see modules/vex_renderer/xmake.lua). xrepo doesn't carry the exact 1.618.4 patch
+-- Vex vendors; the middle digit (618) is the actual SDK identifier D3D12SDKVersion
+-- has to match, so the closest available 1.618.x patch is used instead.
+if is_plat("windows") then
+    add_requires("directx12-agility 1.618.1", {
+        system = false,
+        alias  = "directx12-agility",
+    })
+end
+
 -- ---- SimpleMath: local static target (not an xrepo package) -------------
 includes(path.join(os.scriptdir(), "SimpleMath", "xmake.lua"))

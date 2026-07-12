@@ -231,7 +231,13 @@ for _, variant in ipairs({"editor", "standalone"}) do
         -- Code generation: run both Python scripts before compilation
         before_build(run_codegen)
 
-        -- Copy shaders directory next to the executable after every build
+        -- Copy shaders directory next to the executable after every build.
+        -- NOTE: if a module re-opens this target and calls after_build() again
+        -- (e.g. modules/vex_renderer/xmake.lua), that registration REPLACES this
+        -- one rather than stacking — xmake's after_build() DSL sugar is a single
+        -- script slot per target, not an additive hook list. Any module that
+        -- reopens feather.editor/standalone and defines its own after_build must
+        -- re-do this copy itself.
         after_build(function(t)
             os.cp(
                 path.join(os.projectdir(), "raw_resources", "shaders"),
