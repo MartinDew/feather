@@ -11,6 +11,7 @@ if has_config("enable_vex_renderer") then
         on_load(function(target)
             -- D3D12 reads D3D12SDKVersion/D3D12SDKPath from the main exe at
             -- startup, so DX12AgilitySDK.cpp must compile into the exe itself.
+            if not is_plat("windows") then return end
             local vex = target:pkg("vex")
             if not vex then return end
             local agility_src = path.join(vex:installdir(), "src", "DX12", "DX12AgilitySDK.cpp")
