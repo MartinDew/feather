@@ -1,20 +1,6 @@
--- Custom assimp package based on the official xmake-repo definition.
---
--- Modification: adds a `system_minizip` config option (default OFF on
--- Linux, ON elsewhere). When OFF, assimp is built with
--- -DASSIMP_BUILD_MINIZIP=ON so it compiles its own contrib/unzip/
--- instead of depending on the xmake/system minizip package.
---
--- Why: On Linux the system minizip pkgconfig advertises no include path
--- (headers live in /usr/include/minizip/ which pkgconfig omits as a
--- "standard" dir). assimp then finds minizip but gets empty
--- UNZIP_INCLUDE_DIRS, so #include <unzip.h> fails. Building assimp's
--- bundled unzip sidesteps the problem entirely.
---
--- If you hit the same issue on another platform, force it off with:
---   add_requires("assimp", {configs = {system_minizip = false}})
--- Or force system minizip back on with system_minizip = true.
-
+-- Custom assimp package (based on the official xmake-repo definition), adding a
+-- system_minizip config: off by default on Linux, where the system minizip
+-- pkgconfig omits its include dir and breaks #include <unzip.h>.
 package("assimp")
 set_homepage("https://assimp.org")
 set_description("Portable Open-Source library to import various well-known 3D model formats in a uniform manner")
@@ -69,10 +55,6 @@ add_configs("asan",                  {description = "Enable AddressSanitizer.", 
 add_configs("ubsan",                 {description = "Enable Undefined Behavior sanitizer.", default = false, type = "boolean"})
 add_configs("draco",                 {description = "Enable Draco, primary for GLTF.", default = false, type = "boolean"})
 
--- Custom: toggle between the system/xmake minizip dependency and
--- assimp's own bundled contrib/unzip/ (ASSIMP_BUILD_MINIZIP). Off by
--- default on Linux, where the system minizip pkgconfig's missing
--- include dir breaks the build.
 add_configs("system_minizip",        {description = "Depend on the minizip package instead of assimp's bundled unzip. Defaults to off on Linux due to broken pkgconfig include dirs.", default = not is_plat("linux"), type = "boolean"})
 
 add_deps("cmake", "zlib")
@@ -126,8 +108,6 @@ on_install(function (package)
                      "-DASSIMP_BUILD_ZLIB=OFF",
                      "-DSYSTEM_IRRXML=ON",
                      "-DASSIMP_WARNINGS_AS_ERRORS=OFF",
-        -- Custom: build assimp's bundled contrib/unzip instead
-        -- of relying on system minizip when system_minizip is off.
                      "-DASSIMP_BUILD_MINIZIP=" .. (package:config("system_minizip") and "OFF" or "ON")}
     table.insert(configs, "-DCMAKE_BUILD_TYPE=" .. (package:debug() and "Debug" or "Release"))
 
@@ -190,8 +170,6 @@ on_install(function (package)
         -- fix std::min/max conflict with windows.h
         io.insert("code/AssetLib/IFC/IFCLoader.cpp", 1, "#define NOMINMAX")
     elseif package:is_plat("windows") then
-        -- still need the ninja debug pdb dir + std::min/max fix even
-        -- without system minizip
         os.mkdir(path.join(package:buildir(), "code/pdb"))
         if package:is_debug() and package:has_runtime("MD", "MT") then
             io.replace("CMakeLists.txt", "/D_DEBUG", "", {plain = true})

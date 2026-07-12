@@ -1,6 +1,4 @@
--- SDL3 custom package: matches the CMake config exactly (VIDEO only, no RENDERER/GPU/etc.)
--- If xrepo gets an sdl3 package with per-subsystem config knobs, this can be removed.
--- Check first: xrepo search sdl3
+-- SDL3 custom package (VIDEO subsystem only). Remove if xrepo gains a per-subsystem sdl3 package.
 package("sdl3_feather")
     set_kind("library")
     set_homepage("https://libsdl.org")
@@ -29,10 +27,7 @@ package("sdl3_feather")
         })
     end)
 
-    -- on_fetch: explicitly return include/link info because cmake.install()'s
-    -- auto-detection only populates sysincludedirs but not linkdirs or links.
-    -- On Linux the static library is libSDL3.a (link name "SDL3");
-    -- on Windows it's SDL3-static.lib (link name "SDL3-static").
+    -- cmake.install()'s auto-detection only fills sysincludedirs, not linkdirs/links
     on_fetch(function(package)
         local libdir = package:installdir("lib")
         local inc    = package:installdir("include")

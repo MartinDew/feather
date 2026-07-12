@@ -8,9 +8,9 @@ includes("xmake/options.lua")
 includes("xmake/helper.lua")
 
 -- ---- Build modes --------------------------------------------------------
--- debug      → CMake Debug       (-O0, symbols, BETA, no NDEBUG)
--- releasedbg → CMake Development (-O2, symbols, BETA, no NDEBUG)
--- release    → CMake Release     (-O3, NDEBUG)
+-- debug      -> CMake Debug       (-O0, symbols, BETA, no NDEBUG)
+-- releasedbg -> CMake Development (-O2, symbols, BETA, no NDEBUG)
+-- release    -> CMake Release     (-O3, NDEBUG)
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
 -- Keep compile_commands.json up to date for clangd / clang-tidy
@@ -25,14 +25,11 @@ if is_plat("macosx") then
 end
 
 -- ---- LTO ----------------------------------------------------------------
--- set_policy can be called at global scope; per-toolchain flags go in apply_compile_flags
 if has_config("production") or has_config("use_lto") then
     set_policy("build.optimization.lto", true)
 end
 
 -- ---- Static C++ runtime on MSVC (set_runtimes must be global) -----------
--- is_toolchain() is unavailable here, so we set both MT/MTd via mode check;
--- the MSVC runtime is only relevant when actually using MSVC/clang-cl.
 if has_config("production") or has_config("static_cpp") then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
 end
@@ -41,29 +38,24 @@ end
 includes("thirdparty/xmake.lua")
 
 -- ---- feather_public_api -------------------------------------------------
--- Headeronly umbrella target that gives modules engine include dirs and
--- PUBLIC thirdparty headers without creating a module→executable circular dep.
+-- Headeronly umbrella target giving modules engine include dirs and PUBLIC
+-- thirdparty headers without a module -> executable circular dep.
 target("feather_public_api")
     set_kind("headeronly")
     add_includedirs("$(projectdir)", {public = true})
     add_includedirs("$(projectdir)/core", {public = true})
-    -- SimpleMath headers: added directly because xmake doesn't reliably propagate
-    -- public include dirs across a headeronly dep boundary (simplemath -> feather_public_api -> executables)
+    -- Added directly: xmake doesn't reliably propagate public include dirs
+    -- across a headeronly dep boundary (simplemath -> feather_public_api -> exes)
     add_includedirs("$(projectdir)/thirdparty/SimpleMath", {public = true})
-    -- directxmath and simplemath are PUBLIC in CMake (their types appear in engine headers)
     add_packages("directxmath", {public = true})
     add_deps("simplemath", {public = true})
-    -- flecs headers appear in core/world/ headers
     add_packages("flecs", {public = true})
-    -- launch_settings.h (public) includes args.hxx, so modules need this too
     add_packages("taywee_args", {public = true})
-    -- core/main/window.h includes <SDL3/SDL_events.h>, so any module that
-    -- transitively includes engine headers needs SDL3's include path.
     add_packages("sdl3", {public = true})
 target_end()
 
--- ---- Core source files --------------------------------------------------
--- Mirrors FEATHER_CORE_SOURCES in CMakeLists.txt exactly.
+-- ---- Core source files ----------------------------------------------------
+-- Mirrors FEATHER_CORE_SOURCES in the old CMakeLists.txt exactly.
 local CORE_SOURCES = {
     "core/framework/callable.cpp",
     "core/framework/reflected.cpp",
@@ -115,13 +107,11 @@ local GENERATED_SOURCE = {
     "core/rendering/register_rendering_types.gen.cpp",
     "core/resources/register_resources_types.gen.cpp",
     "core/world/register_world_types.gen.cpp",
-    -- NOTE: Embedded resources are now header-only (self-contained *.gen.h
-    -- files under raw_resources/), so there is no generated .cpp to compile.
+    -- Embedded resources are header-only (raw_resources/*.gen.h), so no .cpp here.
 }
 
--- ---- Shared codegen function --------------------------------------------
--- Runs both Python code generation scripts before any source file compiles.
--- Python scripts use write_if_changed() internally, so re-runs are cheap.
+-- Runs both codegen scripts before any source file compiles; both use
+-- write_if_changed() internally, so repeated runs are cheap.
 local function run_codegen(target)
     local proj = os.projectdir()
     cprint("${cyan}[codegen]${reset} generate_core_registers.py")
@@ -135,28 +125,24 @@ local function run_codegen(target)
     }, {curdir = proj})
 end
 
--- ---- Per-toolchain compile flags helper ---------------------------------
 local function apply_compile_flags(target)
     local want_lto     = has_config("production") or has_config("use_lto")
     local want_static  = has_config("production") or has_config("static_cpp")
 
-    -- Detect the compiler from the resolved target. is_toolchain() is a
-    -- description-scope global and is nil inside on_config, so query the tool.
+    -- is_toolchain() is a description-scope global and nil inside on_config,
+    -- so query the resolved tool instead.
     local function is_msvc()  return target:has_tool("cxx", "cl", "clang_cl") end
     local function is_clang() return target:has_tool("cxx", "clang", "clangxx") end
 
-    -- ThinLTO on non-MSVC
     if want_lto and not is_msvc() then
         target:add("cxflags", "-flto=thin", {force = true})
         target:add("ldflags", "-flto=thin", {force = true})
     end
 
-    -- Static C++ runtime on Linux (clang uses libc++; skip it for non-GCC)
     if want_static and is_plat("linux") and not is_clang() then
         target:add("ldflags", "-static-libgcc", "-static-libstdc++", {force = true})
     end
 
-    -- Sanitizers (debug + non-MSVC only)
     if has_config("enable_sanitizers") and is_mode("debug") and not is_msvc() then
         target:add("cxflags", "-fsanitize=address,undefined", "-fno-omit-frame-pointer", {force = true})
         target:add("ldflags", "-fsanitize=address,undefined", {force = true})
@@ -197,8 +183,8 @@ for _, variant in ipairs({"editor", "standalone"}) do
         add_files("modules/modules.gen.cpp")
         add_includedirs("$(projectdir)", "$(projectdir)/core")
 
-        -- EDITOR_BUILD define: PUBLIC on editor so module libs compiled into this exe see it.
-        -- Matches CMake: Editor uses PUBLIC, Standalone uses PRIVATE.
+        -- EDITOR_BUILD: PUBLIC on editor so module libs compiled into this exe
+        -- see it too, matching CMake (Editor PUBLIC, Standalone PRIVATE).
         if variant == "editor" then
             add_defines("EDITOR_BUILD=1", {public = true})
         else
@@ -209,13 +195,10 @@ for _, variant in ipairs({"editor", "standalone"}) do
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end
-
-        -- PRODUCTION for release builds (mirrors CMake option)
         if is_mode("release") then
             add_defines("PRODUCTION")
         end
 
-        -- Third-party deps (private: consumers of the engine don't need these headers)
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
 
@@ -223,7 +206,6 @@ for _, variant in ipairs({"editor", "standalone"}) do
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
         end
 
-        -- Code generation: run both Python scripts before compilation
         before_build(run_codegen)
 
         -- Copy raw_resources/shaders next to the executable after every build.
@@ -232,13 +214,13 @@ for _, variant in ipairs({"editor", "standalone"}) do
         -- xmake/helper.lua for feather_module_target()'s exe_rules option.
         add_rules("feather.deploy_shaders")
 
-        -- on_config, not on_load: toolchain-conditional flags (libc++/lld) need
-        -- the resolved toolchain, which isn't available at load time.
+        -- on_config, not on_load: toolchain-conditional flags need the
+        -- resolved toolchain, which isn't available at load time.
         on_config(apply_compile_flags)
     target_end()
 end
 
 -- ---- Modules (auto-discovered; re-opens feather.editor/standalone) ------
--- Must come after the executor targets are declared so feather_module_target()
--- can re-open them to add_deps().
+-- Must come after the executor targets so feather_module_target() can
+-- re-open them to add_deps().
 includes("modules/xmake.lua")
