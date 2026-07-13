@@ -29,20 +29,24 @@ if has_config("enable_vex_renderer") then
             local vex = target:pkg("vex")
             if not vex then return end
             local tdir = target:targetdir()
+            if (not is_plat("windows")) then
+                tdir = path.join(tdir, "runtime")
+                os.mkdir(tdir)
+            end
             -- target:pkg("vex"):installdir(subpath) ignores subpath args and
             -- always returns the package root, so join subpaths manually.
             local root = vex:installdir()
 
-            if (is_plat("windows")) then
-                local runtime_dir = path.join(root, "runtime")
-                if os.isdir(runtime_dir) then
-                    for _, pat in ipairs({"*.dll", "*.so*"}) do
-                        for _, f in ipairs(os.files(path.join(runtime_dir, pat))) do
-                            os.cp(f, tdir)
-                        end
+            local runtime_dir = path.join(root, "runtime")
+            if os.isdir(runtime_dir) then
+                for _, pat in ipairs({"*.dll", "*.so*"}) do
+                    for _, f in ipairs(os.files(path.join(runtime_dir, pat))) do
+                        os.cp(f, tdir)
                     end
                 end
+            end
 
+            if (is_plat("windows")) then
                 -- D3D12 Agility SDK DLLs come from xrepo's directx12-agility package,
                 -- not Vex's internal _deps/ (see thirdparty/xmake.lua).
                 local agility = target:pkg("directx12-agility")
