@@ -176,19 +176,23 @@ package("vex")
             if not os.isfile(path.join(libdir, "libVex.a")) then
                 return nil
             end
-            -- Only add an out-of-tree VULKAN_SDK include dir; adding /usr/include
+            -- Only add an out-of-tree VULKAN_SDK include/lib dir; adding /usr/include
             -- explicitly would reorder it ahead of libstdc++'s own headers.
             local vulkan_includedirs = {}
+            local vulkan_linkdirs = {}
             local vulkan_sdk = os.getenv("VULKAN_SDK")
             if vulkan_sdk and os.isdir(path.join(vulkan_sdk, "include")) then
                 table.insert(vulkan_includedirs, path.join(vulkan_sdk, "include"))
+            end
+            if vulkan_sdk and os.isdir(path.join(vulkan_sdk, "lib")) then
+                table.insert(vulkan_linkdirs, path.join(vulkan_sdk, "lib"))
             end
             return {
                 includedirs = table.join(
                     {inc, path.join(inc, "magic_enum"), path.join(inc, "dxc"), path.join(inc, "slang")},
                     vulkan_includedirs
                 ),
-                linkdirs = {libdir},
+                linkdirs = table.join({libdir}, vulkan_linkdirs),
                 links    = {"Vex", "slang", "dxcompiler"},
                 syslinks = {"vulkan"},
                 defines  = {
