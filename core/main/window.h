@@ -5,7 +5,7 @@
 
 #include <SDL3/SDL_events.h>
 
-struct SDL_Window;
+class SDL_Window;
 
 namespace feather {
 
