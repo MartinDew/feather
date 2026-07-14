@@ -1,7 +1,7 @@
 set_xmakever("2.9.0")
 set_project("feather")
 set_version("1.0.0")
-set_languages("cxx23")
+set_languages("cxx23", "clatest")
 
 -- ---- Options and helpers ------------------------------------------------
 includes("xmake/options.lua")
@@ -132,7 +132,7 @@ local function apply_compile_flags(target)
     -- is_toolchain() is a description-scope global and nil inside on_config,
     -- so query the resolved tool instead.
     local function is_msvc()  return target:has_tool("cxx", "cl", "clang_cl") end
-    local function is_clang() return target:has_tool("cxx", "clang", "clangxx") end
+    local function is_clang() return target:has_tool("cxx", "clang", "clangxx", "clang-cl") end
 
     if want_lto and not is_msvc() then
         target:add("cxflags", "-flto=thin", {force = true})
