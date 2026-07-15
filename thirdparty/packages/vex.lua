@@ -32,13 +32,7 @@ package("vex")
             "-DCMAKE_CXX_STANDARD=23",
         }
         if package:is_plat("windows") then
-            local vs_runtime = package:has_runtime() or "MT"
-            local runtime_map = {
-                MT = "MultiThreaded$<$<CONFIG:Debug>:Debug>",
-                MD = "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
-            }
-            table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW") -- so MSVC_RUNTIME_LIBRARY below takes effect
-            table.insert(configs, "-DCMAKE_MSVC_RUNTIME_LIBRARY=" .. runtime_map[vs_runtime])
+            -- table.insert(configs, "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW") -- so MSVC_RUNTIME_LIBRARY below takes effect
         end
         if package:is_plat("linux") then
             -- Match whatever compiler xmake resolved instead of cmake's autodetected /usr/bin/c++
