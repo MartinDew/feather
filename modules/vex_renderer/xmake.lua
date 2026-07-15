@@ -3,6 +3,10 @@ option("enable_vex_renderer")
     set_description("Enable the vex_renderer module (off on Apple; Vex does not support Metal)")
 option_end()
 
+if (is_plat("macosx")) then
+    return
+end
+
 if has_config("enable_vex_renderer") then
     -- Owns everything the executables need for Vex's runtime deploy step, so
     -- feather.editor/standalone below never redefine on_load/after_build
