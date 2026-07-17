@@ -39,20 +39,10 @@ includes("thirdparty/xmake.lua")
 
 -- ---- feather_public_api -------------------------------------------------
 -- Headeronly umbrella target giving modules engine include dirs and PUBLIC
--- thirdparty headers without a module -> executable circular dep.
-target("feather_public_api")
-    set_kind("headeronly")
-    add_includedirs("$(projectdir)", {public = true})
-    add_includedirs("$(projectdir)/core", {public = true})
-    -- Added directly: xmake doesn't reliably propagate public include dirs
-    -- across a headeronly dep boundary (simplemath -> feather_public_api -> exes)
-    add_includedirs("$(projectdir)/thirdparty/SimpleMath", {public = true})
-    add_packages("directxmath", {public = true})
-    add_deps("simplemath", {public = true})
-    add_packages("flecs", {public = true})
-    add_packages("taywee_args", {public = true})
-    add_packages("sdl3", {public = true})
-target_end()
+-- thirdparty headers without a module -> executable circular dep. Also the
+-- single source of truth for downstream "project DLL" consumers, via
+-- tools/FeatherSDK.lua -- see xmake/public_api.lua.
+includes("xmake/public_api.lua")
 
 -- ---- Core source files ----------------------------------------------------
 -- Mirrors FEATHER_CORE_SOURCES in the old CMakeLists.txt exactly.
@@ -204,6 +194,26 @@ for _, variant in ipairs({"editor", "standalone"}) do
 
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
+            -- Old CMake set ENABLE_EXPORTS ON (-> -rdynamic) on Editor/Standalone
+            -- so a runtime-loaded project DLL can resolve engine symbols against
+            -- the already-loaded process. Consumer DLLs link against this binary
+            -- directly (see tools/FeatherSDK.lua) rather than a separate shared lib.
+            add_ldflags("-rdynamic", {force = true})
+        end
+
+        -- Windows analog of the above: MSVC only emits a companion import .lib
+        -- for an EXE if it's told to export symbols. xmake has no equivalent of
+        -- CMake's WINDOWS_EXPORT_ALL_SYMBOLS for kind="binary" targets, so
+        -- mirror XMAKE_MIGRATION.md's documented Phase 1 plan: commit a .def
+        -- file (extracted via `dumpbin /EXPORTS build/bin/feather.<variant>.exe`)
+        -- per variant and apply it here. NOT YET COMMITTED -- requires a Windows
+        -- build to generate; until tools/feather.<variant>.def exists, this is a
+        -- no-op guarded by os.isfile() rather than a hard failure on other platforms.
+        if is_plat("windows") then
+            local def_file = path.join(os.scriptdir(), "tools", "feather." .. variant .. ".def")
+            if os.isfile(def_file) then
+                add_ldflags("/DEF:" .. def_file, {force = true})
+            end
         end
 
         before_build(run_codegen)

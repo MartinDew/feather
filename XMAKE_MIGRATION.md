@@ -237,11 +237,18 @@ CMake auto-generates a `.def` export file from the executable so runtime-loaded 
 ```
 dumpbin /EXPORTS build/bin/feather.editor.exe > tools/feather.editor.def
 ```
-Trim to just the `EXPORTS` section. Commit `tools/feather.editor.def` and `tools/feather.standalone.def`. Add to targets in root xmake.lua:
+Trim to just the `EXPORTS` section. Commit `tools/feather.editor.def` and `tools/feather.standalone.def`.
+
+Root `xmake.lua` already has the `is_plat("windows")` ldflags wiring in place (guarded by `os.isfile()`, so it's a no-op until the `.def` files below are committed):
 ```lua
-add_ldflags("/DEF:" .. path.join(os.projectdir(), "tools", "feather.editor.def"), {force = true})
+if is_plat("windows") then
+    local def_file = path.join(os.scriptdir(), "tools", "feather." .. variant .. ".def")
+    if os.isfile(def_file) then
+        add_ldflags("/DEF:" .. def_file, {force = true})
+    end
+end
 ```
-Update the `.def` files whenever the public API surface changes.
+**Still outstanding**: `tools/feather.editor.def` / `tools/feather.standalone.def` themselves are not yet committed — generating them requires a Windows build (either the old CMake build while it still exists, or an xmake build plus `dumpbin`). This is the one piece of the SDK plumbing that could not be verified in a Linux-only environment; the Linux link path (`add_ldflags` with the raw exe path + `-rdynamic`, see Step 8) is fully wired and testable today. Update the `.def` files whenever the public API surface changes.
 
 **Phase 2 (long-term)**: Introduce `FEATHER_API __declspec(dllexport/import)` decorators on all symbols modules call across the DLL boundary. This removes the need for `.def` files and clarifies the engine's plugin ABI.
 
@@ -249,35 +256,61 @@ Update the `.def` files whenever the public API surface changes.
 
 ## Step 8: SDK — `tools/FeatherSDK.lua`
 
-Replaces `generate_export.cmake` (180 lines). External game/plugin projects use `includes()` to load this file:
+Replaces `generate_export.cmake` (180 lines). `feather_public_api` (public include dirs + PUBLIC thirdparty packages) was extracted out of root `xmake.lua` into its own file, `xmake/public_api.lua`, so it can be `includes()`'d by both the root build and this file — the single source of truth for the engine's public API surface. `FeatherSDK.lua` itself never hand-lists include dirs or packages; it just depends on `feather_public_api`, so a new public thirdparty dependency (or a module opting into SDK exposure by re-opening `feather_public_api` to add itself) never requires editing this file:
 
 ```lua
 -- tools/FeatherSDK.lua
 local FEATHER_ROOT = path.directory(os.scriptdir())  -- one level up from tools/
 
+-- Same include order as root xmake.lua, so package configs (static_deps
+-- etc.) hash-match the engine's own already-built xrepo cache instead of
+-- xrepo building a second variant just for the consumer.
+includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
+includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
+includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
+
 function feather_sdk_setup(target_name, variant)
     variant = variant or "standalone"
     target(target_name)
         add_defines("EDITOR_BUILD=" .. (variant == "editor" and "1" or "0"))
-        add_includedirs(path.join(FEATHER_ROOT, "core"))
-        add_includedirs(FEATHER_ROOT)
+        add_deps("feather_public_api")
+        local bin_dir = path.join(FEATHER_ROOT, "build", "bin")
         if is_plat("windows") then
-            add_linkdirs(path.join(FEATHER_ROOT, "build", "bin"))
+            add_linkdirs(bin_dir)
             add_links("feather." .. variant)
+        else
+            -- add_links("feather.editor") never resolves on Linux: gcc/clang
+            -- only treat a link name as an exact filename when it ends in
+            -- .a/.so, otherwise "-lfeather.editor" searches for
+            -- libfeather.editor.so. Link by exact raw path instead.
+            add_ldflags(path.join(bin_dir, "feather." .. variant), {force = true})
         end
-        add_includedirs(path.join(FEATHER_ROOT, "thirdparty", "DirectXMath"))
-        add_includedirs(path.join(FEATHER_ROOT, "thirdparty", "SimpleMath"))
     target_end()
 end
 ```
 
-Consumer (game project) usage:
+Consumer (game project) usage — a full copy-paste starting point lives at `tools/templates/consumer_xmake_template.lua`, including the discovery block below. Note `feather_sdk_setup()` opens and closes its own `target(...)...target_end()` scope internally, so the consumer's own `set_kind`/`add_files` must go in a **separate, reopened** block afterward, not nested inside one shared block (mirrors how `modules/vex_renderer/xmake.lua` reopens `vex_renderer_editor`/`_standalone` after `feather_module_target()` already declared them):
 ```lua
 -- mygame/xmake.lua
-includes("/path/to/feather/tools/FeatherSDK.lua")
-target("mygame_plugin")
+option("feather_sdk_path") ... option_end()          -- see template for the full
+local function resolve_feather_root() ... end        -- discovery block: config
+                                                       -- option -> feather_dir.txt
+                                                       -- -> FEATHER_ROOT env var.
+                                                       -- error()/raise()/assert()
+                                                       -- are all unavailable at
+                                                       -- description scope, so an
+                                                       -- unresolved root prints
+                                                       -- guidance instead of
+                                                       -- hard-failing here.
+local FEATHER_ROOT = resolve_feather_root()
+if FEATHER_ROOT then
+    includes(path.join(FEATHER_ROOT, "tools", "FeatherSDK.lua"))
+end
+
+feather_sdk_setup("mygame_plugin", "standalone")
+
+target("mygame_plugin")          -- SEPARATE block, after feather_sdk_setup()
     set_kind("shared")
-    feather_sdk_setup("mygame_plugin", "standalone")
     add_files("src/*.cpp")
 target_end()
 ```
