@@ -304,7 +304,7 @@ void VexRenderer::_compile_engine_shaders() {
 					   std::string_view entry_point,
 					   vex::ShaderType type,
 					   const std::span<const uint8_t> embedded_src) {
-		fassert(embedded_src.size() > 0, std::format("Embedded shader source is null for {}", filepath));
+		fassert(embedded_src.size() > 1, std::format("Embedded shader source is empty for {}", filepath));
 		vex::ShaderKey key {
 			.filepath = filepath,
 			.entryPoint = std::string(entry_point),
@@ -312,7 +312,7 @@ void VexRenderer::_compile_engine_shaders() {
 			.compiler = vex::ShaderCompilerBackend::Slang,
 		};
 		if (filepath.starts_with("engine://")) {
-			std::string_view content = reinterpret_cast<const char*>(embedded_src.data());
+			std::string_view content(reinterpret_cast<const char*>(embedded_src.data()));
 			_shader_compiler.CompileShaderFromSourceCode(key, content);
 		}
 		else {

@@ -5,15 +5,17 @@ under raw_resources/ directly as a byte array.
 
 Each source file gets a sibling `<name>.gen.h` containing:
 
-    inline constexpr std::array<unsigned char, N> <var>  -- the raw bytes,
-                                                             null-terminated
-    inline constexpr std::size_t  <var>_size  -- byte count (excluding the
-                                                 trailing null terminator)
+    inline constexpr std::array<unsigned char, N> <var>  -- the raw bytes plus
+                                                            a trailing '\\0'
+    inline constexpr std::size_t  <var>_size  -- content byte count, excluding
+                                                 the trailing null terminator
 
 The bytes are pulled in at compile time with the C++26 `#embed` directive, so no
-separate translation unit / extern definition is needed. The trailing null lets
-the data be used directly as a C string (e.g. shader source) via
-`reinterpret_cast<const char*>(<var>.data())`.
+separate translation unit / extern definition is needed. The array keeps a
+trailing null terminator so the data can be used directly as a C string (e.g.
+shader source) via `reinterpret_cast<const char*>(<var>.data())`. For raw/binary
+access use the explicit length `<var>_size` -- note `<var>.size()` is one larger
+because it includes the terminator.
 
 #embed's emitted token representation for byte values above 127 is
 implementation-defined -- it has been observed to differ between MSVC and
@@ -108,9 +110,12 @@ def generate_header(source_file: Path, output_file: Path, base_path: Path,
 consteval auto {var_name}_validate() {{
     int raw[] = {{
 #embed "{embed_name}" suffix(,)
-        0 // null terminator so the data is usable as a C string
+        0 // trailing null terminator (also keeps raw[] well-formed for an
+          // empty source file, where #embed emits nothing)
     }};
-    constexpr std::size_t count = sizeof(raw) / sizeof(int) - 1;
+    // The terminator is kept in the final array so the data is usable directly
+    // as a C string; {var_name}_size below reports the content length without it.
+    constexpr std::size_t count = sizeof(raw) / sizeof(int);
 
     std::array<uint8_t, count> out{{}};
     for (std::size_t i = 0; i < count; ++i) {{
@@ -130,7 +135,8 @@ consteval auto {var_name}_validate() {{
 inline constexpr std::array {var_name} = {var_name}_validate();
 
 // Byte count of the embedded resource, excluding the trailing null terminator.
-inline constexpr std::size_t {var_name}_size = {var_name}.size();
+// Use this for raw/binary access; {var_name}.size() includes the terminator.
+inline constexpr std::size_t {var_name}_size = {var_name}.size() - 1;
 """
 
     if dry_run:
