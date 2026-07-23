@@ -192,6 +192,8 @@ on_install(function (package)
         end
     end
 
+    -- WinSDK find_library paths when cross-compiling via msvc-wine (no-op otherwise)
+    for _, c in ipairs(import("feather_winsdk").cmake_configs()) do table.insert(configs, c) end
     import("package.tools.cmake").install(package, configs, {packagedeps = packagedeps})
 
     -- copy pdb

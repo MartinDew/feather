@@ -30,6 +30,13 @@ option_end()
 
 -- Toolchain selection is done via CLI flags, not options:
 --   LLVM/Clang (non-Windows):  xmake f --toolchain=llvm
---   Clang-CL (Windows):        xmake f --toolchain=clang-cl
---   MinGW cross:               xmake f --toolchain=mingw --sdk=<path>
+--   Clang-CL (native Windows): xmake f --toolchain=clang-cl
 --   Android NDK:               xmake f --plat=android --ndk=<path> --ndk_sdkver=21
+--
+-- Cross-compilation is auto-detected (xmake/cross.lua): when the target
+-- platform/arch differs from the host, an appropriate cross toolchain is
+-- selected automatically, so you only need to pass -p/-a (and --sdk for
+-- Windows):
+--   Linux -> Windows (MSVC ABI):  xmake f -p windows -a x64 --sdk=<msvc-wine sdk>
+--   Linux -> other-arch Linux:    xmake f -p linux -a arm64   (muslcc, auto-downloaded)
+-- An explicit --toolchain=... always overrides the auto-selection.

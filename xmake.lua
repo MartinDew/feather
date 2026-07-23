@@ -7,6 +7,18 @@ set_languages("cxx23", "clatest")
 includes("xmake/options.lua")
 includes("xmake/helper.lua")
 
+-- Project-local importable modules (feather_winsdk, used by thirdparty packages)
+add_moduledirs("xmake/modules")
+
+-- ---- Cross-compilation toolchain auto-selection -------------------------
+-- Detects host != target and configures a cross toolchain (msvc-wine for
+-- Windows, auto-downloaded muslcc for other-arch Linux). feather_setup_cross()
+-- MUST be called here at root scope (not from within cross.lua's own include),
+-- otherwise set_toolchains() does not bind to xrepo package builds. Must precede
+-- thirdparty/xmake.lua so the toolchain is set before packages resolve.
+includes("xmake/cross.lua")
+feather_setup_cross()
+
 -- ---- Build modes --------------------------------------------------------
 -- debug      -> CMake Debug       (-O0, symbols, BETA, no NDEBUG)
 -- releasedbg -> CMake Development (-O2, symbols, BETA, no NDEBUG)

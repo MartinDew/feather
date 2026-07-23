@@ -7,7 +7,7 @@ package("sdl3_feather")
 
     on_install(function(package)
         local static = not package:config("shared")
-        import("package.tools.cmake").install(package, {
+        local configs = {
             ["SDL_SHARED"]      = static and "OFF" or "ON",
             ["SDL_STATIC"]      = static and "ON"  or "OFF",
             ["SDL_STATIC_PIC"]  = "ON",
@@ -24,7 +24,10 @@ package("sdl3_feather")
             ["SDL_SENSOR"]      = "OFF",
             ["SDL_DIALOG"]      = "OFF",
             ["SDL_TESTS"]       = "OFF",
-        })
+        }
+        -- WinSDK find_library paths when cross-compiling via msvc-wine (no-op otherwise)
+        for _, c in ipairs(import("feather_winsdk").cmake_configs()) do table.insert(configs, c) end
+        import("package.tools.cmake").install(package, configs)
     end)
 
     -- cmake.install()'s auto-detection only fills sysincludedirs, not linkdirs/links

@@ -63,11 +63,24 @@ xmake f -m debug                           # was: cmake --preset multi-debug
 xmake f -m releasedbg                      # was: cmake --preset multi-development
 xmake f -m release                         # was: cmake --preset multi-release
 xmake f -m debug --toolchain=llvm          # was: cmake --preset multi-llvm (debug)
-xmake f --toolchain=clang-cl               # was: windows preset (VS2022 + ClangCL)
-xmake f --toolchain=mingw --sdk=<path>     # was: toolchain-mingw64.cmake
+xmake f --toolchain=clang-cl               # native Windows (VS2022 + ClangCL)
 xmake project -k vsxmake2022               # VS solution generation
 xmake project -k compile_commands          # clangd / clang-tidy
 ```
+
+### Cross-compilation is auto-detected (xmake/cross.lua)
+
+When the target platform/arch differs from the host, `feather_setup_cross()`
+(called from root `xmake.lua`) picks a cross toolchain automatically — no
+`--toolchain` needed:
+```
+xmake f -p windows -a x64 --sdk=<msvc-wine sdk>   # -> msvc-wine (clang-cl, MSVC ABI)
+xmake f -p linux -a arm64                          # -> muslcc (auto-downloaded)
+```
+mingw/llvm-mingw are intentionally not used (GNU ABI). macOS-from-Linux prints a
+notice and stays on the host toolchain. An explicit `--toolchain=...` overrides.
+See `CROSS_COMPILE_FINDINGS.md` (the "IMPLEMENTED" section) for the WinSDK
+find_library fix and the root-scope requirement for `set_toolchains`.
 
 ---
 

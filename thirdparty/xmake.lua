@@ -30,15 +30,17 @@ add_requires("assimp 6.0.4", {
 add_requires("directxmath_feather", {system = false, alias = "directxmath"})
 add_requires("sdl3_feather", {system = false, alias = "sdl3", configs = {shared = not has_config("static_deps")}})
 
-if not is_plat("macosx") then
+-- vex (and its Agility SDK dep) are only needed by the vex_renderer module; skip
+-- the (heavy: slang+dxc from source) build entirely when that module is disabled.
+if not is_plat("macosx") and has_config("enable_vex_renderer") then
     add_requires("vex", {system = false, alias = "vex"})
-end
 
--- DLLs deployed at runtime come from this xrepo package rather than Vex's internal
--- CMake fetch. Version must track Vex's vendored DIRECTX_AGILITY_SDK_VERSION (618);
--- xrepo doesn't carry the exact 1.618.4 patch Vex vendors, so use the closest 1.618.x.
-if is_plat("windows") then
-    add_requires("directx12-agility 1.618.1", {system = false, alias = "directx12-agility"})
+    -- DLLs deployed at runtime come from this xrepo package rather than Vex's internal
+    -- CMake fetch. Version must track Vex's vendored DIRECTX_AGILITY_SDK_VERSION (618);
+    -- xrepo doesn't carry the exact 1.618.4 patch Vex vendors, so use the closest 1.618.x.
+    if is_plat("windows") then
+        add_requires("directx12-agility 1.618.1", {system = false, alias = "directx12-agility"})
+    end
 end
 
 includes(path.join(os.scriptdir(), "SimpleMath", "xmake.lua"))
