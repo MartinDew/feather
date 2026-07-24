@@ -99,6 +99,30 @@ Variant Variant::get(std::string_view key) const {
 	while (info) {
 		for (auto& property : info->properties) {
 			if (property.name == key) {
+				// Script-facing access: only public getters are reachable.
+				if (property.getter_access != AccessLevel::Public || !property.getter) {
+					return {};
+				}
+				return property.getter(std::get<Reflected*>(_data));
+			}
+		}
+		info = ClassDB::_get_class_info_internal(info->parent);
+	}
+	return {}; // property not found
+}
+
+Variant Variant::get_internal(std::string_view key) const {
+	fassert(_type == VariantType::OBJECT, "Variant is not an object");
+	if (!_object_info) {
+		return {};
+	}
+	auto info = _object_info;
+	while (info) {
+		for (auto& property : info->properties) {
+			if (property.name == key) {
+				if (!property.getter) {
+					return {};
+				}
 				return property.getter(std::get<Reflected*>(_data));
 			}
 		}
@@ -112,26 +136,51 @@ Variant Variant::call(std::string_view method_name) {
 	if (!_object_info) {
 		return {};
 	}
-	auto info = _object_info;
-	while (info) {
-		for (auto& method : info->methods) {
-			if (method.name == method_name) {
-				return method.callable.call(as<Reflected*>().value());
-			}
-		}
-		info = ClassDB::_get_class_info_internal(info->parent);
+	Variant self = as<Reflected*>().value();
+	return _internal_call(method_name, std::span<Variant>(&self, 1), /*enforce_public=*/true);
+}
+
+Variant Variant::call_internal(std::string_view method_name) {
+	fassert(_type == VariantType::OBJECT, "Variant is not an object");
+	if (!_object_info) {
+		return {};
 	}
-	return {}; // method not found
+	Variant self = as<Reflected*>().value();
+	return _internal_call(method_name, std::span<Variant>(&self, 1), /*enforce_public=*/false);
 }
 
 void Variant::set(std::string_view key, const Variant& value) {
 	fassert(_type == VariantType::OBJECT, "Variant is not an object");
 	auto info = _object_info;
-	for (auto& property : info->properties) {
-		if (property.name == key) {
-			property.setter(std::get<Reflected*>(_data), value);
-			return;
+	while (info) {
+		for (auto& property : info->properties) {
+			if (property.name == key) {
+				// Script-facing access: only public setters are writable.
+				if (property.setter_access != AccessLevel::Public || !property.setter) {
+					return;
+				}
+				property.setter(std::get<Reflected*>(_data), value);
+				return;
+			}
 		}
+		info = ClassDB::_get_class_info_internal(info->parent);
+	}
+}
+
+void Variant::set_internal(std::string_view key, const Variant& value) {
+	fassert(_type == VariantType::OBJECT, "Variant is not an object");
+	auto info = _object_info;
+	while (info) {
+		for (auto& property : info->properties) {
+			if (property.name == key) {
+				if (!property.setter) {
+					return;
+				}
+				property.setter(std::get<Reflected*>(_data), value);
+				return;
+			}
+		}
+		info = ClassDB::_get_class_info_internal(info->parent);
 	}
 }
 
@@ -139,11 +188,15 @@ void Variant::set_class_info(StaticString class_name) {
 	_object_info = ClassDB::get()->_get_class_info_internal(class_name);
 }
 
-Variant Variant::_internal_call(std::string_view method_name, std::span<Variant> args) const {
+Variant Variant::_internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const {
 	auto info = _object_info;
 	while (info) {
 		for (auto& method : info->methods) {
 			if (method.name == method_name) {
+				// Script-facing calls (enforce_public) only reach public methods.
+				if (enforce_public && method.access != AccessLevel::Public) {
+					return {};
+				}
 				Callable& callable = method.callable;
 
 				return callable.call(args);

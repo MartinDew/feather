@@ -118,7 +118,10 @@ class Variant {
 
 	void set_class_info(StaticString class_name);
 
-	[[nodiscard]] Variant _internal_call(std::string_view method_name, std::span<Variant> args) const;
+	// Shared method-call implementation. When enforce_public is true the call is
+	// denied unless the method is publicly accessible; the privileged *_internal
+	// entry points pass false to bypass the check.
+	[[nodiscard]] Variant _internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const;
 
 public:
 	// Default constructor - NIL
@@ -230,12 +233,25 @@ public:
 
 	// Object property access
 	std::string get_name() const;
+
+	// Script-facing property/method access. These enforce reflection accessibility:
+	// only members bound as AccessLevel::Public are reachable; protected/private
+	// members return NIL (get/call) or are ignored (set).
 	Variant get(std::string_view key) const;
 	void set(std::string_view key, const Variant& value);
 	// Object method call
 	Variant call(std::string_view method_name);
 	template <class... TArgs>
 	Variant call(std::string_view method_name, TArgs&&... args) const;
+
+	// Privileged property/method access for trusted engine systems (e.g. the
+	// editor inspector). These bypass reflection accessibility checks and can
+	// reach protected/private members. Do not expose to scripts.
+	Variant get_internal(std::string_view key) const;
+	void set_internal(std::string_view key, const Variant& value);
+	Variant call_internal(std::string_view method_name);
+	template <class... TArgs>
+	Variant call_internal(std::string_view method_name, TArgs&&... args) const;
 
 	// implicit conversion
 	// In variant.h, inside the Variant class:
@@ -259,7 +275,14 @@ template <class... TArgs>
 Variant Variant::call(std::string_view method_name, TArgs&&... args) const {
 	fassert(_type == VariantType::OBJECT, "Variant is not an object");
 	Variant params[] = { as<Reflected*>().value(), args... };
-	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1));
+	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1), true);
+}
+
+template <class... TArgs>
+Variant Variant::call_internal(std::string_view method_name, TArgs&&... args) const {
+	fassert(_type == VariantType::OBJECT, "Variant is not an object");
+	Variant params[] = { as<Reflected*>().value(), args... };
+	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1), false);
 }
 
 } // namespace feather

@@ -100,15 +100,75 @@ local GENERATED_SOURCE = {
     -- Embedded resources are header-only (raw_resources/*.gen.h), so no .cpp here.
 }
 
+-- Collects the include dirs clang needs to parse engine headers during codegen:
+-- the engine roots plus every resolved package's include dirs (flecs, sdl3,
+-- directxmath, ...). Missing dirs only cause parse errors for headers that need
+-- them, so this is best-effort and defensive.
+local function collect_codegen_includes(target)
+    local proj = os.projectdir()
+    local incs = {
+        proj,
+        path.join(proj, "core"),
+        path.join(proj, "thirdparty", "SimpleMath"),
+    }
+    for _, pkg in pairs(target:pkgs() or {}) do
+        for _, dir in ipairs(table.wrap(pkg:get("includedirs"))) do table.insert(incs, dir) end
+        for _, dir in ipairs(table.wrap(pkg:get("sysincludedirs"))) do table.insert(incs, dir) end
+        local installdir = pkg:installdir()
+        if installdir then table.insert(incs, path.join(installdir, "include")) end
+    end
+    return incs
+end
+
+-- Resolves a clang executable for the JSON-AST parse. Prefers the xrepo 'llvm'
+-- package (added to the target as a binary/tool-only dep), then a clang on PATH,
+-- then the target's C++ compiler when it is itself clang-based.
+local function resolve_clang(target)
+    import("lib.detect.find_tool")
+    local pkg = target:pkg("llvm")
+    if pkg and pkg:installdir() then
+        local exe = is_host("windows") and "clang.exe" or "clang"
+        local cand = path.join(pkg:installdir(), "bin", exe)
+        if os.isfile(cand) then return cand end
+    end
+    local t = find_tool("clang")
+    if t then return t.program end
+    local cxx = target:tool("cxx")
+    if cxx and cxx:find("clang", 1, true) then return cxx end
+    return nil
+end
+
 -- Runs both codegen scripts before any source file compiles; both use
 -- write_if_changed() internally, so repeated runs are cheap.
 local function run_codegen(target)
     local proj = os.projectdir()
-    cprint("${cyan}[codegen]${reset} generate_core_registers.py")
-    os.vrunv("python3", {
-        path.join(proj, "tools", "generate_core_registers.py"),
+
+    local clang = resolve_clang(target)
+    if not clang then
+        raise("[codegen] no clang found. Install the 'llvm' xrepo package (fetched automatically) "
+              .. "or put clang on PATH so reflection headers can be parsed.")
+    end
+
+    local argv = {
+        path.join(proj, "tools", "generate_reflection.py"),
         "--core-path", path.join(proj, "core"),
-    }, {curdir = proj})
+        "--project-root", proj,
+        "--clang", clang,
+    }
+    for _, inc in ipairs(collect_codegen_includes(target)) do
+        table.insert(argv, "-I")
+        table.insert(argv, inc)
+    end
+    if is_plat("windows") then
+        for _, def in ipairs({"-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN"}) do
+            table.insert(argv, "--clang-arg")
+            table.insert(argv, def)
+        end
+    end
+
+    cprint("${cyan}[codegen]${reset} generate_reflection.py (clang=%s)", clang)
+    os.vrunv("python3", argv, {curdir = proj})
+
     cprint("${cyan}[codegen]${reset} generate_embedded_resources.py")
     os.vrunv("python3", {
         path.join(proj, "tools", "generate_embedded_resources.py"),
@@ -138,8 +198,10 @@ local function apply_compile_flags(target)
         target:add("ldflags", "-fsanitize=address,undefined", {force = true})
     end
 
+    -- Reflection uses bare [[get]]/[[set(...)]]/[[ignore]]/[[method]] attributes
+    -- that the generator reads textually; compilers only need to ignore them.
     if is_msvc() then
-        target:add("cxflags", "/W4", "/wd4100", {force = true})
+        target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
         if is_mode("debug") then
             target:add("cxflags", "/Od", "/Zi", {force = true})
         elseif is_mode("releasedbg") then
@@ -150,6 +212,7 @@ local function apply_compile_flags(target)
     else
         target:add("cxflags",
             "-Wall", "-Wextra", "-pedantic", "-Wno-unused-parameter",
+            "-Wno-attributes", "-Wno-unknown-attributes",
             {force = true})
         if is_mode("debug") then
             target:add("cxflags", "-g", "-O0", {force = true})
@@ -191,6 +254,9 @@ for _, variant in ipairs({"editor", "standalone"}) do
 
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
+        -- Binary/tool-only: provides the `clang` used by reflection codegen. Marked
+        -- kind="binary" in thirdparty/xmake.lua so nothing is linked into the exe.
+        add_packages("llvm")
 
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")

@@ -19,38 +19,34 @@ static bool get_is_type(StaticString type_name) {
 
 struct NO_PARENT {};
 
-// Base declarator will give add the necessary logic for reflection to work with this class
-#define FCLASS(_name, _parent)                                                                                         \
-	friend class ClassDB;                                                                                              \
-	struct _class_type {};                                                                                             \
-	template <class T>                                                                                                 \
-	friend void has_bind_method(const T& t);                                                                           \
-                                                                                                                       \
-protected:                                                                                                             \
-	using Type = _name;                                                                                                \
-	using Super = _parent;                                                                                             \
-                                                                                                                       \
-public:                                                                                                                \
-	constexpr static StaticString get_class_static() {                                                                 \
-		return #_name##_ss;                                                                                            \
-	}                                                                                                                  \
-	constexpr static StaticString get_parent_name() {                                                                  \
-		return #_parent##_ss;                                                                                          \
-	}                                                                                                                  \
-	/*Maybe there's a better way to do casts than use vcalls? */                                                       \
-	bool is_of_type(StaticString type_name) const override {                                                           \
-		return get_class_static() == type_name || Super::is_of_type(type_name);                                        \
-	}                                                                                                                  \
-	virtual StaticString get_class_name() override {                                                                   \
-		return get_class_static();                                                                                     \
-	}                                                                                                                  \
-                                                                                                                       \
-private:
+// Token-paste helpers. Two levels so macro arguments (e.g. __LINE__ and
+// CURRENT_FILE_ID) are expanded before being pasted together.
+#define FEATHER_JOIN_INNER(a, b) a##b
+#define FEATHER_JOIN(a, b) FEATHER_JOIN_INNER(a, b)
 
-// Reflection declarator that will help the generator understand this class is abstract
-#define FCLASS_ABSTRACT FCLASS
-
-// Reflection declarator that will help the generator consider this class has a singleton
-#define FCLASS_SINGLETON(_name, _parent)                                                                               \
-	FCLASS(_name, _parent);                                                                                            \
-	FDECLARE_SINGLETON(_name);
+// FCLASS marks a reflected class. Unlike before, it does NOT take the class name
+// or parent — the reflection generator (tools/generate_reflection.py) recovers
+// them from the C++ declaration. It accepts optional modifiers that the
+// generator reads from source:
+//
+//   FCLASS()                  plain reflected class
+//   FCLASS(singleton)         also emits the singleton boilerplate + registers
+//                             the class as a singleton
+//   FCLASS(abstract)          force registration as abstract (usually redundant:
+//                             abstract/non-default-constructible classes are
+//                             detected automatically in ClassDB::register_class)
+//   FCLASS(explicit_methods)  switch this class to opt-in method binding (only
+//                             [[method]]-annotated methods are bound)
+//
+// Mechanism (mirrors Unreal's GENERATED_BODY): FCLASS expands to a per-class
+// body macro that the generator writes into "<header>.gen.h". Each generated
+// header (re)defines CURRENT_FILE_ID to a token unique to that header, so the
+// "<header>.gen.h" include MUST be the LAST include of the header — that
+// guarantees CURRENT_FILE_ID names the current file at the point FCLASS expands.
+#ifdef FEATHER_REFLECTION_PARSER
+// The generator parses headers with this defined so member/method extraction
+// never depends on generated output that may not exist yet.
+#define FCLASS(...)
+#else
+#define FCLASS(...) FEATHER_JOIN(CURRENT_FILE_ID, FEATHER_JOIN(_, FEATHER_JOIN(__LINE__, _GEN_BODY)))()
+#endif
