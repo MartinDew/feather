@@ -99,6 +99,7 @@ def generate_header(source_file: Path, output_file: Path, base_path: Path,
 {HASH_MARKER}{source_hash}
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 // #embed's emitted token representation (signed vs. unsigned byte range) is
 // implementation-defined and has been observed to differ between MSVC and
