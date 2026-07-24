@@ -68,9 +68,11 @@ class PropertyPlan:
 
 @dataclass
 class MethodPlan:
-    name: str
+    name: str               # C++ method name (used for &T::name)
+    bind_name: str          # reflected name (defaults to the C++ name)
     access: str             # public / protected / private
     strict: bool            # true when force-bound via [[method]] (hard error if unbindable)
+    is_static: bool = False
 
 
 @dataclass
@@ -298,7 +300,9 @@ def _handle_field(cls: ClassDesc, node: dict, text: str, access: str):
     if "ignore" in attrs:
         return
 
-    prop = _prop_name(member)
+    # [[name(foo)]] overrides the reflected property name (default: member without
+    # its leading underscore).
+    prop = attrs.get("name") or _prop_name(member)
     plan = PropertyPlan(prop_name=prop, member_name=member, type_spelling=type_spelling)
 
     present_get = "get" in attrs
@@ -351,27 +355,35 @@ def _handle_method(cls: ClassDesc, node: dict, text: str, access: str, method_na
         return
     if node.get("isImplicit"):
         return
-    if node.get("storageClass") == "static":
-        return  # static methods are not auto-bound (would need bind_static_method)
-    # Skip templated methods (a template method decl carries inner TemplateType...).
-    # We approximate by skipping overloaded names, which also covers most templates.
+    # Skip templated/overloaded names: &T::name would be ambiguous. Overloads must
+    # be disambiguated by hand rather than auto-bound.
     if method_names.get(name, 0) > 1:
         return
 
+    is_static = node.get("storageClass") == "static"
     attrs = parse_field_attributes(_prefix_text(text, _member_offset(node)))
     if "ignore" in attrs:
         return
     forced = "method" in attrs
+    # [[method(reflected_name)]] rebinds the method under a custom reflected name.
+    bind_name = attrs.get("method") or name
 
-    if cls.explicit_methods:
+    if is_static:
+        # Static methods are never auto-bound (binding them all is rarely wanted
+        # and they can't be marshalled uniformly). Only bind when annotated.
+        if not forced:
+            return
+    elif cls.explicit_methods:
         if not forced:
             return
     else:
-        # opt-out: auto-bind public methods; non-public only when forced.
+        # opt-out: auto-bind public instance methods; non-public only when forced.
         if access != "public" and not forced:
             return
 
-    cls.methods.append(MethodPlan(name=name, access=access, strict=forced))
+    cls.methods.append(MethodPlan(
+        name=name, bind_name=bind_name, access=access, strict=forced, is_static=is_static
+    ))
 
 
 # --------------------------------------------------------------------------- #
@@ -454,8 +466,11 @@ def _bind_members_body(c: ClassDesc) -> list:
                        f'&{c.name}::{p.setter_method}, "{p.prop_name}", {sa});')
     for m in c.methods:
         acc = ACCESS_ENUM[m.access]
-        bind = "bind_method" if m.strict else "bind_method_if_bindable"
-        out.append(f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.name}", {acc});')
+        if m.is_static:
+            out.append(f'\tClassDB::bind_static_method(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+        else:
+            bind = "bind_method" if m.strict else "bind_method_if_bindable"
+            out.append(f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
     out.append("}")
     return out
 
