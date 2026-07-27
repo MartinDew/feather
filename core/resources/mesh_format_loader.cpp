@@ -9,10 +9,6 @@
 
 namespace feather {
 
-void MeshFormatLoader::_bind_members() {
-	ClassDB::bind_method(&Type::recognize_extension, "recognize_extension");
-}
-
 MeshFormatLoader::MeshFormatLoader() : _importer { std::make_unique<Assimp::Importer>() } {
 }
 

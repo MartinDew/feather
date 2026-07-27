@@ -5,8 +5,6 @@
 
 namespace feather {
 
-void ExtensionFormatLoader::_bind_members() {}
-
 bool ExtensionFormatLoader::recognize_extension(const std::string& extension) const {
 	return extension == "dll" || extension == "so" || extension == "dylib";
 }

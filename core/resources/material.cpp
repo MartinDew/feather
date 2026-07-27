@@ -7,28 +7,6 @@
 
 namespace feather {
 
-void Material::_bind_members() {
-}
-
-void PBRMaterial::_bind_members() {
-	// Bind material factors
-	ClassDB::bind_property(
-			&PBRMaterial::_base_color_factor,
-			"base_color_factor"
-	); // ClassDB::bind_property(&PBRMaterial::_base_color_factor, "base_color_factor",
-	   // VariantType::OBJECT);
-	ClassDB::bind_property(&PBRMaterial::_metallic_factor, "metallic_factor");
-	ClassDB::bind_property(&PBRMaterial::_roughness_factor, "roughness_factor");
-	ClassDB::bind_property(&PBRMaterial::_emissive_factor, "emissive_factor");
-
-	// Bind rendering options
-	ClassDB::bind_property(&PBRMaterial::_alpha_blend, "alpha_blend");
-	ClassDB::bind_property(&PBRMaterial::_double_sided, "double_sided");
-}
-
-void ShaderMaterial::_bind_members() {
-}
-
 static std::shared_ptr<Shader> placeholder_mat_shader;
 
 PlaceholderMaterial::PlaceholderMaterial() {

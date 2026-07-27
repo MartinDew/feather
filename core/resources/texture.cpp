@@ -7,11 +7,6 @@
 
 namespace feather {
 
-void Texture::_bind_members() {
-	ClassDB::bind_property(&Texture::_width, "width");
-	ClassDB::bind_property(&Texture::_height, "height");
-}
-
 bool Texture::load_from_file() {
 	if (get_path().empty()) {
 		return false;

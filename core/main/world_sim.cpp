@@ -9,10 +9,6 @@ namespace feather {
 
 FSINGLETON_INSTANCE(WorldSim);
 
-void WorldSim::_bind_members() {
-	// ClassDB::bind_property(&Type::fixed_tick, "fixed_tick", VariantType::INT);
-}
-
 WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_time) } {
 	FSINGLETON_CONSTRUCT_INSTANCE()
 #if BETA

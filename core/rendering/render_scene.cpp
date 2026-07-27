@@ -52,9 +52,6 @@ void RenderScene::set_environment(const EnvironmentSettings& env) {
 	_environment = env;
 }
 
-void RenderScene::_bind_members() {
-}
-
 void RenderScene::add_light(const Light& light) {
 	_lights.push_back(light);
 }

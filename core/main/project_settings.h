@@ -4,26 +4,25 @@
 #include <framework/reflected.h>
 #include <framework/reflection_macros.h>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "project_settings.gen.h"
+#endif
+
 namespace feather {
 
 class ProjectSettings final : public Reflected {
-	FCLASS_SINGLETON(ProjectSettings, Reflected);
+	FCLASS(singleton);
 
 	friend class Engine;
 
+	[[get(public), set(public)]]
 	Path _project_path;
 	std::string _project_name;
-
-protected:
-	static void _bind_members();
-
-	void set_project_path(Path path);
 
 public:
 	ProjectSettings();
 	bool init();
 
-	Path get_project_path();
 	std::string get_project_name() const;
 	Path localize_path(const Path& path);
 };

@@ -4,9 +4,6 @@
 
 namespace feather {
 
-void MathWorldFeature::_bind_members() {
-}
-
 MathWorldFeature::MathWorldFeature() = default;
 
 MathWorldFeature::MathWorldFeature(World& world) {

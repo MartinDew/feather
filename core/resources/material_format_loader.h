@@ -2,14 +2,16 @@
 
 #include "resource_format_loader.h"
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "material_format_loader.gen.h"
+#endif
+
 namespace feather {
 
 class MaterialFormatLoader : public ResourceFormatLoader {
-	FCLASS(MaterialFormatLoader, ResourceFormatLoader);
+	FCLASS();
 
 protected:
-	static void _bind_members();
-
 	std::shared_ptr<Resource> instantiate(const Path& path) override;
 	void load(std::shared_ptr<Resource> resource, const Path& path) override;
 

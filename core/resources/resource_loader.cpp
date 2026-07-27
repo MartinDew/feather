@@ -23,9 +23,6 @@ ResourceLoader::ResourceLoader() {
 	});
 };
 
-void ResourceLoader::_bind_members() {
-}
-
 RID ResourceLoader::generate_rid() {
 	return RID { get()->m_counter.fetch_add(1, std::memory_order_relaxed) };
 }

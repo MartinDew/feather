@@ -3,12 +3,16 @@
 
 #include <filesystem>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "shader.gen.h"
+#endif
+
 namespace feather {
 
 class RenderingServer;
 
 class Shader : public Resource {
-	FCLASS(Shader, Resource);
+	FCLASS();
 	friend RenderingServer;
 
 	enum class ShaderSourceType : uint8_t {
@@ -21,9 +25,6 @@ class Shader : public Resource {
 	std::string _shader_source = "";
 	std::string _vertex_entry = "VSMain";
 	std::string _pixel_entry = "PSMain";
-
-protected:
-	static void _bind_members();
 
 public:
 	Shader() = default;

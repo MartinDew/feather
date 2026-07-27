@@ -4,9 +4,6 @@
 
 namespace feather {
 
-void Shader::_bind_members() {
-}
-
 void Shader::set_shader_path(std::string_view path) {
 	_shader_source_type = ShaderSourceType::PATH;
 	_shader_source = path;

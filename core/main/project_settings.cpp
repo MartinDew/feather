@@ -45,10 +45,6 @@ bool ProjectSettings::init() {
 	return true;
 }
 
-Path ProjectSettings::get_project_path() {
-	return _project_path;
-}
-
 std::string ProjectSettings::get_project_name() const {
 	return _project_name;
 }
@@ -91,14 +87,6 @@ Path ProjectSettings::localize_path(const Path& path) {
 	Path npath(new_path);
 	npath.make_preferred();
 	return npath;
-}
-
-void ProjectSettings::_bind_members() {
-	ClassDB::bind_property(&ProjectSettings::_project_path, "project_path");
-}
-
-void ProjectSettings::set_project_path(Path path) {
-	_project_path = path;
 }
 
 } //namespace feather

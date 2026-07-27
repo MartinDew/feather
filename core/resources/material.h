@@ -3,6 +3,10 @@
 #include "resource.h"
 #include <core/math/math_defs.h>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "material.gen.h"
+#endif
+
 namespace feather {
 
 class RenderingServer;
@@ -10,37 +14,34 @@ class Shader;
 class Texture;
 
 class Material : public Resource {
-	FCLASS(Material, Resource);
+	FCLASS();
 	friend RenderingServer;
 
 protected:
 	std::shared_ptr<Shader> _shader;
 
 	// Todo : shader params
-	static void _bind_members();
 
 public:
 	std::shared_ptr<Shader> get_shader() const { return _shader; }
 };
 
 class PlaceholderMaterial : public Material {
-	FCLASS(PlaceholderMaterial, Material)
+	FCLASS();
+
 public:
 	PlaceholderMaterial();
 };
 
 class ShaderMaterial : public Material {
-	FCLASS(ShaderMaterial, Material);
-
-protected:
-	[[maybe_unused]] static void _bind_members();
+	FCLASS();
 
 public:
 	void set_shader(std::shared_ptr<Shader> shader) { _shader = std::move(shader); }
 };
 
 class PBRMaterial : public Material {
-	FCLASS(PBRMaterial, Material);
+	FCLASS();
 
 protected:
 	// Textures
@@ -50,16 +51,20 @@ protected:
 	std::shared_ptr<Texture> _emissive_texture;
 
 	// Material factors (multiply with texture samples)
+	[[get(public), set(public)]]
 	Color _base_color_factor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+	[[get(public), set(public)]]
 	float _metallic_factor = 1.0f;
+	[[get(public), set(public)]]
 	float _roughness_factor = 1.0f;
+	[[get(public), set(public)]]
 	Color _emissive_factor = Color(0.0f, 0.0f, 0.0f, 1.0f);
 
 	// Rendering options
+	[[get(public), set(public)]]
 	bool _alpha_blend = false;
+	[[get(public), set(public)]]
 	bool _double_sided = false;
-
-	static void _bind_members();
 
 public:
 	PBRMaterial() = default;
@@ -76,26 +81,6 @@ public:
 
 	void set_emissive_texture(std::shared_ptr<Texture> texture) { _emissive_texture = texture; }
 	std::shared_ptr<Texture> get_emissive_texture() const { return _emissive_texture; }
-
-	// Factor getters/setters
-	void set_base_color_factor(const Color& color) { _base_color_factor = color; }
-	const Color& get_base_color_factor() const { return _base_color_factor; }
-
-	void set_metallic_factor(float metallic) { _metallic_factor = metallic; }
-	float get_metallic_factor() const { return _metallic_factor; }
-
-	void set_roughness_factor(float roughness) { _roughness_factor = roughness; }
-	float get_roughness_factor() const { return _roughness_factor; }
-
-	void set_emissive_factor(const Color& color) { _emissive_factor = color; }
-	const Color& get_emissive_factor() const { return _emissive_factor; }
-
-	// Rendering options
-	void set_alpha_blend(bool enabled) { _alpha_blend = enabled; }
-	bool get_alpha_blend() const { return _alpha_blend; }
-
-	void set_double_sided(bool enabled) { _double_sided = enabled; }
-	bool get_double_sided() const { return _double_sided; }
 };
 
 } //namespace feather

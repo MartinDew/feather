@@ -5,8 +5,4 @@
 
 namespace feather {
 
-void ResourceFormatLoader::_bind_members() {
-	ClassDB::bind_method(&ResourceFormatLoader::recognize_extension, "recognize_extension");
-}
-
 } // namespace feather

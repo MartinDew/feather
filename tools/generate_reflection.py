@@ -91,7 +91,6 @@ class ClassDesc:
     modifiers: set = dc_field(default_factory=set)
     is_singleton: bool = False
     is_abstract: bool = False
-    explicit_methods: bool = False
     properties: list = dc_field(default_factory=list)     # list[PropertyPlan]
     gen_getters: list = dc_field(default_factory=list)    # (access, code) inline accessor defs
     methods: list = dc_field(default_factory=list)        # list[MethodPlan]
@@ -310,7 +309,6 @@ def build_class(record: dict, header: Path, text: str, fclass_index: list):
         modifiers=modifiers,
         is_singleton="singleton" in modifiers,
         is_abstract="abstract" in modifiers,
-        explicit_methods="explicit_methods" in modifiers,
     )
 
     # Walk members in order, tracking access. struct defaults to public, class to
@@ -371,14 +369,19 @@ def _handle_field(cls: ClassDesc, node: dict, text: str, access: str):
     if "ignore" in attrs:
         return
 
+    present_get = "get" in attrs
+    present_set = "set" in attrs
+    # Properties are opt-in: a member reflects only when annotated with at least
+    # one of [[get]]/[[set]]/[[name]] (mirrors Unreal's explicit UPROPERTY()).
+    # A bare [[name(foo)]] with no get/set still implies both accessors.
+    if not present_get and not present_set and "name" not in attrs:
+        return
+
     # [[name(foo)]] overrides the reflected property name (default: member without
     # its leading underscore).
     prop = attrs.get("name") or _prop_name(member)
     plan = PropertyPlan(prop_name=prop, member_name=member, type_spelling=type_spelling)
 
-    present_get = "get" in attrs
-    present_set = "set" in attrs
-    # Default (no get/set attribute): generate both with the member's access.
     if not present_get and not present_set:
         present_get = present_set = True
         get_arg = set_arg = None
@@ -435,22 +438,12 @@ def _handle_method(cls: ClassDesc, node: dict, text: str, access: str, method_na
     attrs = parse_field_attributes(_prefix_text(text, _member_offset(node)))
     if "ignore" in attrs:
         return
+    # Methods are opt-in: only [[method]] (optionally [[method(name)]] to rebind
+    # under a custom reflected name) binds a method, whether static or not.
     forced = "method" in attrs
-    # [[method(reflected_name)]] rebinds the method under a custom reflected name.
+    if not forced:
+        return
     bind_name = attrs.get("method") or name
-
-    if is_static:
-        # Static methods are never auto-bound (binding them all is rarely wanted
-        # and they can't be marshalled uniformly). Only bind when annotated.
-        if not forced:
-            return
-    elif cls.explicit_methods:
-        if not forced:
-            return
-    else:
-        # opt-out: auto-bind public instance methods; non-public only when forced.
-        if access != "public" and not forced:
-            return
 
     cls.methods.append(MethodPlan(
         name=name, bind_name=bind_name, access=access, strict=forced, is_static=is_static

@@ -7,17 +7,19 @@
 
 #include <string>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "resource_format_loader.gen.h"
+#endif
+
 namespace feather {
 
 class ResourceLoader;
 
 class ResourceFormatLoader : public Reflected {
-	FCLASS(ResourceFormatLoader, Reflected);
+	FCLASS();
 	friend ResourceLoader;
 
 protected:
-	static void _bind_members();
-
 	// Create a resource instance with path set but data not loaded
 	virtual std::shared_ptr<Resource> instantiate(const Path& path) = 0;
 
@@ -30,6 +32,7 @@ protected:
 	ResourceFormatLoader() = default;
 
 public:
+	[[method]]
 	virtual bool recognize_extension(const std::string& extension) const = 0;
 };
 

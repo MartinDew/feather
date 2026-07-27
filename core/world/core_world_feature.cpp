@@ -6,9 +6,6 @@
 
 namespace feather {
 
-void CoreWorldFeature::_bind_members() {
-}
-
 CoreWorldFeature::CoreWorldFeature(World world) {
 	world.component<Scene>("Scene");
 	world.component<ActiveScene>("ActiveScene");

@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "texture.gen.h"
+#endif
+
 namespace feather {
 
 enum class TextureFormat : uint8_t {
@@ -22,16 +26,16 @@ enum class TextureFormat : uint8_t {
 };
 
 class Texture : public Resource {
-	FCLASS(Texture, Resource);
+	FCLASS();
 
 protected:
 	std::vector<uint8_t> _pixel_data;
+	[[get(public), set(public)]]
 	uint32_t _width = 0;
+	[[get(public), set(public)]]
 	uint32_t _height = 0;
 	TextureFormat _format = TextureFormat::RGBA8_UNORM;
 	bool _is_loaded = false;
-
-	static void _bind_members();
 
 public:
 	Texture() = default;
@@ -45,8 +49,6 @@ public:
 
 	// Getters
 	const std::vector<uint8_t>& get_pixel_data() const { return _pixel_data; }
-	uint32_t get_width() const { return _width; }
-	uint32_t get_height() const { return _height; }
 	TextureFormat get_format() const { return _format; }
 	bool is_loaded() const { return _is_loaded; }
 

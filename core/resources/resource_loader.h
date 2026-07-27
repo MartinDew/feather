@@ -9,19 +9,20 @@
 
 #include <atomic>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "resource_loader.gen.h"
+#endif
+
 namespace feather {
 
 class ResourceLoader : public Reflected {
-	FCLASS_SINGLETON(ResourceLoader, Reflected);
+	FCLASS(singleton);
 
 	std::atomic<size_t> m_counter { 1 };
 
 	std::unordered_map<RID, std::shared_ptr<Resource>> _cache;
 	std::unordered_map<std::string, std::shared_ptr<Resource>> _path_cache;
 	std::vector<std::shared_ptr<ResourceFormatLoader>> _format_loaders;
-
-protected:
-	static void _bind_members();
 
 public:
 	ResourceLoader();

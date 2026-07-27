@@ -35,8 +35,11 @@ struct NO_PARENT {};
 //   FCLASS(abstract)          force registration as abstract (usually redundant:
 //                             abstract/non-default-constructible classes are
 //                             detected automatically in ClassDB::register_class)
-//   FCLASS(explicit_methods)  switch this class to opt-in method binding (only
-//                             [[method]]-annotated methods are bound)
+//
+// Both properties and methods are opt-in (mirrors Unreal's UPROPERTY/UFUNCTION):
+// a data member reflects only when annotated with [[get]]/[[set]]/[[name(...)]],
+// and a method binds only when annotated [[method]] (or [[method(name)]] to bind
+// under a custom reflected name). Unannotated members/methods are not reflected.
 //
 // Mechanism (mirrors Unreal's GENERATED_BODY): FCLASS expands to a per-class
 // body macro that the generator writes into "<header>.gen.h". Each generated

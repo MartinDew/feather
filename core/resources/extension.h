@@ -1,22 +1,23 @@
 #pragma once
 #include "resource.h"
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "extension.gen.h"
+#endif
+
 namespace feather {
 
 class SharedLibrary;
 class ExtensionFormatLoader;
 
 class Extension final : public Resource {
-	FCLASS(Extension, Resource);
+	FCLASS();
 
 	friend class ExtensionFormatLoader;
 
 	std::string _extension_name;
 	std::string _entry_point;
 	std::shared_ptr<SharedLibrary> _library_handle;
-
-protected:
-	static void _bind_members();
 
 public:
 	Extension() = default;
