@@ -47,6 +47,13 @@ ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Prote
 _FCLASS_RE = re.compile(r"\bFCLASS\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
+# `class Name ... {` / `struct Name ... {`, used only to guess which class each
+# FCLASS(...) occurrence belongs to *before* we've parsed anything — that guess
+# drives -ast-dump-filter (see run_clang_ast), so it only needs to narrow the
+# clang dump, not be authoritative; build_class() still matches FCLASS occurrences
+# to records by source range, same as before.
+_CLASS_DECL_RE = re.compile(r"\b(?:class|struct)\s+(\w+)\b[^{;]*\{")
+
 
 # --------------------------------------------------------------------------- #
 # Data model
@@ -134,10 +141,41 @@ def parse_field_attributes(prefix_text: str) -> dict:
 # clang JSON AST parsing
 # --------------------------------------------------------------------------- #
 
-def run_clang_ast(clang: str, header: Path, includes: list, extra_args: list) -> dict:
+def _decode_json_stream(s: str) -> list:
+    """Decode one or more whitespace-separated top-level JSON values from s.
+    -ast-dump-filter makes clang print one JSON object per matched decl, back to
+    back, with no enclosing array — plain json.loads() can't parse that, so walk
+    it with a raw JSONDecoder instead. An unfiltered dump is just the (single)
+    TranslationUnitDecl object; this returns a one-element list for that case."""
+    decoder = json.JSONDecoder()
+    out, idx, n = [], 0, len(s)
+    while idx < n:
+        while idx < n and s[idx].isspace():
+            idx += 1
+        if idx >= n:
+            break
+        obj, end = decoder.raw_decode(s, idx)
+        out.append(obj)
+        idx = end
+    return out
+
+
+def run_clang_ast(clang: str, header: Path, includes: list, extra_args: list, ast_dump_filter: str = None) -> list:
+    """Returns a list of top-level decoded JSON nodes. Without a filter that's a
+    single TranslationUnitDecl; with -ast-dump-filter it's zero or more decls
+    (see _decode_json_stream)."""
     args = [
         clang, "-x", "c++", "-std=c++23", "-fsyntax-only",
         "-Xclang", "-ast-dump=json",
+    ]
+    if ast_dump_filter:
+        # Substring match against the decl name — deliberately over-broad (e.g.
+        # "Mesh" also matches "ComplexMesh"); collect_records still requires an
+        # exact file match, so extra hits from the same TU are harmless, and
+        # -ast-dump-filter dumping a whole TU worth of unrelated included-header
+        # decls is exactly what this flag exists to avoid.
+        args += ["-Xclang", "-ast-dump-filter=" + ast_dump_filter]
+    args += [
         "-DFEATHER_REFLECTION_PARSER=1",
         "-Wno-attributes", "-Wno-unknown-attributes",
         "-ferror-limit=0",
@@ -149,8 +187,10 @@ def run_clang_ast(clang: str, header: Path, includes: list, extra_args: list) ->
     proc = subprocess.run(args, capture_output=True, text=True)
     # clang emits the JSON on stdout even with parse errors; only bail if empty.
     if not proc.stdout.strip():
+        if ast_dump_filter:
+            return []  # filter matched nothing in this TU -- not an error
         raise RuntimeError(f"clang produced no AST for {header}:\n{proc.stderr}")
-    return json.loads(proc.stdout)
+    return _decode_json_stream(proc.stdout)
 
 
 def _node_file(node: dict, current: str) -> str:
@@ -166,19 +206,36 @@ def _node_file(node: dict, current: str) -> str:
     return current
 
 
+def _is_class_record(node: dict) -> bool:
+    return bool(node.get("kind") == "CXXRecordDecl" and node.get("name") and node.get("inner")
+                and node.get("tagUsed") in ("class", "struct"))
+
+
 def collect_records(node: dict, target: str, current_file: str, found: list):
     """Walk the AST in document order, tracking the current file, collecting the
     top-level CXXRecordDecl definitions that live in the target header."""
     current_file = _node_file(node, current_file)
     for child in node.get("inner", []) or []:
         cf = _node_file(child, current_file)
-        if child.get("kind") == "CXXRecordDecl" and child.get("name") and child.get("inner") \
-                and child.get("tagUsed") in ("class", "struct") and cf == target:
+        if _is_class_record(child) and cf == target:
             found.append(child)
             # do not recurse into members looking for more top-level records
         else:
             collect_records(child, target, cf, found)
         current_file = cf
+
+
+def collect_records_from_roots(roots: list, target: str, found: list):
+    """Like collect_records, but for a list of top-level nodes rather than a
+    single TranslationUnitDecl. With -ast-dump-filter each root is typically the
+    matched CXXRecordDecl itself (no TU wrapper), so check the root directly
+    before recursing into it."""
+    for root in roots:
+        cf = _node_file(root, target)
+        if _is_class_record(root) and cf == target:
+            found.append(root)
+        else:
+            collect_records(root, target, cf, found)
 
 
 def _base_name(record: dict) -> str:
@@ -224,7 +281,12 @@ def _qual_return_and_params(qual_type: str):
 # Building the class descriptor from a record + raw source
 # --------------------------------------------------------------------------- #
 
-def build_class(record: dict, header: Path, text: str, fclass_index: list) -> ClassDesc:
+def build_class(record: dict, header: Path, text: str, fclass_index: list):
+    """Returns None if no FCLASS(...) occurrence actually falls inside this
+    record's own source range -- collect_records finds every class/struct in the
+    file, reflected or not, so this is the only thing that stops e.g. a plain
+    helper struct sharing a header with a real FCLASS class from being reflected
+    too."""
     name = record["name"]
     parent = _base_name(record)
 
@@ -233,12 +295,15 @@ def build_class(record: dict, header: Path, text: str, fclass_index: list) -> Cl
     rng = record.get("range") or {}
     start = (rng.get("begin") or {}).get("offset", 0)
     end = (rng.get("end") or {}).get("offset", len(text))
-    modifiers, fclass_line = set(), _member_line(record)
+    modifiers, fclass_line, matched = set(), _member_line(record), False
     for (off, line, args) in fclass_index:
         if start <= off <= end:
             modifiers = {a.strip() for a in args.split(",") if a.strip()}
             fclass_line = line
+            matched = True
             break
+    if not matched:
+        return None
 
     cls = ClassDesc(
         name=name, parent=parent, header=header, fclass_line=fclass_line,
@@ -249,16 +314,22 @@ def build_class(record: dict, header: Path, text: str, fclass_index: list) -> Cl
     )
 
     # Walk members in order, tracking access. struct defaults to public, class to
-    # private. clang usually annotates each member with "access" too; prefer it.
+    # private. clang 22's JSON AST doesn't emit a per-node "access" key at all
+    # (confirmed empirically), so AccessSpecDecl tracking is the *only* source of
+    # truth here, not just a fallback -- current_access must start fresh at
+    # default_access for this walk. It's a separate loop from the method-name
+    # count below on purpose: that loop must not perturb current_access, or
+    # members appearing before the first explicit access specifier inherit
+    # whatever access the last specifier in the whole class left behind instead
+    # of the correct default.
     default_access = "public" if record.get("tagUsed") == "struct" else "private"
-    current_access = default_access
 
     method_names: dict = {}
     for m in record.get("inner", []) or []:
-        if m.get("kind") == "AccessSpecDecl":
-            current_access = m.get("access", current_access)
-        elif m.get("kind") == "CXXMethodDecl":
+        if m.get("kind") == "CXXMethodDecl":
             method_names[m.get("name", "")] = method_names.get(m.get("name", ""), 0) + 1
+
+    current_access = default_access
 
     for m in record.get("inner", []) or []:
         kind = m.get("kind")
@@ -551,17 +622,51 @@ def write_if_changed(path: Path, content: str) -> bool:
 
 
 def scan_fclass_occurrences(text: str) -> list:
-    """Return [(offset, line, raw_args), ...] for each FCLASS(...) in the text,
-    skipping the macro definition lines in reflection_macros.h."""
+    """Return [(offset, line, raw_args), ...] for each real FCLASS(...) in the
+    text, skipping the macro definition lines in reflection_macros.h and any
+    match inside a // line comment (reflection_macros.h documents FCLASS's own
+    syntax in comments -- "//   FCLASS()  plain reflected class" -- which would
+    otherwise be scanned as a genuine occurrence; build_class() additionally
+    requires an occurrence to fall inside the specific record it's attributed
+    to, but a stray comment match can still corrupt a nearby real class's
+    modifiers, so it's worth excluding here too, not just at that later
+    checkpoint)."""
     out = []
     for m in _FCLASS_RE.finditer(text):
-        # skip "#define FCLASS(...)" style definition lines
         line_start = text.rfind("\n", 0, m.start()) + 1
-        if "#define" in text[line_start:m.start()]:
+        prefix = text[line_start:m.start()]
+        # skip "#define FCLASS(...)" style definition lines
+        if "#define" in prefix:
+            continue
+        # skip matches after a "//" earlier on the same line (this is a textual
+        # scan, not a real lexer, so it doesn't handle /* */ block comments --
+        # none of the FCLASS-bearing headers use them for this kind of content)
+        if "//" in prefix:
             continue
         line = text.count("\n", 0, m.start()) + 1
         out.append((m.start(), line, m.group(1)))
     return out
+
+
+def _candidate_class_names(text: str, occurrences: list) -> set:
+    """For each FCLASS(...) occurrence, guess the enclosing class/struct name from
+    the nearest preceding `class Name ... {` / `struct Name ... {`. Used only to
+    build -ast-dump-filter values -- a wrong or missing guess just means that
+    class falls back to the unfiltered parse (see process_header), never a
+    correctness issue: build_class() still matches occurrences to records by
+    source range once the AST is in hand."""
+    decls = [(m.start(), m.group(1)) for m in _CLASS_DECL_RE.finditer(text)]
+    names = set()
+    for (off, _line, _args) in occurrences:
+        name = None
+        for doff, dname in decls:
+            if doff <= off:
+                name = dname
+            else:
+                break
+        if name:
+            names.add(name)
+    return names
 
 
 def process_header(header: Path, clang: str, includes: list, extra_args: list, project_root: Path) -> list:
@@ -569,19 +674,96 @@ def process_header(header: Path, clang: str, includes: list, extra_args: list, p
     occ = scan_fclass_occurrences(text)
     if not occ:
         return []
-    ast = run_clang_ast(clang, header, includes, extra_args)
+
     target = str(header.resolve())
     records: list = []
-    # The TU's own file marker starts as the main file path clang was given.
-    collect_records(ast, target, target, records)
-    # clang may report the file as the path we passed (not resolved); match both.
+    seen_keys = set()
+
+    def merge(roots: list):
+        found: list = []
+        collect_records_from_roots(roots, target, found)
+        if not found:
+            collect_records_from_roots(roots, str(header), found)  # unresolved-path fallback
+        for r in found:
+            # Dedup by (name, source offset) rather than clang's "id": that id is
+            # an ephemeral per-invocation address, not stable across the separate
+            # clang subprocess calls filtering makes -- e.g. filtering "Mesh" also
+            # over-matches "ComplexMesh"/"BoxMesh" (substring match), and each gets
+            # re-parsed (with a fresh id) when its own name is filtered too. Name +
+            # offset is a property of the source location, so it's stable.
+            key = (r.get("name"), _member_offset(r))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                records.append(r)
+
+    # Fast path: one small clang invocation per candidate class name (~KB of
+    # JSON, well under a second) instead of one whole-TU dump (can run past a
+    # gigabyte once every transitively-included header is included -- see
+    # REFLECTION_CODEGEN_HANDOFF.md). -ast-dump-filter substring-matches, so a
+    # single filter can pull in more than one wanted class (e.g. "Mesh" also
+    # matches "ComplexMesh"); merge() dedupes across calls.
+    for name in sorted(_candidate_class_names(text, occ)):
+        roots = run_clang_ast(clang, header, includes, extra_args, ast_dump_filter=name)
+        merge(roots)
+
+    # Fallback: if filtering found nothing at all (e.g. the class-name guess
+    # failed -- unusual formatting, macro-generated class name, ...), parse the
+    # whole TU once so a previously-working header can never silently stop
+    # resolving just because the fast path missed it.
     if not records:
-        collect_records(ast, str(header), str(header), records)
-    return [build_class(r, header, text, occ) for r in records]
+        roots = run_clang_ast(clang, header, includes, extra_args)
+        merge(roots)
+
+    return [c for c in (build_class(r, header, text, occ) for r in records) if c is not None]
 
 
 def find_headers(folder: Path):
     return sorted(folder.rglob("*.h")) + sorted(folder.rglob("*.hpp"))
+
+
+def process_source_dir(
+        dir_path: Path, name: str, include_base: Path,
+        clang: str, includes: list, extra_args: list, project_root: Path
+) -> int:
+    """Scan dir_path recursively for FCLASS headers, emit each header's .gen.h,
+    and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the per-core-
+    subfolder loop and the --module-path loop in main() -- a module directory is
+    processed exactly like a core subfolder, just outside core/ and named after
+    itself rather than a core subfolder name. include_base is what the generated
+    #include paths in register_<name>_types.gen.cpp are computed relative to
+    (core_path for core subfolders, the module dir itself for modules, so e.g.
+    "vex_renderer.h" rather than "modules/vex_renderer/vex_renderer.h"). Returns
+    the number of files written."""
+    changed = 0
+    classes_by_header: dict = {}
+    all_classes: list = []
+    for header in find_headers(dir_path):
+        try:
+            classes = process_header(header, clang, includes, extra_args, project_root)
+        except Exception as exc:  # keep going; report the offending header
+            print(f"  [WARN] {header}: {exc}", file=sys.stderr)
+            continue
+        if classes:
+            classes_by_header[header] = classes
+            all_classes.extend(classes)
+
+    # Per-header gen.h files
+    for header, classes in classes_by_header.items():
+        gen_h = header.with_name(header.stem + ".gen.h")
+        if write_if_changed(gen_h, generate_gen_header(classes, header, project_root)):
+            changed += 1
+            print(f"  [{name}] updated {gen_h.name}")
+
+    # register_<name>_types.gen.{h,cpp} (always emitted so the caller has the symbol)
+    out_h = dir_path / f"register_{name}_types.gen.h"
+    out_cpp = dir_path / f"register_{name}_types.gen.cpp"
+    if write_if_changed(out_h, generate_register_header(name)):
+        changed += 1
+        print(f"  [{name}] updated {out_h.name}")
+    if write_if_changed(out_cpp, generate_register_cpp(name, all_classes, include_base)):
+        changed += 1
+        print(f"  [{name}] updated {out_cpp.name}")
+    return changed
 
 
 def main():
@@ -595,49 +777,45 @@ def main():
                     help="extra argument forwarded to clang (repeatable)")
     ap.add_argument("--module-path", action="append", default=[], dest="module_paths",
                     help="additional (non-core) source dir to scan (repeatable)")
+    ap.add_argument("--skip-core", action="store_true",
+                    help="don't scan --core-path; only process --module-path dirs. "
+                         "Used to codegen a single module without re-scanning all of "
+                         "core -- e.g. from a module's own before_build, which (unlike "
+                         "the main executable's before_build) runs before a *dependency* "
+                         "static-lib target's files compile, so it can't wait for the "
+                         "executable's own before_build to have produced the module's "
+                         "register_<name>_types.gen.cpp first.")
     args = ap.parse_args()
 
     core_path = args.core_path.resolve()
     project_root = args.project_root.resolve()
     includes = [Path(i).resolve() for i in args.includes] or [project_root, core_path]
 
-    if not core_path.is_dir():
-        print(f"[ERROR] core path not found: {core_path}", file=sys.stderr)
-        sys.exit(1)
-
-    subfolders = [e.name for e in sorted(core_path.iterdir()) if e.is_dir()]
-
     total_changed = 0
-    for sub in subfolders:
-        folder = core_path / sub
-        classes_by_header: dict = {}
-        all_classes: list = []
-        for header in find_headers(folder):
-            try:
-                classes = process_header(header, args.clang, includes, args.clang_args, project_root)
-            except Exception as exc:  # keep going; report the offending header
-                print(f"  [WARN] {header}: {exc}", file=sys.stderr)
-                continue
-            if classes:
-                classes_by_header[header] = classes
-                all_classes.extend(classes)
 
-        # Per-header gen.h files
-        for header, classes in classes_by_header.items():
-            gen_h = header.with_name(header.stem + ".gen.h")
-            if write_if_changed(gen_h, generate_gen_header(classes, header, project_root)):
-                total_changed += 1
-                print(f"  [{sub}] updated {gen_h.name}")
+    if not args.skip_core:
+        if not core_path.is_dir():
+            print(f"[ERROR] core path not found: {core_path}", file=sys.stderr)
+            sys.exit(1)
+        subfolders = [e.name for e in sorted(core_path.iterdir()) if e.is_dir()]
+        for sub in subfolders:
+            folder = core_path / sub
+            total_changed += process_source_dir(
+                folder, sub, core_path, args.clang, includes, args.clang_args, project_root
+            )
 
-        # Per-subfolder register files (always emitted so the engine has the symbol)
-        out_h = folder / f"register_{sub}_types.gen.h"
-        out_cpp = folder / f"register_{sub}_types.gen.cpp"
-        if write_if_changed(out_h, generate_register_header(sub)):
-            total_changed += 1
-            print(f"  [{sub}] updated {out_h.name}")
-        if write_if_changed(out_cpp, generate_register_cpp(sub, all_classes, core_path)):
-            total_changed += 1
-            print(f"  [{sub}] updated {out_cpp.name}")
+    for mp in args.module_paths:
+        mod_path = Path(mp).resolve()
+        if not mod_path.is_dir():
+            print(f"[WARN] module path not found: {mod_path}", file=sys.stderr)
+            continue
+        # Named after the directory itself (e.g. "vex_renderer"), producing
+        # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp} -- the
+        # module's own xmake.lua adds that cpp to its file list, same idea as
+        # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp.
+        total_changed += process_source_dir(
+            mod_path, mod_path.name, mod_path, args.clang, includes, args.clang_args, project_root
+        )
 
     print(f"Done ({total_changed} file(s) updated).")
 

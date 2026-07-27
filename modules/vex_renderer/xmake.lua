@@ -81,11 +81,26 @@ if has_config("enable_vex_renderer") then
         exe_packages = {"vex"},
         exe_packages_windows = {"directx12-agility"},
         exe_rules = {"vex_renderer.deploy_runtime"},
+        -- Produced by generate_reflection.py --module-path (see run_codegen in
+        -- the top-level xmake.lua): the module's _bind_members() definitions,
+        -- generated the same way core/*/register_<sub>_types.gen.cpp are.
+        generated_files = {"register_vex_renderer_types.gen.cpp"},
     })
 
     for _, variant in ipairs({"editor", "standalone"}) do
         target("vex_renderer_" .. variant)
             add_packages("vex", {public = false})
+            -- vex_renderer_<variant> is a dependency of feather.<variant> (added
+            -- via feather_module_target -> add_deps), so xmake compiles its files
+            -- -- including the generated register_vex_renderer_types.gen.cpp --
+            -- before feather.<variant>'s own before_build(run_codegen) would get a
+            -- chance to produce it. Generate it here instead; see
+            -- xmake/modules/feather_codegen.lua's run_module_codegen.
+            before_build(function(target)
+                import("lib.detect.find_tool")
+                import("feather_codegen")
+                feather_codegen.run_module_codegen(target, find_tool, os.scriptdir())
+            end)
             -- Mirrors CMake's per-config Vex defines
             if is_mode("debug") then
                 add_defines("VEX_DEBUG=1", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=0")

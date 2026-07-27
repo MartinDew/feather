@@ -3,6 +3,10 @@ set_project("feather")
 set_version("1.0.0")
 set_languages("cxx23", "clatest")
 
+-- Custom import()-able modules (xmake/modules/*.lua), e.g. feather_codegen --
+-- registered before anything that might import() from a script-scope closure.
+add_moduledirs(path.join(os.scriptdir(), "xmake", "modules"))
+
 -- ---- Options and helpers ------------------------------------------------
 includes("xmake/options.lua")
 includes("xmake/helper.lua")
@@ -100,74 +104,37 @@ local GENERATED_SOURCE = {
     -- Embedded resources are header-only (raw_resources/*.gen.h), so no .cpp here.
 }
 
--- Collects the include dirs clang needs to parse engine headers during codegen:
--- the engine roots plus every resolved package's include dirs (flecs, sdl3,
--- directxmath, ...). Missing dirs only cause parse errors for headers that need
--- them, so this is best-effort and defensive.
-local function collect_codegen_includes(target)
-    local proj = os.projectdir()
-    local incs = {
-        proj,
-        path.join(proj, "core"),
-        path.join(proj, "thirdparty", "SimpleMath"),
-    }
-    for _, pkg in pairs(target:pkgs() or {}) do
-        for _, dir in ipairs(table.wrap(pkg:get("includedirs"))) do table.insert(incs, dir) end
-        for _, dir in ipairs(table.wrap(pkg:get("sysincludedirs"))) do table.insert(incs, dir) end
-        local installdir = pkg:installdir()
-        if installdir then table.insert(incs, path.join(installdir, "include")) end
-    end
-    return incs
-end
-
--- Resolves a clang executable for the JSON-AST parse. Prefers the xrepo 'llvm'
--- package (added to the target as a binary/tool-only dep), then a clang on PATH,
--- then the target's C++ compiler when it is itself clang-based.
-local function resolve_clang(target)
-    import("lib.detect.find_tool")
-    local pkg = target:pkg("llvm")
-    if pkg and pkg:installdir() then
-        local exe = is_host("windows") and "clang.exe" or "clang"
-        local cand = path.join(pkg:installdir(), "bin", exe)
-        if os.isfile(cand) then return cand end
-    end
-    local t = find_tool("clang")
-    if t then return t.program end
-    local cxx = target:tool("cxx")
-    if cxx and cxx:find("clang", 1, true) then return cxx end
-    return nil
-end
-
 -- Runs both codegen scripts before any source file compiles; both use
--- write_if_changed() internally, so repeated runs are cheap.
+-- write_if_changed() internally, so repeated runs are cheap. The clang
+-- resolution / include collection / actual generate_reflection.py invocation
+-- live in xmake/modules/feather_codegen.lua, imported below, rather than as
+-- plain functions in this file: on_load/before_build/etc scripts run inside a
+-- sandbox with its own _ENV that doesn't see ordinary Lua globals defined at
+-- xmake.lua description scope, only xmake's own APIs and import()ed modules --
+-- and modules/vex_renderer/xmake.lua's own before_build hook needs this same
+-- logic (see feather_codegen.run_module_codegen and the comment there for why).
 local function run_codegen(target)
+    import("lib.detect.find_tool")
+    import("feather_codegen")
     local proj = os.projectdir()
 
-    local clang = resolve_clang(target)
-    if not clang then
-        raise("[codegen] no clang found. Install the 'llvm' xrepo package (fetched automatically) "
-              .. "or put clang on PATH so reflection headers can be parsed.")
-    end
-
-    local argv = {
-        path.join(proj, "tools", "generate_reflection.py"),
-        "--core-path", path.join(proj, "core"),
-        "--project-root", proj,
-        "--clang", clang,
-    }
-    for _, inc in ipairs(collect_codegen_includes(target)) do
-        table.insert(argv, "-I")
-        table.insert(argv, inc)
-    end
-    if is_plat("windows") then
-        for _, def in ipairs({"-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN"}) do
-            table.insert(argv, "--clang-arg")
-            table.insert(argv, def)
+    -- Modules using FCLASS live outside core/ and need their own --module-path so
+    -- the generator scans them too (see process_source_dir() in
+    -- generate_reflection.py). This pass is redundant with vex_renderer's own
+    -- before_build hook (feather_codegen.run_module_codegen) -- that one exists
+    -- for build-ordering correctness, this one keeps `xmake` alone (without a full
+    -- rebuild) sufficient to refresh everything. vex_renderer is skipped entirely
+    -- on macOS (see modules/vex_renderer/xmake.lua) and gated by enable_vex_renderer
+    -- elsewhere, so mirror both checks here rather than feeding the generator a
+    -- directory whose FCLASS headers aren't actually being compiled into this build.
+    local module_dirs = {}
+    if not is_plat("macosx") and has_config("enable_vex_renderer") then
+        local vex_dir = path.join(proj, "modules", "vex_renderer")
+        if os.isdir(vex_dir) then
+            table.insert(module_dirs, vex_dir)
         end
     end
-
-    cprint("${cyan}[codegen]${reset} generate_reflection.py (clang=%s)", clang)
-    os.vrunv("python3", argv, {curdir = proj})
+    feather_codegen.run_core_codegen(target, find_tool, module_dirs)
 
     cprint("${cyan}[codegen]${reset} generate_embedded_resources.py")
     os.vrunv("python3", {
@@ -254,9 +221,13 @@ for _, variant in ipairs({"editor", "standalone"}) do
 
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
-        -- Binary/tool-only: provides the `clang` used by reflection codegen. Marked
-        -- kind="binary" in thirdparty/xmake.lua so nothing is linked into the exe.
-        add_packages("llvm")
+        -- Binary/tool-only: provides the `clang` used by reflection codegen when no
+        -- system clang is found. Marked kind="binary" in thirdparty/xmake.lua so
+        -- nothing is linked into the exe. Only added (and only fetched) when
+        -- fetch_llvm_for_codegen is enabled -- feather_codegen.resolve_clang() prefers PATH.
+        if has_config("fetch_llvm_for_codegen") then
+            add_packages("llvm")
+        end
 
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
