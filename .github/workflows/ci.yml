@@ -17,11 +17,12 @@ jobs:
       matrix:
         mode: [ debug, releasedbg, release ]
         config:
+          # Disabled for now due to a lack of resources to test on MacOS. If you want to test on MacOS, uncomment the following lines and add a MacOS runner.
           # ── macOS (Apple Clang) ──────────────────────────────────────────
-          - name: macOS
-            os: macos-latest
-            toolchain_flag: ""
-            # vex_renderer is disabled on Apple in its own xmake.lua
+          # - name: macOS
+          #   os: macos-latest
+          #   toolchain_flag: ""
+          
 
           # ── Linux (LLVM/Clang) ───────────────────────────────────────────
           - name: Linux
