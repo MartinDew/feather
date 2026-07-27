@@ -9,29 +9,30 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.config.name }} / ${{ matrix.build_type }}
+    name: ${{ matrix.config.name }} / ${{ matrix.mode }}
     runs-on: ${{ matrix.config.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        build_type: [ Debug, Release, Development ]
+        mode: [ debug, releasedbg, release ]
         config:
+          # Disabled for now due to a lack of resources to test on MacOS. If you want to test on MacOS, uncomment the following lines and add a MacOS runner.
           # ── macOS (Apple Clang) ──────────────────────────────────────────
-          - name: macOS
-            os: macos-latest
-            extra_cmake_flags: ""
-            # vex_renderer returns() early on Apple in its own CMakeLists
+          # - name: macOS
+          #   os: macos-latest
+          #   toolchain_flag: ""
+          
 
-          # ── Linux (system Clang) ─────────────────────────────────────────
+          # ── Linux (LLVM/Clang) ───────────────────────────────────────────
           - name: Linux
             os: ubuntu-24.04
-            extra_cmake_flags: "-DUSE_LLVM=ON -DLLVM_USE_LIBCXX=ON"
+            toolchain_flag: "--toolchain=gcc"
 
-          # ── Windows (LLVM / clang-cl, single-config Ninja) ───────────────
+          # ── Windows (clang-cl) ───────────────────────────────────────────
           - name: Windows LLVM
             os: windows-latest
-            extra_cmake_flags: "-DUSE_LLVM=ON"
+            toolchain_flag: "--toolchain=clang-cl"
 
     steps:
       # ── Checkout ──────────────────────────────────────────────────────────
@@ -40,41 +41,36 @@ jobs:
         with:
           submodules: recursive
 
-      # ── Python (required by GenerateEmbeddedResources) ────────────────────
+      # ── Python (required by codegen scripts) ──────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      # ── Install xmake ─────────────────────────────────────────────────────
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
 
-      # ── Common dependencies ────────────────────────────────────────────────
-      # Vulkan sdk
+      # ── Vulkan SDK ────────────────────────────────────────────────────────
       - name: Setup Vulkan SDK
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
           vulkan-use-cache: true
           vulkan-query-version: latest
 
+      # ── LLVM (Linux + Windows) ────────────────────────────────────────────
       - name: Install LLVM
-        if: runner.os == 'Windows' || runner.os == 'Linux'
+        if: runner.os == 'Windows'
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "20"
 
-      # ── macOS dependencies ────────────────────────────────────────────────
-      - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ninja
-
-      # ── Linux dependencies ────────────────────────────────────────────────
-      # Add any extra system libs your thirdparties need (SDL3, assimp, etc.)
-      # under the libx11-dev / libgl lines below.
+      # ── Linux system dependencies ─────────────────────────────────────────
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            ninja-build \
             clang \
             lld \
             python3 \
@@ -85,9 +81,15 @@ jobs:
             libxi-dev \
             libudev-dev
 
+      - name: Install GCC
+        uses: egor-tensin/setup-gcc@v2
+        if: runner.os == 'Linux'
+        with:
+          version: "15"
+
       - name: Install SDL deps (Linux)
         if: runner.os == 'Linux'
-        run : |
+        run: |
           sudo apt-get install -y git make \
           pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev \
           libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
@@ -107,11 +109,7 @@ jobs:
           sudo mkdir -p /usr/lib/bfd-plugins
           sudo ln -sf /usr/lib/llvm-20/lib/LLVMgold.so /usr/lib/bfd-plugins/LLVMgold.so
 
-      # ── Windows: LLVM toolchain ───────────────────────────────────────────
-      # Puts clang-cl, lld-link and llvm-lib on PATH.
-      # toolchain-llvm.cmake's find_llvm_tool() will pick them up without
-      # needing LLVM_ROOT to be set explicitly.
-
+      # ── Windows toolchain ─────────────────────────────────────────────────
       - name: Setup MSVC
         if: runner.os == 'Windows'
         uses: k3DW/setup-msvc@v1
@@ -120,8 +118,7 @@ jobs:
 
       - name: Setup LLVM In Path
         if: runner.os == 'Windows'
-        run: |
-          echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
+        run: echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
 
       - name: Remove Strawberry Perl from PATH (Windows)
         if: runner.os == 'Windows'
@@ -130,31 +127,32 @@ jobs:
           echo "PATH=$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
-      - name: Install Ninja (Windows)
-        if: runner.os == 'Windows'
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Set UTF-8 Code Page
+      - name: Set UTF-8 Code Page (Windows)
         if: runner.os == 'Windows'
         run: chcp 65001
 
-      # ── Configure (all platforms, single-config Ninja) ────────────────────
+      # ── Configure ─────────────────────────────────────────────────────────
       - name: Configure
-        run: >
-          cmake --preset ${{ matrix.build_type == 'Debug' && 'debug' || matrix.build_type == 'Release' && 'release' || 'development' }} ${{ matrix.config.extra_cmake_flags }}
+        run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
+
+      # ── Dump failed package install logs (helps diagnose cmake build errors) ─
+      - name: Dump failed package logs
+        if: failure() && runner.os == 'Linux'
+        run: |
+          find ~/.xmake/cache/packages -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read f; do
+            echo "========== $f =========="
+            tail -300 "$f"
+          done
 
       # ── Build ──────────────────────────────────────────────────────────────
-      - name: Build Editor
-        run: cmake --build --preset ${{ matrix.build_type == 'Debug' && 'debug' || matrix.build_type == 'Release' && 'release' || 'development' }} --target Editor --parallel
-
-      - name: Build Standalone
-        run: cmake --build --preset ${{ matrix.build_type == 'Debug' && 'debug' || matrix.build_type == 'Release' && 'release' || 'development' }} --target Standalone --parallel
+      - name: Build
+        run: xmake build -v
 
       # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: feather-${{ matrix.config.name }}-${{ matrix.build_type }}
-          path: build/*/bin/*
+          name: feather-${{ matrix.config.name }}-${{ matrix.mode }}
+          path: build/bin/*
           if-no-files-found: warn
           retention-days: 7

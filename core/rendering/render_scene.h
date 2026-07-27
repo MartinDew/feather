@@ -1,4 +1,4 @@
-﻿#pragma once;
+﻿#pragma once
 
 #include "framework/cow_vector.h"
 #include "math/projection.h"

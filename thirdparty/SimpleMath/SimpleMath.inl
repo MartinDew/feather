@@ -3026,11 +3026,11 @@ inline bool Ray::intersects(const Plane& plane, _Out_ float& Dist) const noexcep
 
 #if (__cplusplus < 202002L)
 inline bool Viewport::operator==(const Viewport& vp) const noexcept {
-	return (x == vp.x && y == vp.y && width == vp.width && height == vp.height && min_depth == vp.MinDepth && max_depth == vp.MaxDepth);
+	return (x == vp.x && y == vp.y && width == vp.width && height == vp.height && min_depth == vp.min_depth && max_depth == vp.max_depth);
 }
 
 inline bool Viewport::operator!=(const Viewport& vp) const noexcept {
-	return (x != vp.x || y != vp.y || width != vp.width || height != vp.height || min_depth != vp.MinDepth || max_depth != vp.MaxDepth);
+	return (x != vp.x || y != vp.y || width != vp.width || height != vp.height || min_depth != vp.min_depth || max_depth != vp.max_depth);
 }
 #endif
 

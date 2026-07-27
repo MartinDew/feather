@@ -41,7 +41,7 @@ public:                                                                         
 	bool is_of_type(StaticString type_name) const override {                                                           \
 		return get_class_static() == type_name || Super::is_of_type(type_name);                                        \
 	}                                                                                                                  \
-	virtual StaticString get_class_name() {                                                                            \
+	virtual StaticString get_class_name() override {                                                                   \
 		return get_class_static();                                                                                     \
 	}                                                                                                                  \
                                                                                                                        \

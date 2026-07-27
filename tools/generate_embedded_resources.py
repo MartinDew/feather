@@ -1,78 +1,161 @@
 #!/usr/bin/env python3
 """
-Generate C++ header files with #embed directives for resources in raw_resources folder.
-Uses C++26 #embed feature to embed binary data directly into the compiled binary.
+Generate self-contained C++ header files that embed the contents of every file
+under raw_resources/ directly as a byte array.
+
+Each source file gets a sibling `<name>.gen.h` containing:
+
+    inline constexpr std::array<unsigned char, N> <var>  -- the raw bytes plus
+                                                            a trailing '\\0'
+    inline constexpr std::size_t  <var>_size  -- content byte count, excluding
+                                                 the trailing null terminator
+
+The bytes are pulled in at compile time with the C++26 `#embed` directive, so no
+separate translation unit / extern definition is needed. The array keeps a
+trailing null terminator so the data can be used directly as a C string (e.g.
+shader source) via `reinterpret_cast<const char*>(<var>.data())`. For raw/binary
+access use the explicit length `<var>_size` -- note `<var>.size()` is one larger
+because it includes the terminator.
+
+#embed's emitted token representation for byte values above 127 is
+implementation-defined -- it has been observed to differ between MSVC and
+clang/gcc on this project (one platform emits e.g. `239`, the other `-17` for
+the same byte), which causes narrowing errors if the bytes are brace-init'd
+directly into an `unsigned char[]`. To stay portable, each header embeds into
+a widened `int[]` inside a `consteval` function (which can hold either
+representation without narrowing), validates the values, and casts explicitly
+into the final `std::array<unsigned char, N>` global.
+
+Each generated header also carries a SHA-256 hash of the source file it was
+built from, stamped in a header comment. On subsequent runs this hash is
+compared against a freshly computed one for the source file; regeneration only
+happens when the content has actually changed, regardless of file mtimes.
 """
 
 import argparse
+import hashlib
 import os
 import sys
 from pathlib import Path
+
+HASH_MARKER = "// SOURCE_HASH: "
 
 
 def sanitize_variable_name(path: Path, base_path: Path) -> str:
     """
     Convert a file path to a valid C++ variable name.
-    Example: raw_resources/shaders/pbr_forward.slang -> pbr_forward_slang
+    Example: raw_resources/shaders/pbr_forward.slang -> shaders_pbr_forward_slang
     """
-    # Get relative path from base
     rel_path = path.relative_to(base_path)
-
-    # Replace path separators and dots with underscores
     name = str(rel_path).replace(os.sep, '_').replace('/', '_').replace('.', '_')
-
-    # Remove leading underscores
     name = name.lstrip('_')
-
     return name
 
 
-def generate_header(source_file: Path, output_file: Path, base_path: Path, dry_run: bool = False) -> None:
-    """
-    Generate a C++ header file with #embed directive for the given source file.
+def compute_source_hash(source_file: Path) -> str:
+    """Return the hex SHA-256 digest of the source file's raw bytes."""
+    return hashlib.sha256(source_file.read_bytes()).hexdigest()
 
-    Args:
-        source_file: Path to the source file to embed
-        output_file: Path where the .h file will be generated
-        base_path: Base path for calculating relative paths
-        dry_run: If True, print what would be done without writing files
+
+def read_existing_hash(output_file: Path):
     """
-    # Calculate relative path from output file to source file
+    Read the SOURCE_HASH stamped in a previously generated header, if any.
+    Returns None if the file doesn't exist, can't be read, or has no marker.
+    """
+    if not output_file.exists():
+        return None
     try:
-        rel_path = os.path.relpath(source_file, output_file.parent)
-        # Convert Windows backslashes to forward slashes for #embed
-        rel_path = rel_path.replace('\\', '/')
-    except ValueError:
-        # Different drives on Windows, use absolute path
-        rel_path = str(source_file).replace('\\', '/')
+        with open(output_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(HASH_MARKER):
+                    return line[len(HASH_MARKER):].strip()
+                # The marker is always within the first few lines; bail early
+                # once we're clearly past the header comment block.
+                if line.startswith('consteval') or line.startswith('inline constexpr'):
+                    break
+    except (OSError, UnicodeDecodeError):
+        return None
+    return None
 
-    # Generate variable name
+
+def generate_header(source_file: Path, output_file: Path, base_path: Path,
+                     source_hash: str, dry_run: bool = False) -> str:
+    """
+    Generate a self-contained header embedding the bytes of `source_file`.
+    Returns the variable name used.
+    """
     var_name = sanitize_variable_name(source_file, base_path)
+    rel_display = source_file.relative_to(base_path).as_posix()
 
-    # Generate header content
+    # The header lives next to its source file, so #embed can reference the
+    # source by its bare filename (resolved relative to the header's directory,
+    # exactly like #include "...").
+    embed_name = source_file.name
+
     header_content = f"""#pragma once
+// Auto-generated by tools/generate_embedded_resources.py -- do not edit.
+// Embedded contents of raw_resources/{rel_display}
+{HASH_MARKER}{source_hash}
+#include <array>
+#include <cstddef>
+#include <cstdint>
 
-static const unsigned char {var_name}[] = {{
-#embed "{rel_path}"
-\t, '\\0'
-}};
+// #embed's emitted token representation (signed vs. unsigned byte range) is
+// implementation-defined and has been observed to differ between MSVC and
+// clang/gcc on this project. Widening to `int` during the embed itself avoids
+// any narrowing conversion regardless of which convention the active
+// compiler uses, and the consteval validation step below converts to the
+// final unsigned byte array with an explicit, well-defined cast rather than
+// relying on brace-init narrowing checks that vary by toolchain.
+consteval auto {var_name}_validate() {{
+    int raw[] = {{
+#embed "{embed_name}" suffix(,)
+        0 // trailing null terminator (also keeps raw[] well-formed for an
+          // empty source file, where #embed emits nothing)
+    }};
+    // The terminator is kept in the final array so the data is usable directly
+    // as a C string; {var_name}_size below reports the content length without it.
+    constexpr std::size_t count = sizeof(raw) / sizeof(int);
+
+    std::array<uint8_t, count> out{{}};
+    for (std::size_t i = 0; i < count; ++i) {{
+        int v = raw[i];
+        // A byte value should always map into [-128, 255] regardless of
+        // which signedness convention this toolchain's #embed used. Anything
+        // outside that range means the assumption above doesn't hold for
+        // this compiler and needs investigating.
+        if (v < -128 || v > 255) {{
+            throw "{var_name}: embedded byte out of expected range -- #embed representation assumption violated";
+        }}
+        out[i] = static_cast<uint8_t>(v);
+    }}
+    return out;
+}}
+
+inline constexpr std::array {var_name} = {var_name}_validate();
+
+// Byte count of the embedded resource, excluding the trailing null terminator.
+// Use this for raw/binary access; {var_name}.size() includes the terminator.
+inline constexpr std::size_t {var_name}_size = {var_name}.size() - 1;
 """
 
     if dry_run:
-        print(f"[dry-run] Would generate: {output_file}")
-        return
+        print(f"[dry-run] Would generate header: {output_file}")
+        return var_name
 
-    # Write header file
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
         f.write(header_content)
 
-    print(f"Generated: {output_file}")
+    print(f"Generated header: {output_file}")
+    return var_name
 
 
-def clean_generated(raw_resources_dir: Path, dry_run: bool = False) -> None:
-    """Remove all .gen.h files under raw_resources_dir."""
+def clean_generated(raw_resources_dir: Path, project_root: Path, dry_run: bool = False) -> None:
+    """Remove all generated .gen.h files (and any stale resources.gen.cpp)."""
     removed_count = 0
+
     for gen_file in sorted(raw_resources_dir.rglob('*.gen.h')):
         if dry_run:
             print(f"[dry-run] Would remove: {gen_file}")
@@ -81,8 +164,18 @@ def clean_generated(raw_resources_dir: Path, dry_run: bool = False) -> None:
             print(f"Removed: {gen_file}")
         removed_count += 1
 
+    # Clean up the legacy single-cpp artifact if it is still lying around.
+    legacy_cpp = raw_resources_dir / 'resources.gen.cpp'
+    if legacy_cpp.exists():
+        if dry_run:
+            print(f"[dry-run] Would remove: {legacy_cpp}")
+        else:
+            legacy_cpp.unlink()
+            print(f"Removed: {legacy_cpp}")
+        removed_count += 1
+
     print()
-    print(f"Summary:")
+    print("Summary:")
     if dry_run:
         print(f"  Would remove: {removed_count} file(s)")
     else:
@@ -92,28 +185,22 @@ def clean_generated(raw_resources_dir: Path, dry_run: bool = False) -> None:
 def should_process_file(file_path: Path) -> bool:
     """
     Determine if a file should have a header generated for it.
-    Skips .h files and other build artifacts.
+    Skips generated headers, C/C++ sources and other build artifacts.
     """
-    # Skip header files themselves
-    if file_path.suffix in ['.h', '.hpp', '.hxx']:
+    if file_path.suffix in ['.h', '.hpp', '.hxx', '.cpp', '.cxx', '.cc']:
         return False
-
-    # Skip hidden files
     if file_path.name.startswith('.'):
         return False
-
-    # Skip common build artifacts
     skip_extensions = ['.o', '.obj', '.exe', '.dll', '.so', '.dylib', '.a', '.lib']
     if file_path.suffix.lower() in skip_extensions:
         return False
-
     return True
 
 
 def main():
-    """Main entry point for the script."""
     parser = argparse.ArgumentParser(
-        description="Generate C++ headers with #embed directives for raw_resources files."
+        description="Generate self-contained C++ headers embedding every file "
+                    "under raw_resources as a null-terminated byte array."
     )
     parser.add_argument(
         '--dry-run', action='store_true',
@@ -121,69 +208,72 @@ def main():
     )
     parser.add_argument(
         '--clean', action='store_true',
-        help="Remove all generated .gen.h files instead of generating them."
+        help="Remove all generated .gen.h files."
+    )
+    parser.add_argument(
+        '--force', action='store_true',
+        help="Overwrite existing generated files instead of skipping them."
     )
     args = parser.parse_args()
 
-    # Determine script directory and project root
     script_dir = Path(__file__).parent.resolve()
     project_root = script_dir.parent
     raw_resources_dir = project_root / 'raw_resources'
 
-    # Check if raw_resources directory exists
     if not raw_resources_dir.exists():
         print(f"Error: raw_resources directory not found at {raw_resources_dir}", file=sys.stderr)
         sys.exit(1)
 
     if args.clean:
-        print(f"Cleaning generated headers under: {raw_resources_dir}")
+        print(f"Cleaning generated files under: {raw_resources_dir}")
         if args.dry_run:
             print("[dry-run mode]")
         print()
-        clean_generated(raw_resources_dir, dry_run=args.dry_run)
+        clean_generated(raw_resources_dir, project_root, dry_run=args.dry_run)
         return
 
     print(f"Scanning: {raw_resources_dir}")
     print(f"Project root: {project_root}")
     if args.dry_run:
         print("[dry-run mode]")
+    elif args.force:
+        print("[force mode - overwriting existing files]")
     print()
 
-    # Track statistics
     generated_count = 0
     skipped_count = 0
+    unchanged_count = 0
 
-    # Recursively find all files in raw_resources
     for source_file in sorted(raw_resources_dir.rglob('*')):
-        # Skip directories
         if source_file.is_dir():
             continue
-
-        # Skip files that shouldn't be processed
         if not should_process_file(source_file):
             skipped_count += 1
             continue
 
-        # Generate output path (same location as source, with .h appended)
         output_file = source_file.parent / f"{source_file.name}.gen.h"
-        # skip existing files
-        if not args.dry_run and os.path.exists(output_file):
-            continue
+        source_hash = compute_source_hash(source_file)
 
-        # Generate the header
+        if not args.force and not args.dry_run:
+            existing_hash = read_existing_hash(output_file)
+            if existing_hash is not None and existing_hash == source_hash:
+                unchanged_count += 1
+                continue
+
         try:
-            generate_header(source_file, output_file, raw_resources_dir, dry_run=args.dry_run)
+            generate_header(source_file, output_file, raw_resources_dir, source_hash, dry_run=args.dry_run)
             generated_count += 1
         except Exception as e:
             print(f"Error generating header for {source_file}: {e}", file=sys.stderr)
+            continue
 
-    # Print summary
     print()
-    print(f"Summary:")
+    print("Summary:")
     if args.dry_run:
         print(f"  Would generate: {generated_count} header(s)")
     else:
         print(f"  Generated: {generated_count} header(s)")
+        print(f"  Unchanged (hash match): {unchanged_count} file(s)")
     print(f"  Skipped: {skipped_count} file(s)")
 
 

@@ -76,7 +76,7 @@ consteval VariantType get_variant_type() {
 	VARIANT_TYPE_OPTION(RID, RID)
 	VARIANT_TYPE_OPTION(Path, PATH)
 	// object
-	else if constexpr (std::is_pointer_v<T> && std::is_base_of_v<Reflected, std::remove_pointer_t<T>> ||
+	else if constexpr ((std::is_pointer_v<T> && std::is_base_of_v<Reflected, std::remove_pointer_t<T>>) ||
 					   std::is_base_of_v<Reflected, T>) {
 		return VariantType::OBJECT;
 	}
@@ -94,7 +94,7 @@ consteval VariantType get_variant_type() {
 template <typename T>
 concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
 
-class ClassInfo;
+struct ClassInfo;
 
 class Variant {
 	using InternalVariant = std::variant<
@@ -118,7 +118,7 @@ class Variant {
 
 	void set_class_info(StaticString class_name);
 
-	Variant _internal_call(std::string_view method_name, std::span<Variant> args) const;
+	[[nodiscard]] Variant _internal_call(std::string_view method_name, std::span<Variant> args) const;
 
 public:
 	// Default constructor - NIL

@@ -7,7 +7,7 @@
 #include <framework/reflection_macros.h>
 #include <main/engine_settings.h>
 
-class SDL_Window;
+struct SDL_Window;
 
 namespace feather {
 

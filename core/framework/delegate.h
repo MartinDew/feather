@@ -3,8 +3,8 @@
 #include "container_utils.h"
 #include "static_indexed_array.h"
 
-#include <functional>;
-#include <ranges>;
+#include <functional>
+#include <ranges>
 
 namespace feather {
 

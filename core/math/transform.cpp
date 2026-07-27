@@ -2,14 +2,15 @@
 
 #include <DirectXMath.h>
 
-#include <numbers>;
+#include <numbers>
 
 namespace {
 
 using feather::Vector3;
 
 bool HasNegativeScale(const Vector3& scale, const Vector3& otherScale) {
-	return XMVector3LessOrEqual(scale, DirectX::XMVectorZero()) || XMVector3LessOrEqual(otherScale, DirectX::XMVectorZero());
+	return XMVector3LessOrEqual(scale, DirectX::XMVectorZero()) ||
+			XMVector3LessOrEqual(otherScale, DirectX::XMVectorZero());
 }
 
 template <class T>
@@ -66,21 +67,26 @@ Transform Transform::multiply_using_matrix_with_scale(const Transform& a, const 
 }
 
 Matrix Transform::to_matrix_with_scale() const noexcept {
-	return Matrix::create_scale(scale) * Matrix::create_from_quaternion(rotation) * Matrix::create_translation(position);
+	return Matrix::create_scale(scale) * Matrix::create_from_quaternion(rotation) *
+			Matrix::create_translation(position);
 }
 
 Matrix Transform::to_matrix_no_scale() const noexcept {
 	return Matrix::create_from_quaternion(rotation) * Matrix::create_translation(position);
 }
 
-Vector3 Transform::get_forward_vector() const noexcept { return Vector3::transform(Vector3::forward, rotation); }
+Vector3 Transform::get_forward_vector() const noexcept {
+	return Vector3::transform(Vector3::forward, rotation);
+}
 
 Vector3 Transform::get_up_vector() const noexcept {
 	assert(is_rotation_normalized());
 	return Vector3::transform(Vector3::up, rotation);
 }
 
-Vector3 Transform::get_right_vector() const noexcept { return Vector3::transform(Vector3::right, rotation); }
+Vector3 Transform::get_right_vector() const noexcept {
+	return Vector3::transform(Vector3::right, rotation);
+}
 
 Transform Transform::inverse() const noexcept {
 	Quaternion invRot;
@@ -136,8 +142,15 @@ void Transform::rotate_to(const Vector3& eulerAngles) {
 }
 
 bool Transform::is_rotation_normalized() const {
-	const auto TestValue = DirectX::XMVectorAbs(DirectX::XMVectorSubtract(Vector3::one, DirectX::XMVector4Dot(rotation, rotation)));
-	return !DirectX::XMVector4Greater(TestValue, Quaternion{ quaternion_normalize_threshhold, quaternion_normalize_threshhold, quaternion_normalize_threshhold, quaternion_normalize_threshhold });
+	const auto TestValue =
+			DirectX::XMVectorAbs(DirectX::XMVectorSubtract(Vector3::one, DirectX::XMVector4Dot(rotation, rotation)));
+	return !DirectX::XMVector4Greater(
+			TestValue,
+			Quaternion { quaternion_normalize_threshhold,
+						 quaternion_normalize_threshhold,
+						 quaternion_normalize_threshhold,
+						 quaternion_normalize_threshhold }
+	);
 }
 
 std::tuple<Vector3, Vector3, Vector3> Transform::get_axis() const noexcept {
@@ -155,8 +168,11 @@ Transform::Transform(const Matrix& transformationMat) {
 	assert(copy.decompose(scale, rotation, position));
 }
 
-Transform::Transform(const Vector3& position, const Quaternion& rotation, const Vector3& scale) :
-		position(position), rotation(rotation), scale(scale) {}
+Transform::Transform(const Vector3& position, const Quaternion& rotation, const Vector3& scale)
+		: position(position)
+		, rotation(rotation)
+		, scale(scale) {
+}
 
 Transform Transform::construct_from_matrices_and_scale(const Matrix& mat1, const Matrix& mat2, Vector3 desiredScale) {
 	using namespace math::matrices;
@@ -180,9 +196,17 @@ Transform Transform::construct_from_matrices_and_scale(const Matrix& mat1, const
 	return result;
 }
 
-Transform make_transform_screen_space_sized_billboard(Transform objectTransform, Vector3 cameraPosition, float fovDeg, Vector2 minScreenSpaceSize, Vector2 screenSize) {
+Transform make_transform_screen_space_sized_billboard(
+		Transform objectTransform,
+		Vector3 cameraPosition,
+		float fovDeg,
+		Vector2 minScreenSpaceSize,
+		Vector2 screenSize
+) {
 	Vector3 pos = objectTransform.position;
-	objectTransform.rotation = Quaternion::create_from_rotation_matrix(Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert());
+	objectTransform.rotation = Quaternion::create_from_rotation_matrix(
+			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert()
+	);
 	float distanceToObject = Vector3::distance(cameraPosition, pos);
 	const float maxConstantSizeDistance = 200.0f; // After this distance, object will scale with perspective
 
@@ -193,7 +217,8 @@ Transform make_transform_screen_space_sized_billboard(Transform objectTransform,
 		effectiveDistance = maxConstantSizeDistance * ratio;
 	}
 
-	float screenHeightInWorldUnits = 2.0f * tanf(fovDeg * 0.5f * (std::numbers::pi_v<float> / 180.0f)) * effectiveDistance;
+	float screenHeightInWorldUnits =
+			2.0f * tanf(fovDeg * 0.5f * (std::numbers::pi_v<float> / 180.0f)) * effectiveDistance;
 	Vector2 desiredWorldSize = (minScreenSpaceSize / screenSize) * screenHeightInWorldUnits;
 
 	Vector2 scaleFactors;
@@ -209,7 +234,9 @@ Transform make_transform_screen_space_sized_billboard(Transform objectTransform,
 
 Transform make_transform_billboard(Transform objectTransform, Vector3 cameraPosition) {
 	Vector3 pos = objectTransform.position;
-	objectTransform.rotation = Quaternion::create_from_rotation_matrix(Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert());
+	objectTransform.rotation = Quaternion::create_from_rotation_matrix(
+			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert()
+	);
 	return objectTransform;
 }
 
@@ -221,7 +248,7 @@ Transform Transform::get_relative_transform(const Transform& other) const {
 	Transform result;
 
 	if (!other.is_rotation_normalized())
-		return Transform{};
+		return Transform {};
 
 	if (HasNegativeScale(scale, other.scale)) {
 		return multiply_using_matrix_with_scale(*this, other);

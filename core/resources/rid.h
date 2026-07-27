@@ -10,8 +10,7 @@ struct RID {
 	size_t id { 0 };
 
 	static constexpr RID invalid();
-	;
-	bool is_valid() const;
+	[[nodiscard]] bool is_valid() const;
 	bool operator==(const RID&) const = default;
 	bool operator<(const RID& o) const { return id < o.id; }
 };

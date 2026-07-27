@@ -1,6 +1,6 @@
 #pragma once
-#include <functional>;
-#include <utility>;
+#include <functional>
+#include <utility>
 
 template <class T, class TRet, class... TArgs>
 constexpr std::function<TRet(TArgs...)> bind_method(TRet (T::*callback)(TArgs...), T* ptr) {
