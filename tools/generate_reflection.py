@@ -663,7 +663,18 @@ def _candidate_class_names(text: str, occurrences: list) -> set:
 
 
 def process_header(header: Path, clang: str, includes: list, extra_args: list, project_root: Path) -> list:
-    text = header.read_text(encoding="utf-8", errors="replace")
+    # newline="" disables universal-newline translation: on a CRLF checkout (the
+    # git default on Windows unless core.autocrlf/.gitattributes forces LF),
+    # Path.read_text()'s default translation of "\r\n" -> "\n" would silently
+    # collapse one byte per line, making every offset/line number computed here
+    # increasingly diverge from clang's AST-dump offsets (which are raw byte
+    # offsets into the on-disk CRLF file). build_class()'s occurrence-to-record
+    # range check then misses classes further down the file -- observed as
+    # PBRMaterial (last class in material.h) silently missing its GEN_BODY
+    # macro on a CRLF Windows checkout while earlier classes in the same file
+    # still resolved. Path.open()'s newline param works on all Python 3
+    # versions, unlike Path.read_text()'s (3.13+ only).
+    text = header.open(encoding="utf-8", errors="replace", newline="").read()
     occ = scan_fclass_occurrences(text)
     if not occ:
         return []
@@ -772,12 +783,14 @@ def main():
                     help="additional (non-core) source dir to scan (repeatable)")
     ap.add_argument("--skip-core", action="store_true",
                     help="don't scan --core-path; only process --module-path dirs. "
-                         "Used to codegen a single module without re-scanning all of "
-                         "core -- e.g. from a module's own before_build, which (unlike "
-                         "the main executable's before_build) runs before a *dependency* "
-                         "static-lib target's files compile, so it can't wait for the "
-                         "executable's own before_build to have produced the module's "
-                         "register_<name>_types.gen.cpp first.")
+                         "For manually refreshing a single module's own generated "
+                         "files without re-scanning all of core. NOT used by the "
+                         "xmake wiring (xmake/modules/feather_codegen.lua): a "
+                         "module's headers transitively include core headers that "
+                         "need their own .gen.h too, and a module target's files "
+                         "may compile before the main executable's before_build has "
+                         "produced core's, so both the module's own before_build and "
+                         "the executable's must generate core in full.")
     args = ap.parse_args()
 
     core_path = args.core_path.resolve()

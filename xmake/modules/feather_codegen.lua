@@ -69,9 +69,12 @@ local function common_argv(target, clang, extra)
         table.insert(argv, inc)
     end
     if is_plat("windows") then
+        -- Must be a single "--clang-arg=-DFOO" token, not two separate argv
+        -- entries: Python's argparse sees a value starting with "-" as looking
+        -- like another option and refuses to consume it as --clang-arg's value
+        -- ("expected one argument"), even though it's a valid clang flag.
         for _, def in ipairs({"-DNOMINMAX", "-DWIN32_LEAN_AND_MEAN"}) do
-            table.insert(argv, "--clang-arg")
-            table.insert(argv, def)
+            table.insert(argv, "--clang-arg=" .. def)
         end
     end
     return argv
@@ -99,17 +102,20 @@ function run_core_codegen(target, find_tool, module_dirs)
     os.vrunv("python3", argv, {curdir = os.projectdir()})
 end
 
--- Runs generate_reflection.py for a single module directory, with core scanning
--- skipped (--skip-core). Intended for a *module's own* before_build (see
--- modules/vex_renderer/xmake.lua), not the executable's: a module target like
--- vex_renderer_standalone is a dependency of feather.standalone, and xmake
--- builds dependencies -- including compiling their files -- before the
--- depending target's own before_build runs. So by the time run_core_codegen
--- (attached to feather.standalone) would generate
--- register_vex_renderer_types.gen.cpp, xmake may already be trying to compile
--- it. Running a second, module-scoped codegen pass directly on the module
--- target's before_build closes that gap; write_if_changed makes the redundant
--- work with run_core_codegen's own --module-path pass harmless.
+-- Runs generate_reflection.py for core/ AND a single module directory.
+-- Intended for a *module's own* before_build (see modules/vex_renderer/xmake.lua),
+-- not the executable's: a module target like vex_renderer_standalone is a
+-- dependency of feather.standalone, and xmake builds dependencies -- including
+-- compiling their files -- before the depending target's own before_build runs.
+-- So by the time run_core_codegen (attached to feather.standalone) would
+-- generate core/*/*.gen.h and register_vex_renderer_types.gen.cpp, xmake may
+-- already be trying to compile the module's files -- which now transitively
+-- #include core headers that themselves need their own generated .gen.h (e.g.
+-- vex_renderer.h -> rendering/render_scene.h -> resources/material.h). This
+-- MUST include core (no --skip-core): a module-only pass leaves core's .gen.h
+-- files missing entirely, which is a harder failure than the redundant-parse
+-- cost of doing both here -- write_if_changed makes that redundant work with
+-- run_core_codegen's own later pass harmless (it just finds 0 files changed).
 function run_module_codegen(target, find_tool, module_dir)
     local clang = resolve_clang(target, find_tool)
     if not clang then
@@ -118,8 +124,8 @@ function run_module_codegen(target, find_tool, module_dir)
               .. "(large download) so reflection headers can be parsed.", path.filename(module_dir))
     end
 
-    local argv = common_argv(target, clang, {"--skip-core", "--module-path", module_dir})
+    local argv = common_argv(target, clang, {"--module-path", module_dir})
 
-    cprint("${cyan}[codegen]${reset} generate_reflection.py --skip-core --module-path %s", module_dir)
+    cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
     os.vrunv("python3", argv, {curdir = os.projectdir()})
 end
