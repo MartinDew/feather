@@ -97,9 +97,8 @@ if has_config("enable_vex_renderer") then
             -- chance to produce it. Generate it here instead; see
             -- xmake/modules/feather_codegen.lua's run_module_codegen.
             before_build(function(target)
-                import("lib.detect.find_tool")
                 import("feather_codegen")
-                feather_codegen.run_module_codegen(target, find_tool, os.scriptdir())
+                feather_codegen.run_module_codegen(os.scriptdir())
             end)
             -- Mirrors CMake's per-config Vex defines
             if is_mode("debug") then

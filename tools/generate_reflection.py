@@ -7,7 +7,7 @@ class (one that uses the FCLASS(...) macro) this tool:
 
   * recovers the class name and parent from the C++ declaration,
   * extracts member variables (with C++ accessibility) and their [[attributes]],
-  * extracts bindable methods (opt-out by default, opt-in per class),
+  * extracts bindable methods (opt-in per class via [[method]]),
   * emits a per-header "<name>.gen.h" holding the Unreal-style GEN_BODY macro
     (reflection boilerplate + generated getters/setters + optional singleton
     boilerplate + the _bind_members() declaration), and
@@ -15,20 +15,24 @@ class (one that uses the FCLASS(...) macro) this tool:
     defines every _bind_members() body and the register_<sub>_types() entry
     point the engine calls manually.
 
-Parsing is done by invoking the `clang` compiler with `-ast-dump=json` (from the
-xrepo `llvm` package) and reading the JSON with the Python standard library — no
-libclang bindings, no pip, no vendored files. Headers are parsed with
--DFEATHER_REFLECTION_PARSER=1 so FCLASS expands to nothing and parsing never
-depends on generated output.
+Parsing is purely syntactic (Python stdlib `re`, no external process, no
+compiler, no pip package) — reflection is opt-in (a member/method is only ever
+inspected once it carries a [[get]]/[[set]]/[[name]]/[[method]] attribute), so
+the tool never needs to resolve what a type or base class actually means, only
+what it is spelled as in source. That also means it can never emit a type
+other than the one written in the header (the old clang-AST backend could
+silently degrade an unresolved type to `int` when a header failed to parse —
+see REFLECTION_CODEGEN_HANDOFF.md). This is not a general C++ parser: it
+assumes well-formed, not-too-exotic C++ (no raw string literals, no digraphs,
+no reflected declarations inside preprocessor-conditional branches that differ
+in shape from the compiled branch).
 
-All writes go through write_if_changed(), so unchanged files keep their mtime and
-xmake performs no needless rebuilds.
+All writes go through write_if_changed(), so unchanged files keep their mtime
+and xmake performs no needless rebuilds.
 """
 
 import argparse
-import json
 import re
-import subprocess
 import sys
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
@@ -47,12 +51,18 @@ ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Prote
 _FCLASS_RE = re.compile(r"\bFCLASS\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
-# `class Name ... {` / `struct Name ... {`, used only to guess which class each
-# FCLASS(...) occurrence belongs to *before* we've parsed anything — that guess
-# drives -ast-dump-filter (see run_clang_ast), so it only needs to narrow the
-# clang dump, not be authoritative; build_class() still matches FCLASS occurrences
-# to records by source range, same as before.
-_CLASS_DECL_RE = re.compile(r"\b(?:class|struct)\s+(\w+)\b[^{;]*\{")
+# `class Name ... {` / `struct Name ... {`, optionally `final`, optionally a
+# base-clause. Only matches an actual *definition* (requires the opening `{`
+# immediately after an optional base clause) — a forward declaration
+# ("class Foo;") never matches since nothing between the name and the `{`
+# that base-clause group would need to stop at is present.
+_CLASS_DEF_RE = re.compile(
+    r"\b(class|struct)\s+(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
+)
+
+_ACCESS_SPEC_RE = re.compile(r"\s*(public|protected|private)\s*:")
+
+_QUALIFIER_RE = re.compile(r"^(?:static|mutable|inline|constexpr)\b\s*")
 
 
 # --------------------------------------------------------------------------- #
@@ -137,166 +147,273 @@ def parse_field_attributes(prefix_text: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# clang JSON AST parsing
+# Syntactic source scanning
 # --------------------------------------------------------------------------- #
 
-def _decode_json_stream(s: str) -> list:
-    """Decode one or more whitespace-separated top-level JSON values from s.
-    -ast-dump-filter makes clang print one JSON object per matched decl, back to
-    back, with no enclosing array — plain json.loads() can't parse that, so walk
-    it with a raw JSONDecoder instead. An unfiltered dump is just the (single)
-    TranslationUnitDecl object; this returns a one-element list for that case."""
-    decoder = json.JSONDecoder()
-    out, idx, n = [], 0, len(s)
-    while idx < n:
-        while idx < n and s[idx].isspace():
-            idx += 1
-        if idx >= n:
+class ParseError(RuntimeError):
+    """Raised for a source shape the scanner cannot make sense of, only once an
+    [[...]] attribute says the declaration in question is actually meant to be
+    reflected — an annotated member/method that can't be parsed must fail loud
+    (a silently-skipped class/property/method is exactly the kind of bug that
+    made the old clang backend's silent 'int' fallback so painful; see
+    REFLECTION_CODEGEN_HANDOFF.md)."""
+
+
+def _line_of(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def blank_comments_and_literals(text: str) -> str:
+    """Return a same-length copy of text with `//` / `/* */` comment bodies and
+    string/char literal bodies replaced by spaces (newlines preserved), so
+    every offset and line number computed against the result still lines up
+    exactly with the original source. Downstream scanning never needs to special
+    -case comments again (in particular this is what stops "// FCLASS() plain
+    reflected class" in reflection_macros.h's own doc-comment from ever being
+    mistaken for a real occurrence). Doesn't understand raw string literals
+    (R"(...)") — none of the reflected headers use them."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        two = text[i:i + 2]
+        if two == "//":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        if two == "/*":
+            out.append("  ")
+            i += 2
+            while i < n and text[i:i + 2] != "*/":
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i < n:
+                out.append("  ")
+                i += 2
+            continue
+        c = text[i]
+        if c in ("\"", "'"):
+            out.append(" ")
+            i += 1
+            while i < n and text[i] != c:
+                if text[i] == "\\" and i + 1 < n:
+                    out.append("  ")
+                    i += 2
+                    continue
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i < n:
+                out.append(" ")
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _find_matching_brace(text: str, open_pos: int) -> int:
+    """text[open_pos] must be '{'. Returns the index of the matching '}'."""
+    depth = 0
+    i, n = open_pos, len(text)
+    while i < n:
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ParseError(f"unbalanced braces starting at offset {open_pos} (line {_line_of(text, open_pos)})")
+
+
+def find_class_bodies(text: str):
+    """Yields (name, parent, tag, body_start, body_end, decl_line) for every
+    class/struct *definition* at file or namespace scope. A class nested inside
+    another class/struct body is not yielded separately — scanning resumes
+    right after a match's closing brace, so a reflected class's own body is
+    never re-entered looking for more top-level classes (mirrors the old
+    clang-backed collect_records(), which stopped recursing once it found an
+    enclosing record: a class nested inside a reflected class was never itself
+    a candidate)."""
+    pos, n = 0, len(text)
+    while pos < n:
+        m = _CLASS_DEF_RE.search(text, pos)
+        if not m:
+            return
+        tag, name, base_clause = m.group(1), m.group(2), m.group(3)
+        open_pos = m.end() - 1
+        close_pos = _find_matching_brace(text, open_pos)
+        yield name, _parse_base(base_clause or ""), tag, open_pos + 1, close_pos, _line_of(text, m.start())
+        pos = close_pos + 1
+
+
+def _parse_base(base_clause: str) -> str:
+    """First base only (mirrors the old _base_name()); strips access/virtual
+    keywords, template args, and namespace qualification down to a simple
+    name."""
+    if not base_clause.strip():
+        return ""
+    first = _split_top_level(base_clause)[0]
+    tokens = [t for t in first.split() if t not in ("public", "protected", "private", "virtual")]
+    name = " ".join(tokens)
+    return name.split("<")[0].strip().split("::")[-1]
+
+
+def iter_member_chunks(body: str):
+    """Yields ("access", level) for each access specifier and ("member", text,
+    offset) for each other depth-0 member chunk in body (body is class-body
+    text, strictly between the class's { and }; offset is relative to body's
+    own start). A member chunk is the text up to a depth-0 ';', or up to (and
+    including a ';' immediately following, if any) the matching '}' of a
+    depth-0 brace block — this covers plain declarations, inline method
+    bodies, and default member initializers that themselves contain balanced
+    (), [], {} (e.g. `Color _c = Color(1.0f, 1.0f, 1.0f, 1.0f);`). A nested
+    class/struct definition is swallowed whole into a single opaque chunk by
+    the same rule (its '{' opens depth 1 same as any other brace block) — its
+    members, including any [[...]] they carry, are never seen as this class's
+    own members, since only a chunk's *leading* attribute is ever read (see
+    classify_chunk)."""
+    n = len(body)
+    pos = 0
+    while pos < n:
+        m = _ACCESS_SPEC_RE.match(body, pos)
+        if m:
+            yield "access", m.group(1)
+            pos = m.end()
+            continue
+        depth = 0
+        i = pos
+        end = None
+        while i < n:
+            c = body[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0 and c == "}":
+                    j = i + 1
+                    while j < n and body[j] in " \t\r\n":
+                        j += 1
+                    if j < n and body[j] == ";":
+                        j += 1
+                    end = j
+                    break
+            elif c == ";" and depth == 0:
+                end = i + 1
+                break
+            i += 1
+        if end is None:
+            end = n
+        chunk = body[pos:end]
+        if chunk.strip():
+            yield "member", chunk, pos
+        pos = max(end, pos + 1)
+
+
+def _strip_leading_attrs(chunk: str):
+    """Returns (attr_text, remainder) — remainder starts at the first token
+    after all leading [[...]] attribute groups (there may be more than one,
+    e.g. `[[get(public)]] [[nodiscard]]`, though this codebase only ever uses
+    one group per member)."""
+    attr_text = ""
+    rest = chunk.lstrip()
+    while rest.startswith("[["):
+        m = _ATTR_RE.match(rest)
+        if not m:
             break
-        obj, end = decoder.raw_decode(s, idx)
-        out.append(obj)
-        idx = end
-    return out
+        attr_text += rest[:m.end()]
+        rest = rest[m.end():].lstrip()
+    return attr_text, rest
 
 
-def run_clang_ast(clang: str, header: Path, includes: list, extra_args: list, ast_dump_filter: str = None) -> list:
-    """Returns a list of top-level decoded JSON nodes. Without a filter that's a
-    single TranslationUnitDecl; with -ast-dump-filter it's zero or more decls
-    (see _decode_json_stream)."""
-    args = [
-        clang, "-x", "c++", "-std=c++23", "-fsyntax-only",
-        "-Xclang", "-ast-dump=json",
-    ]
-    if ast_dump_filter:
-        # Substring match against the decl name — deliberately over-broad (e.g.
-        # "Mesh" also matches "ComplexMesh"); collect_records still requires an
-        # exact file match, so extra hits from the same TU are harmless, and
-        # -ast-dump-filter dumping a whole TU worth of unrelated included-header
-        # decls is exactly what this flag exists to avoid.
-        args += ["-Xclang", "-ast-dump-filter=" + ast_dump_filter]
-    args += [
-        "-DFEATHER_REFLECTION_PARSER=1",
-        "-Wno-attributes", "-Wno-unknown-attributes",
-        "-ferror-limit=0",
-    ]
-    for inc in includes:
-        args += ["-I", str(inc)]
-    args += extra_args
-    args.append(str(header))
-    proc = subprocess.run(args, capture_output=True, text=True)
-    # clang emits the JSON on stdout even with parse errors; only bail if empty.
-    if not proc.stdout.strip():
-        if ast_dump_filter:
-            return []  # filter matched nothing in this TU -- not an error
-        raise RuntimeError(f"clang produced no AST for {header}:\n{proc.stderr}")
-    return _decode_json_stream(proc.stdout)
+_NON_MEMBER_LEAD_WORDS = {"friend", "using", "typedef", "static_assert", "template", "enum"}
+_IDENT_RE = re.compile(r"[A-Za-z_]\w*")
 
 
-def _node_file(node: dict, current: str) -> str:
-    """clang JSON only records 'file' when it changes; inherit otherwise."""
-    loc = node.get("loc") or {}
-    if "file" in loc:
-        return loc["file"]
-    # range.begin may also carry the file marker
-    rng = node.get("range") or {}
-    beg = rng.get("begin") or {}
-    if "file" in beg:
-        return beg["file"]
-    return current
+def classify_chunk(chunk: str):
+    """Parses the leading [[...]] attributes off a member chunk (see
+    iter_member_chunks) and classifies the rest. Returns a dict:
+      {"attrs": {...}, "kind": "method"|"field"|None, ...kind-specific keys}
+    kind is None for declarations that are never reflectable members (friend/
+    using/typedef/static_assert/template/enum, or an empty/garbage chunk) —
+    the caller skips those outright, attrs or not."""
+    attr_text, decl = _strip_leading_attrs(chunk)
+    attrs = parse_field_attributes(attr_text)
+    decl = decl.strip()
+    if decl.endswith(";"):
+        decl = decl[:-1].rstrip()
 
+    fw = _IDENT_RE.match(decl)
+    if not decl or (fw and fw.group(0) in _NON_MEMBER_LEAD_WORDS):
+        return {"attrs": attrs, "kind": None}
 
-def _is_class_record(node: dict) -> bool:
-    return bool(node.get("kind") == "CXXRecordDecl" and node.get("name") and node.get("inner")
-                and node.get("tagUsed") in ("class", "struct"))
+    # First depth-0 '(' or '=' decides method vs. field: a '(' must be checked
+    # *before* the generic depth-increment for "([{", or it would always be
+    # swallowed by that branch first and never recorded (paren_pos would stay
+    # None forever, silently misclassifying every method as a field).
+    depth = 0
+    paren_pos = eq_pos = None
+    for idx, c in enumerate(decl):
+        if c == "(":
+            if depth == 0:
+                paren_pos = idx
+                break
+            depth += 1
+        elif c in "[{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == "=" and depth == 0:
+            eq_pos = idx
+            break
 
+    if paren_pos is not None:
+        prefix = decl[:paren_pos]
+        if re.search(r"\boperator\b", prefix):
+            return {"attrs": attrs, "kind": None}
+        idents = list(_IDENT_RE.finditer(prefix))
+        if not idents:
+            return {"attrs": attrs, "kind": None}
+        name_m = idents[-1]
+        name = name_m.group(0)
+        is_dtor = prefix[:name_m.start()].rstrip().endswith("~")
+        is_static = bool(re.search(r"(?<!\w)static(?!\w)", prefix[:name_m.start()]))
+        return {"attrs": attrs, "kind": "method", "name": name,
+                "is_static": is_static, "is_dtor": is_dtor}
 
-def collect_records(node: dict, target: str, current_file: str, found: list):
-    """Walk the AST in document order, tracking the current file, collecting the
-    top-level CXXRecordDecl definitions that live in the target header."""
-    current_file = _node_file(node, current_file)
-    for child in node.get("inner", []) or []:
-        cf = _node_file(child, current_file)
-        if _is_class_record(child) and cf == target:
-            found.append(child)
-            # do not recurse into members looking for more top-level records
-        else:
-            collect_records(child, target, cf, found)
-        current_file = cf
-
-
-def collect_records_from_roots(roots: list, target: str, found: list):
-    """Like collect_records, but for a list of top-level nodes rather than a
-    single TranslationUnitDecl. With -ast-dump-filter each root is typically the
-    matched CXXRecordDecl itself (no TU wrapper), so check the root directly
-    before recursing into it."""
-    for root in roots:
-        cf = _node_file(root, target)
-        if _is_class_record(root) and cf == target:
-            found.append(root)
-        else:
-            collect_records(root, target, cf, found)
-
-
-def _base_name(record: dict) -> str:
-    for base in record.get("bases", []) or []:
-        qt = (base.get("type") or {}).get("qualType", "")
-        # strip namespaces and template args -> simple name
-        simple = qt.split("<")[0].strip().split("::")[-1]
-        if simple:
-            return simple
-    return ""
-
-
-def _member_line(node: dict) -> int:
-    loc = node.get("loc") or {}
-    if "line" in loc:
-        return loc["line"]
-    rng = node.get("range") or {}
-    beg = rng.get("begin") or {}
-    return beg.get("line", 0)
-
-
-def _member_offset(node: dict) -> int:
-    loc = node.get("loc") or {}
-    if "offset" in loc:
-        return loc["offset"]
-    rng = node.get("range") or {}
-    beg = rng.get("begin") or {}
-    return beg.get("offset", -1)
-
-
-def _qual_return_and_params(qual_type: str):
-    """From a method qualType like 'float (int, bool) const' return
-    (is_const, param_count)."""
-    is_const = bool(re.search(r"\)\s*const\b", qual_type))
-    m = re.search(r"\(([^)]*)\)", qual_type)
-    params = []
-    if m and m.group(1).strip() and m.group(1).strip() != "void":
-        params = _split_top_level(m.group(1))
-    return is_const, len(params)
+    region = decl if eq_pos is None else decl[:eq_pos]
+    region = region.rstrip()
+    idents = list(_IDENT_RE.finditer(region))
+    if not idents:
+        return {"attrs": attrs, "kind": None}
+    name_m = idents[-1]
+    member = name_m.group(0)
+    type_spelling = region[:name_m.start()].strip()
+    is_static = bool(re.search(r"(?<!\w)static(?!\w)", type_spelling))
+    while True:
+        stripped = _QUALIFIER_RE.sub("", type_spelling)
+        if stripped == type_spelling:
+            break
+        type_spelling = stripped
+    type_spelling = re.sub(r"\s+", " ", type_spelling).strip()
+    return {"attrs": attrs, "kind": "field", "name": member,
+            "type": type_spelling, "is_static": is_static}
 
 
 # --------------------------------------------------------------------------- #
-# Building the class descriptor from a record + raw source
+# Building the class descriptor from a parsed body + raw source
 # --------------------------------------------------------------------------- #
 
-def build_class(record: dict, header: Path, text: str, fclass_index: list):
-    """Returns None if no FCLASS(...) occurrence actually falls inside this
-    record's own source range -- collect_records finds every class/struct in the
-    file, reflected or not, so this is the only thing that stops e.g. a plain
-    helper struct sharing a header with a real FCLASS class from being reflected
-    too."""
-    name = record["name"]
-    parent = _base_name(record)
-
-    # Find the FCLASS occurrence that belongs to this record (first one at/after
-    # the record's opening, before the next record). Matched by source order.
-    rng = record.get("range") or {}
-    start = (rng.get("begin") or {}).get("offset", 0)
-    end = (rng.get("end") or {}).get("offset", len(text))
-    modifiers, fclass_line, matched = set(), _member_line(record), False
+def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclass_index: list,
+                 body_start: int, body_end: int) -> "ClassDesc | None":
+    """Returns None if no FCLASS(...) occurrence falls inside [body_start,
+    body_end) — find_class_bodies() finds every class/struct definition in the
+    file, reflected or not, so this is what stops a plain helper struct
+    sharing a header with a real FCLASS class from being reflected too."""
+    modifiers, fclass_line, matched = set(), 0, False
     for (off, line, args) in fclass_index:
-        if start <= off <= end:
+        if body_start <= off <= body_end:
             modifiers = {a.strip() for a in args.split(",") if a.strip()}
             fclass_line = line
             matched = True
@@ -311,60 +428,60 @@ def build_class(record: dict, header: Path, text: str, fclass_index: list):
         is_abstract="abstract" in modifiers,
     )
 
-    # Walk members in order, tracking access. struct defaults to public, class to
-    # private. clang 22's JSON AST doesn't emit a per-node "access" key at all
-    # (confirmed empirically), so AccessSpecDecl tracking is the *only* source of
-    # truth here, not just a fallback -- current_access must start fresh at
-    # default_access for this walk. It's a separate loop from the method-name
-    # count below on purpose: that loop must not perturb current_access, or
-    # members appearing before the first explicit access specifier inherit
-    # whatever access the last specifier in the whole class left behind instead
-    # of the correct default.
-    default_access = "public" if record.get("tagUsed") == "struct" else "private"
-
+    # First pass: tally method names (constructors/destructors/operators
+    # excluded, matching the old clang backend's CXXMethodDecl-only tally) so
+    # overloaded names can be excluded from binding below — &T::name would be
+    # ambiguous for an overload, whether or not the overload itself is
+    # annotated.
     method_names: dict = {}
-    for m in record.get("inner", []) or []:
-        if m.get("kind") == "CXXMethodDecl":
-            method_names[m.get("name", "")] = method_names.get(m.get("name", ""), 0) + 1
+    for item in iter_member_chunks(body):
+        if item[0] != "member":
+            continue
+        info = classify_chunk(item[1])
+        if info["kind"] == "method" and not info["is_dtor"]:
+            n = info["name"]
+            if n != name:  # constructor
+                method_names[n] = method_names.get(n, 0) + 1
 
+    default_access = "public" if tag == "struct" else "private"
     current_access = default_access
 
-    for m in record.get("inner", []) or []:
-        kind = m.get("kind")
-        access = m.get("access", current_access)
-        if kind == "AccessSpecDecl":
-            current_access = m.get("access", current_access)
+    for item in iter_member_chunks(body):
+        if item[0] == "access":
+            current_access = item[1]
             continue
-        access = m.get("access", current_access)
+        _, chunk, offset = item
+        info = classify_chunk(chunk)
+        attrs = info["attrs"]
+        kind = info["kind"]
+        if kind is None:
+            if attrs:
+                raise ParseError(
+                    f"{header}:{_line_of(body, offset) + fclass_line - 1}: class {name}: "
+                    f"couldn't parse an annotated member (attrs={attrs!r}): {chunk.strip()[:120]!r}"
+                )
+            continue
 
-        if kind == "FieldDecl":
-            _handle_field(cls, m, text, access)
-        elif kind == "CXXMethodDecl":
-            _handle_method(cls, m, text, access, method_names)
+        if kind == "field":
+            _handle_field(cls, info, current_access, header, body, offset, fclass_line)
+        elif kind == "method":
+            if info["is_dtor"] or info["name"] == name:
+                continue  # destructor / constructor, never reflectable
+            _handle_method(cls, info, current_access, method_names, header, body, offset, fclass_line)
 
     return cls
-
-
-def _prefix_text(text: str, offset: int) -> str:
-    """Source text between the previous member boundary and this member."""
-    if offset < 0:
-        return ""
-    start = max(text.rfind(";", 0, offset), text.rfind("{", 0, offset), text.rfind("}", 0, offset))
-    return text[start + 1: offset] if start >= 0 else text[:offset]
 
 
 def _prop_name(member: str) -> str:
     return member[1:] if member.startswith("_") and len(member) > 1 else member
 
 
-def _handle_field(cls: ClassDesc, node: dict, text: str, access: str):
-    if node.get("storageClass") == "static":
+def _handle_field(cls: ClassDesc, info: dict, access: str, header: Path, body: str, offset: int, fclass_line: int):
+    if info["is_static"]:
         return
-    member = node.get("name")
-    if not member:
-        return
-    type_spelling = (node.get("type") or {}).get("qualType", "")
-    attrs = parse_field_attributes(_prefix_text(text, _member_offset(node)))
+    member = info["name"]
+    type_spelling = info["type"]
+    attrs = info["attrs"]
 
     if "ignore" in attrs:
         return
@@ -376,6 +493,10 @@ def _handle_field(cls: ClassDesc, node: dict, text: str, access: str):
     # A bare [[name(foo)]] with no get/set still implies both accessors.
     if not present_get and not present_set and "name" not in attrs:
         return
+
+    if not type_spelling:
+        raise ParseError(f"{header}: class field '{member}' near line "
+                          f"{_line_of(body, offset) + fclass_line - 1}: couldn't recover a type spelling")
 
     # [[name(foo)]] overrides the reflected property name (default: member without
     # its leading underscore).
@@ -423,19 +544,10 @@ def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, cls:
         plan.setter_kind, plan.setter_access, plan.setter_method = kind, access, method
 
 
-def _handle_method(cls: ClassDesc, node: dict, text: str, access: str, method_names: dict):
-    name = node.get("name", "")
-    if not name or name.startswith("operator"):
-        return
-    if node.get("isImplicit"):
-        return
-    # Skip templated/overloaded names: &T::name would be ambiguous. Overloads must
-    # be disambiguated by hand rather than auto-bound.
-    if method_names.get(name, 0) > 1:
-        return
-
-    is_static = node.get("storageClass") == "static"
-    attrs = parse_field_attributes(_prefix_text(text, _member_offset(node)))
+def _handle_method(cls: ClassDesc, info: dict, access: str, method_names: dict,
+                    header: Path, body: str, offset: int, fclass_line: int):
+    name = info["name"]
+    attrs = info["attrs"]
     if "ignore" in attrs:
         return
     # Methods are opt-in: only [[method]] (optionally [[method(name)]] to rebind
@@ -443,10 +555,14 @@ def _handle_method(cls: ClassDesc, node: dict, text: str, access: str, method_na
     forced = "method" in attrs
     if not forced:
         return
+    # Skip templated/overloaded names: &T::name would be ambiguous. Overloads
+    # must be disambiguated by hand rather than auto-bound.
+    if method_names.get(name, 0) > 1:
+        return
     bind_name = attrs.get("method") or name
 
     cls.methods.append(MethodPlan(
-        name=name, bind_name=bind_name, access=access, strict=forced, is_static=is_static
+        name=name, bind_name=bind_name, access=access, strict=forced, is_static=info["is_static"]
     ))
 
 
@@ -616,14 +732,10 @@ def write_if_changed(path: Path, content: str) -> bool:
 
 def scan_fclass_occurrences(text: str) -> list:
     """Return [(offset, line, raw_args), ...] for each real FCLASS(...) in the
-    text, skipping the macro definition lines in reflection_macros.h and any
-    match inside a // line comment (reflection_macros.h documents FCLASS's own
-    syntax in comments -- "//   FCLASS()  plain reflected class" -- which would
-    otherwise be scanned as a genuine occurrence; build_class() additionally
-    requires an occurrence to fall inside the specific record it's attributed
-    to, but a stray comment match can still corrupt a nearby real class's
-    modifiers, so it's worth excluding here too, not just at that later
-    checkpoint)."""
+    (already comment/literal-blanked) text, skipping the macro definition line
+    in reflection_macros.h. Comment occurrences (e.g. reflection_macros.h's own
+    "//   FCLASS()  plain reflected class" doc-comment) never reach here at all
+    — blank_comments_and_literals() already erased them before this runs."""
     out = []
     for m in _FCLASS_RE.finditer(text):
         line_start = text.rfind("\n", 0, m.start()) + 1
@@ -631,104 +743,42 @@ def scan_fclass_occurrences(text: str) -> list:
         # skip "#define FCLASS(...)" style definition lines
         if "#define" in prefix:
             continue
-        # skip matches after a "//" earlier on the same line (this is a textual
-        # scan, not a real lexer, so it doesn't handle /* */ block comments --
-        # none of the FCLASS-bearing headers use them for this kind of content)
-        if "//" in prefix:
-            continue
         line = text.count("\n", 0, m.start()) + 1
         out.append((m.start(), line, m.group(1)))
     return out
 
 
-def _candidate_class_names(text: str, occurrences: list) -> set:
-    """For each FCLASS(...) occurrence, guess the enclosing class/struct name from
-    the nearest preceding `class Name ... {` / `struct Name ... {`. Used only to
-    build -ast-dump-filter values -- a wrong or missing guess just means that
-    class falls back to the unfiltered parse (see process_header), never a
-    correctness issue: build_class() still matches occurrences to records by
-    source range once the AST is in hand."""
-    decls = [(m.start(), m.group(1)) for m in _CLASS_DECL_RE.finditer(text)]
-    names = set()
-    for (off, _line, _args) in occurrences:
-        name = None
-        for doff, dname in decls:
-            if doff <= off:
-                name = dname
-            else:
-                break
-        if name:
-            names.add(name)
-    return names
-
-
-def process_header(header: Path, clang: str, includes: list, extra_args: list, project_root: Path) -> list:
+def process_header(header: Path, project_root: Path) -> list:
     # newline="" disables universal-newline translation: on a CRLF checkout (the
     # git default on Windows unless core.autocrlf/.gitattributes forces LF),
     # Path.read_text()'s default translation of "\r\n" -> "\n" would silently
     # collapse one byte per line, making every offset/line number computed here
-    # increasingly diverge from clang's AST-dump offsets (which are raw byte
-    # offsets into the on-disk CRLF file). build_class()'s occurrence-to-record
-    # range check then misses classes further down the file -- observed as
-    # PBRMaterial (last class in material.h) silently missing its GEN_BODY
-    # macro on a CRLF Windows checkout while earlier classes in the same file
-    # still resolved. Path.open()'s newline param works on all Python 3
-    # versions, unlike Path.read_text()'s (3.13+ only).
-    text = header.open(encoding="utf-8", errors="replace", newline="").read()
+    # increasingly diverge from the raw on-disk bytes. build_class()'s
+    # occurrence-to-body range check then misses classes further down the file
+    # -- observed as PBRMaterial (last class in material.h) silently missing
+    # its GEN_BODY macro on a CRLF Windows checkout while earlier classes in
+    # the same file still resolved. Path.open()'s newline param works on all
+    # Python 3 versions, unlike Path.read_text()'s (3.13+ only).
+    raw = header.open(encoding="utf-8", errors="replace", newline="").read()
+    text = blank_comments_and_literals(raw)
     occ = scan_fclass_occurrences(text)
     if not occ:
         return []
 
-    target = str(header.resolve())
-    records: list = []
-    seen_keys = set()
-
-    def merge(roots: list):
-        found: list = []
-        collect_records_from_roots(roots, target, found)
-        if not found:
-            collect_records_from_roots(roots, str(header), found)  # unresolved-path fallback
-        for r in found:
-            # Dedup by (name, source offset) rather than clang's "id": that id is
-            # an ephemeral per-invocation address, not stable across the separate
-            # clang subprocess calls filtering makes -- e.g. filtering "Mesh" also
-            # over-matches "ComplexMesh"/"BoxMesh" (substring match), and each gets
-            # re-parsed (with a fresh id) when its own name is filtered too. Name +
-            # offset is a property of the source location, so it's stable.
-            key = (r.get("name"), _member_offset(r))
-            if key not in seen_keys:
-                seen_keys.add(key)
-                records.append(r)
-
-    # Fast path: one small clang invocation per candidate class name (~KB of
-    # JSON, well under a second) instead of one whole-TU dump (can run past a
-    # gigabyte once every transitively-included header is included -- see
-    # REFLECTION_CODEGEN_HANDOFF.md). -ast-dump-filter substring-matches, so a
-    # single filter can pull in more than one wanted class (e.g. "Mesh" also
-    # matches "ComplexMesh"); merge() dedupes across calls.
-    for name in sorted(_candidate_class_names(text, occ)):
-        roots = run_clang_ast(clang, header, includes, extra_args, ast_dump_filter=name)
-        merge(roots)
-
-    # Fallback: if filtering found nothing at all (e.g. the class-name guess
-    # failed -- unusual formatting, macro-generated class name, ...), parse the
-    # whole TU once so a previously-working header can never silently stop
-    # resolving just because the fast path missed it.
-    if not records:
-        roots = run_clang_ast(clang, header, includes, extra_args)
-        merge(roots)
-
-    return [c for c in (build_class(r, header, text, occ) for r in records) if c is not None]
+    classes = []
+    for name, parent, tag, body_start, body_end, _decl_line in find_class_bodies(text):
+        body = text[body_start:body_end]
+        cls = build_class(name, parent, tag, body, header, occ, body_start, body_end)
+        if cls is not None:
+            classes.append(cls)
+    return classes
 
 
 def find_headers(folder: Path):
     return sorted(folder.rglob("*.h")) + sorted(folder.rglob("*.hpp"))
 
 
-def process_source_dir(
-        dir_path: Path, name: str, include_base: Path,
-        clang: str, includes: list, extra_args: list, project_root: Path
-) -> int:
+def process_source_dir(dir_path: Path, name: str, include_base: Path, project_root: Path) -> int:
     """Scan dir_path recursively for FCLASS headers, emit each header's .gen.h,
     and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the per-core-
     subfolder loop and the --module-path loop in main() -- a module directory is
@@ -743,10 +793,10 @@ def process_source_dir(
     all_classes: list = []
     for header in find_headers(dir_path):
         try:
-            classes = process_header(header, clang, includes, extra_args, project_root)
-        except Exception as exc:  # keep going; report the offending header
-            print(f"  [WARN] {header}: {exc}", file=sys.stderr)
-            continue
+            classes = process_header(header, project_root)
+        except ParseError as exc:  # an annotated declaration we couldn't parse -- fatal
+            print(f"[ERROR] {exc}", file=sys.stderr)
+            sys.exit(1)
         if classes:
             classes_by_header[header] = classes
             all_classes.extend(classes)
@@ -774,11 +824,6 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--core-path", type=Path, default=Path("./core"))
     ap.add_argument("--project-root", type=Path, default=Path("."))
-    ap.add_argument("--clang", default="clang", help="path to the clang executable")
-    ap.add_argument("-I", "--include", action="append", default=[], dest="includes",
-                    help="include directory passed to clang (repeatable)")
-    ap.add_argument("--clang-arg", action="append", default=[], dest="clang_args",
-                    help="extra argument forwarded to clang (repeatable)")
     ap.add_argument("--module-path", action="append", default=[], dest="module_paths",
                     help="additional (non-core) source dir to scan (repeatable)")
     ap.add_argument("--skip-core", action="store_true",
@@ -795,7 +840,6 @@ def main():
 
     core_path = args.core_path.resolve()
     project_root = args.project_root.resolve()
-    includes = [Path(i).resolve() for i in args.includes] or [project_root, core_path]
 
     total_changed = 0
 
@@ -806,9 +850,7 @@ def main():
         subfolders = [e.name for e in sorted(core_path.iterdir()) if e.is_dir()]
         for sub in subfolders:
             folder = core_path / sub
-            total_changed += process_source_dir(
-                folder, sub, core_path, args.clang, includes, args.clang_args, project_root
-            )
+            total_changed += process_source_dir(folder, sub, core_path, project_root)
 
     for mp in args.module_paths:
         mod_path = Path(mp).resolve()
@@ -819,9 +861,7 @@ def main():
         # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp} -- the
         # module's own xmake.lua adds that cpp to its file list, same idea as
         # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp.
-        total_changed += process_source_dir(
-            mod_path, mod_path.name, mod_path, args.clang, includes, args.clang_args, project_root
-        )
+        total_changed += process_source_dir(mod_path, mod_path.name, mod_path, project_root)
 
     print(f"Done ({total_changed} file(s) updated).")
 

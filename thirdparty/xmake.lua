@@ -41,14 +41,4 @@ if is_plat("windows") then
     add_requires("directx12-agility 1.618.1", {system = false, alias = "directx12-agility"})
 end
 
--- Codegen-only toolchain: the reflection generator (tools/generate_reflection.py)
--- drives `clang -ast-dump=json` to parse fclass headers. We consume only the
--- `clang` binary from this package — nothing is linked into the engine. This is
--- opt-in (see xmake/options.lua): resolve_clang() in xmake.lua prefers a system
--- clang on PATH first, so most machines never touch this. xrepo fetches/caches
--- it automatically when enabled; the first download is large (whole toolchain).
-if has_config("fetch_llvm_for_codegen") then
-    add_requires("llvm", {system = false, kind = "binary"})
-end
-
 includes(path.join(os.scriptdir(), "SimpleMath", "xmake.lua"))

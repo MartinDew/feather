@@ -105,16 +105,15 @@ local GENERATED_SOURCE = {
 }
 
 -- Runs both codegen scripts before any source file compiles; both use
--- write_if_changed() internally, so repeated runs are cheap. The clang
--- resolution / include collection / actual generate_reflection.py invocation
--- live in xmake/modules/feather_codegen.lua, imported below, rather than as
--- plain functions in this file: on_load/before_build/etc scripts run inside a
--- sandbox with its own _ENV that doesn't see ordinary Lua globals defined at
--- xmake.lua description scope, only xmake's own APIs and import()ed modules --
--- and modules/vex_renderer/xmake.lua's own before_build hook needs this same
--- logic (see feather_codegen.run_module_codegen and the comment there for why).
+-- write_if_changed() internally, so repeated runs are cheap. The actual
+-- generate_reflection.py invocation lives in xmake/modules/feather_codegen.lua,
+-- imported below, rather than as a plain function in this file: on_load/before_build/etc
+-- scripts run inside a sandbox with its own _ENV that doesn't see ordinary Lua
+-- globals defined at xmake.lua description scope, only xmake's own APIs and
+-- import()ed modules -- and modules/vex_renderer/xmake.lua's own before_build
+-- hook needs this same logic (see feather_codegen.run_module_codegen and the
+-- comment there for why).
 local function run_codegen(target)
-    import("lib.detect.find_tool")
     import("feather_codegen")
     local proj = os.projectdir()
 
@@ -134,7 +133,7 @@ local function run_codegen(target)
             table.insert(module_dirs, vex_dir)
         end
     end
-    feather_codegen.run_core_codegen(target, find_tool, module_dirs)
+    feather_codegen.run_core_codegen(module_dirs)
 
     cprint("${cyan}[codegen]${reset} generate_embedded_resources.py")
     os.vrunv("python3", {
@@ -221,13 +220,6 @@ for _, variant in ipairs({"editor", "standalone"}) do
 
         add_deps("feather_public_api")
         add_packages("flecs", "assimp", "sdl3", "taywee_args")
-        -- Binary/tool-only: provides the `clang` used by reflection codegen when no
-        -- system clang is found. Marked kind="binary" in thirdparty/xmake.lua so
-        -- nothing is linked into the exe. Only added (and only fetched) when
-        -- fetch_llvm_for_codegen is enabled -- feather_codegen.resolve_clang() prefers PATH.
-        if has_config("fetch_llvm_for_codegen") then
-            add_packages("llvm")
-        end
 
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")

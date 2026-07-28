@@ -1,43 +1,26 @@
 # Reflection Code Generation — Handoff
 
-This document lets a fresh session (on a machine with a working `clang` and push
-access) continue the reflection-codegen work without re-deriving context. Read it
-top to bottom.
+This document lets a fresh session continue the reflection-codegen work without
+re-deriving context. Read it top to bottom.
 
 ## TL;DR status
 
-- **Branch:** `claude/reflection-codegen-automation` (created off
-  `claude/reflection-code-generation-gjs58a`).
-- **Committed & working:** the entire *infrastructure* — runtime, the new
-  `FCLASS` macro, the generator (`tools/generate_reflection.py`), and the xmake
-  wiring. Byte-compiles; the C++ is written to compile but **has not been built**
-  (this machine has no clang/llvm toolchain and no network to fetch it).
-- **Remaining:** migrate the existing ~24 fclass headers/cpps to the new
-  `FCLASS()` form and delete their hand-written `_bind_members` (the generator now
-  owns them). The tree only builds once **all** are migrated — there is no
-  half-migrated buildable state (every `FCLASS` header needs its generated
-  `.gen.h`, and any leftover hand-written `_bind_members` collides with the
-  generated one).
-- **Push is blocked here** with HTTP 403 (the session's git relay only authorizes
-  the originally-provisioned branch). Commits are exported as patches in the
-  chat; apply them on the target machine and push from there.
+- **Done:** the infrastructure (runtime, the `FCLASS` macro, the generator
+  `tools/generate_reflection.py`, the xmake wiring) and the migration of all
+  fclass headers/cpps to the `FCLASS()` form are both complete and committed.
+- **Done:** the generator's parsing backend was rewritten from a clang-AST-dump
+  backend to a purely syntactic Python-stdlib scanner. This was a deliberate
+  follow-up, not part of the original migration — see "Generator" under
+  Architecture below for how it works, and "Known risks" for its limits. There
+  is no clang/LLVM dependency anywhere in the codegen path anymore, and no
+  pip/venv requirement either.
 
-## How to resume on the new machine
-
-```bash
-git clone <FeatherEngine>
-cd FeatherEngine
-git checkout claude/reflection-code-generation-gjs58a      # base
-git checkout -b claude/reflection-codegen-automation
-git am 0001-*.patch 0002-*.patch 0003-*.patch              # the exported commits
-# ... do the migration (below) ...
-xmake f -m debug && xmake                                   # first build fetches llvm (large)
-```
-
-The user approved **migration policy A**: where a member already has a
-hand-written *trivial* accessor, delete it and let the generator own it (generated
-getters return by value, not `const&`); keep the hand-written accessor and bind it
-via `[[get(method)]]`/`[[set(method)]]` only when its body is non-trivial.
+The user approved **migration policy A** during the original `FCLASS()` migration:
+where a member already had a hand-written *trivial* accessor, it was deleted and
+the generator owns it (generated getters return by value, not `const&`); a
+hand-written accessor was kept and bound via `[[get(method)]]`/`[[set(method)]]`
+only when its body was non-trivial. This is background for reading the
+per-class notes below — the migration itself is finished, this isn't a to-do.
 
 ## Architecture (what the committed code does)
 
@@ -51,10 +34,19 @@ file when `FCLASS` expands). When parsing, the generator defines
 `FEATHER_REFLECTION_PARSER`, under which `FCLASS(...)` expands to nothing and the
 `.gen.h` include is skipped (see the migration include block below).
 
-**Generator** (`tools/generate_reflection.py`) — runs `clang -x c++ -std=c++23
--fsyntax-only -Xclang -ast-dump=json -DFEATHER_REFLECTION_PARSER=1 <includes>
-<header>` and parses the JSON with the stdlib. For each class using `FCLASS(`:
-recovers name + parent (from the C++ base), extracts fields (name, type, C++
+**Generator** (`tools/generate_reflection.py`) — a purely syntactic scanner
+(Python stdlib `re`, no compiler, no external process). Reflection is opt-in —
+a member/method is only ever inspected once it carries a
+`[[get]]`/`[[set]]`/`[[name]]`/`[[method]]` attribute — so the tool never needs
+to resolve what a type or base class *means*, only what it's spelled as in
+source: `blank_comments_and_literals()` neutralizes comments/string literals
+(preserving offsets), `find_class_bodies()` locates `class`/`struct`
+definitions and their brace-matched body span, `iter_member_chunks()` splits a
+body into depth-0 member declarations while tracking the current access level,
+and `classify_chunk()` turns a chunk into a field or method (name + verbatim
+type spelling for fields; name + static-ness for methods). For each class
+whose body contains an `FCLASS(...)` occurrence: recovers name + parent (from
+the base-clause text), extracts fields (name, type *exactly as written*, C++
 access, `[[attributes]]`), extracts methods, and emits:
 - `<header>.gen.h` — the `GEN_BODY` macro: reflection boilerplate (moved out of the
   old macro) + generated inline getters/setters + optional `FDECLARE_SINGLETON` +
@@ -65,6 +57,18 @@ access, `[[attributes]]`), extracts methods, and emits:
 
 All writes go through `write_if_changed()` — unchanged files keep their mtime.
 `.gen.h`/`.gen.cpp` are gitignored (build artifacts), matching the old generator.
+
+**Not a general C++ parser** — it assumes well-formed, not-too-exotic C++:
+no raw string literals, no digraphs/trigraphs, base clauses limited to a single
+simple (possibly namespace/template-qualified) base, and reflected
+declarations that don't differ in shape between preprocessor-conditional
+branches. This matches everything actually written in the ~22 `FCLASS`
+headers today. Because a chunk's attributes are only ever read from its own
+*leading* `[[...]]`, a nested class/struct definition is swallowed whole as
+one opaque chunk and never contributes members of its own, even if something
+inside it happens to carry a `[[method]]`/`[[get]]` — so there's no need to
+special-case "don't recurse into nested types" the way the old clang backend
+had to.
 
 **Runtime**
 - `ClassInfo` (`core/framework/class_info.h`): `enum AccessLevel {Public,Protected,
@@ -80,11 +84,13 @@ All writes go through `write_if_changed()` — unchanged files keep their mtime.
   `AccessLevel::Public`; `get_internal`/`set_internal`/`call_internal` bypass the
   check for engine/editor. `_internal_call` gained a `bool enforce_public`.
 
-**xmake** (`xmake.lua`, `thirdparty/xmake.lua`): `add_requires("llvm",
-{kind="binary"})`; `run_codegen` resolves `clang` from the llvm package (falling
-back to PATH / the cxx compiler if clang-based) and drives
-`generate_reflection.py`; `-Wno-attributes -Wno-unknown-attributes` / `/wd5030`
-silence the bare-attribute warnings.
+**xmake** (`xmake.lua`, `xmake/modules/feather_codegen.lua`): `run_codegen`
+(attached to `feather.editor`/`feather.standalone`'s `before_build`) just
+invokes `python3 tools/generate_reflection.py ...` — no compiler resolution, no
+include-dir collection, no `llvm` package. `-Wno-attributes
+-Wno-unknown-attributes` / `/wd5030` still silence the bare-attribute warnings
+(unrelated to codegen — those quiet the *compiler* about `[[get]]` etc. being
+unrecognized attributes in the actual engine build).
 
 ## Attribute rules (the contract for the migration)
 
@@ -135,9 +141,7 @@ Cpp:
   them script-visible.
 - `renderer.{h,cpp}`: `_render_scene` bound as a method → if it isn't public, annotate
   `[[method]]`.
-- `mesh.{h,cpp}`: `ComplexMesh` is declared **twice** (conditional `#if` around lines
-  35/53) — make sure only the compiled definition carries `FCLASS()`, or the generator
-  will see a duplicate class. `ComplexMesh` binds `add_indices/add_vertices/get_indices/
+- `mesh.{h,cpp}`: `ComplexMesh` binds `add_indices/add_vertices/get_indices/
   get_vertices` → if public, auto-bound; else `[[method]]` each.
 - `rendering_world_feature.{h,cpp}`: static `_load_module` bound as `"_import_module"`
   → `[[method(_import_module)]]` on the static method. (The ECS import loop in
@@ -171,13 +175,13 @@ call in the constructor (still hand-written — the generator can't inject a cto
 Singletons: `WorldSim`, `ProjectSettings`, `ResourceLoader` (and `ClassDB` uses
 `FDECLARE_SINGLETON` directly and is NOT an fclass — leave it).
 
-## Verification (on the clang machine)
+## Verification
 
-1. `python3 tools/generate_reflection.py --core-path core --project-root . --clang $(which clang) -I. -Icore`
-   (add `-I` for SimpleMath / package headers if parse errors appear). Inspect a couple of
-   generated `core/resources/material.gen.h` and `register_resources_types.gen.cpp`.
+1. `python3 tools/generate_reflection.py --core-path core --project-root . --module-path modules/vex_renderer`
+   — no `--clang`/`-I` flags anymore, nothing to resolve. Inspect a couple of generated
+   `core/resources/material.gen.h` and `register_resources_types.gen.cpp`.
 2. Run it **twice** → second run prints "0 file(s) updated" (write-if-changed holds).
-3. `xmake f -m debug && xmake` (first build fetches the `llvm` package — large).
+3. `xmake f -m debug && xmake` — works with no clang/LLVM on the machine at all now.
 4. Run `build/bin/feather.standalone`; `ClassDB::print_db()` (BETA) lists classes with
    properties/methods; check that a public property reads via `Variant::get`, a `protected`
    one is denied via `get` but returned via `get_internal`, and `_import_module` is callable.
@@ -185,20 +189,20 @@ Singletons: `WorldSim`, `ProjectSettings`, `ResourceLoader` (and `ClassDB` uses
 
 ## Known risks / things to check first
 
-- **clang JSON schema assumptions** in `generate_reflection.py`: member `access` is read
-  from each node's `"access"` field with an `AccessSpecDecl` fallback; file scoping uses
-  `loc.file`/`range.begin.file`; method const/param info parsed from `type.qualType`;
-  attributes are text-scanned from the member's source range via `loc.offset`. If a clang
-  version differs, adjust `collect_records` / `_handle_field` / `_handle_method`. Verify
-  against the actual JSON with `clang -Xclang -ast-dump=json ... | less` on one header.
-- **Include resolution for codegen**: `collect_codegen_includes` in `xmake.lua` gathers
-  package include dirs; if headers fail to parse, add the missing `-I` there. Parse errors
-  are per-header non-fatal (printed as `[WARN]`) but mean that class won't be reflected.
-- **`llvm` package** pull is heavy; if undesirable, an alternative is to use the build's own
-  clang when the toolchain is clang, or a system clang (`resolve_clang` already falls back).
-
-## Plan file
-
-The full design/plan lives at (session-local)
-`~/.claude/plans/create-another-branch-from-adaptive-wave.md`; its content is reproduced by
-this handoff. The key sections there mirror this doc.
+- **The scanner is syntactic, not semantic** (see "Not a general C++ parser" above). If a
+  new `FCLASS` header uses a shape it can't handle — multiple inheritance, a raw string
+  literal, a reflected member whose declaration differs between `#if` branches — the
+  generator raises a `ParseError` naming the file (fatal, on purpose: a silently-skipped
+  annotated member is exactly the failure mode this rewrite was meant to eliminate; see the
+  git history around "Replace the clang AST backend" for the incident that motivated it —
+  clang would silently degrade an unresolved type to `int` on a parse failure, which passed
+  CI on Linux and broke only on Windows). Fix is almost always to simplify the declaration's
+  shape, not to extend the scanner.
+- **Attribute detection is leading-only**: `classify_chunk()` only reads a member's *own*
+  leading `[[...]]`, immediately before its declarator (on the same line or the line above,
+  any number of blank lines apart — anything else in between is not scanned). Don't rely on
+  an attribute placed anywhere else.
+- **Line numbers matter**: `fclass_line` (the `FCLASS(...)` occurrence's line) feeds the
+  `<file_id>_<line>_GEN_BODY` macro name via `__LINE__`, so it must exactly match what the
+  C++ preprocessor sees. `process_header()` opens files with `newline=""` specifically to
+  keep CRLF checkouts byte-accurate — don't "simplify" that to `read_text()`.

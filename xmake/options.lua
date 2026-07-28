@@ -28,12 +28,6 @@ option("enable_clang_tidy")
     set_description("Run clang-tidy during compilation (requires compile_commands.json)")
 option_end()
 
-option("fetch_llvm_for_codegen")
-    set_default(false)
-    set_description("Fetch clang via the xrepo 'llvm' package for reflection codegen, "
-        .. "instead of using a system clang found on PATH (large download; off by default)")
-option_end()
-
 -- Toolchain selection is done via CLI flags, not options:
 --   LLVM/Clang (non-Windows):  xmake f --toolchain=llvm
 --   Clang-CL (Windows):        xmake f --toolchain=clang-cl
