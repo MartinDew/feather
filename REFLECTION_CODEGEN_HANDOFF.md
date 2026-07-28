@@ -141,8 +141,16 @@ Properties:
 4. `[[get(public|protected|private)]]` → generate with that access; bare `[[get]]` uses
    the member's access.
 5. `[[get(MethodName)]]` (arg not an access keyword) → bind that existing method, generate
-   nothing. Same for `set`.
+   nothing. Same for `set`. Can't be combined with an access keyword or `ref`.
 6. `[[name(foo)]]` → override the reflected property name (e.g. `_cached_path` → `"path"`).
+7. `[[get(ref)]]`/`[[set(ref)]]` (combinable with an access keyword, e.g.
+   `[[get(protected, ref)]]`) → generate the accessor by `const T&` instead of by-value `T`
+   (getter returns `const T&`, setter takes `const T&` and copy-assigns instead of
+   `std::move`-ing). Only the const-ref shape exists — a mutable `T&`/`T&` accessor can't
+   actually be bound: `ClassDB::bind_property_get(_if_bindable)` requires the getter be a
+   `const` member function, and the setter marshalling call site
+   (`(obj->*setter)(std::move(result.value()))` in `class_db.inl`) can't bind an rvalue to a
+   non-const reference parameter. Both are real compile errors, not style choices.
 
 Methods (default opt-out; `FCLASS(explicit_methods)` = opt-in):
 - Public instance methods auto-bind under their C++ name; `[[ignore]]` excludes.

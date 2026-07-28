@@ -25,6 +25,12 @@ silently degrade an unresolved type to `int` when a header failed to parse —
 see REFLECTION_CODEGEN_HANDOFF.md). This is not a general C++ parser: it
 assumes well-formed, not-too-exotic C++ (no raw string literals, no digraphs).
 
+[[get(...)]]/[[set(...)]] accept an access keyword and/or `ref` (in any order,
+e.g. [[get(protected, ref)]]) — `ref` returns/takes the property by const
+reference (`const T&`) instead of by-value copy; see _plan_accessor() for why
+that's the only reference form supported (a mutable T&/T& accessor can't
+actually be bound through ClassDB).
+
 A reflected member may sit inside #if/#ifdef/#ifndef/#elif/#else/#endif —
 arbitrarily nested, with arbitrary condition text (negation, &&/||, defined(),
 ...), since that text is only ever copied, never evaluated. See
@@ -147,15 +153,19 @@ def parse_field_attributes(prefix_text: str) -> dict:
     """
     Parse the [[...]] attributes that appear immediately before a member.
     Returns a dict of tokens, e.g. {"get": None, "set": "private"} or
-    {"ignore": None}. Each token may carry a single parenthesised argument.
+    {"ignore": None}. A token's parenthesised argument is kept as the raw,
+    still-comma-joined text (e.g. "public, ref") -- most callers only ever
+    have one word there and can keep treating the value as a plain string,
+    but [[get(...)]]/[[set(...)]] split it further themselves (see
+    _plan_accessor) to allow combining an access keyword with `ref`.
     """
     tokens: dict = {}
     for group in _ATTR_RE.findall(prefix_text):
         for tok in _split_top_level(group):
-            m = re.match(r"^(\w+)\s*(?:\(\s*(\w+)\s*\))?$", tok)
+            m = re.match(r"^(\w+)\s*(?:\(\s*(.*?)\s*\))?$", tok, re.DOTALL)
             if not m:
                 continue
-            tokens[m.group(1)] = m.group(2)  # arg or None
+            tokens[m.group(1)] = m.group(2)  # arg text or None
     return tokens
 
 
@@ -694,31 +704,71 @@ def _handle_field(cls: ClassDesc, info: dict, access: str, condition: str,
         set_arg = attrs.get("set")
 
     if present_get:
-        _plan_accessor(plan, "get", get_arg, access, condition, cls)
+        _plan_accessor(plan, "get", get_arg, access, condition, cls, header, body, offset, fclass_line)
     if present_set:
-        _plan_accessor(plan, "set", set_arg, access, condition, cls)
+        _plan_accessor(plan, "set", set_arg, access, condition, cls, header, body, offset, fclass_line)
 
     if plan.getter_kind != "none" or plan.setter_kind != "none":
         cls.properties.append(plan)
 
 
-def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, condition: str, cls: ClassDesc):
+_REF_KEYWORD = "ref"
+
+
+def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, condition: str, cls: ClassDesc,
+                    header: Path, body: str, offset: int, fclass_line: int):
     """Resolve one accessor per the property rules and, when generating, record
-    the inline accessor code."""
+    the inline accessor code. arg is the raw (possibly comma-joined) text
+    inside [[get(...)]]/[[set(...)]] -- e.g. "public", "ref", "public, ref",
+    or a manual accessor method name -- or None for a bare [[get]]/[[set]].
+
+    `ref` opts a generated accessor into pass/return-by-const-reference
+    instead of by-value: a getter returns `const T&` instead of `T`, a
+    setter takes `const T&` instead of `T` (skipping the by-value copy
+    -- so its body copy-assigns rather than std::move()s, since you can't
+    move out of a const reference). Only the const-ref shape is supported
+    (not a mutable T&/T&): ClassDB's bind_property_get(_if_bindable) requires
+    the getter be a `const` member function, so a mutable reference could
+    never actually be returned from it; and the setter marshalling call site
+    in class_db.inl does `(obj->*setter)(std::move(result.value()))`, which
+    won't bind to a non-const T& parameter (can't bind an rvalue to a mutable
+    lvalue reference). Both are real compile errors, not style preferences,
+    so `ref` unconditionally means const-ref -- there is no separate spelling
+    for a mutable-reference accessor."""
     prop, member, ty = plan.prop_name, plan.member_name, plan.type_spelling
-    if arg is not None and arg not in ACCESS_KEYWORDS:
+    tokens = _split_top_level(arg) if arg else []
+    access_tok = next((t for t in tokens if t in ACCESS_KEYWORDS), None)
+    is_ref = _REF_KEYWORD in tokens
+    manual_toks = [t for t in tokens if t not in ACCESS_KEYWORDS and t != _REF_KEYWORD]
+
+    def err(msg: str):
+        return ParseError(f"{header}: class {cls.name} field '{member}' near line "
+                           f"{_line_of(body, offset) + fclass_line - 1}: {msg}")
+
+    if manual_toks:
+        if len(manual_toks) > 1:
+            raise err(f"[[{which}(...)]] takes at most one manual accessor name, got {manual_toks!r}")
+        if access_tok or is_ref:
+            raise err(f"[[{which}({arg})]]: can't combine a manual accessor name ({manual_toks[0]!r}) "
+                      f"with an access keyword or 'ref' -- those only apply to a generated accessor")
         # Manual: bind an existing method, generate nothing.
-        method = arg
+        method = manual_toks[0]
         access = member_access  # reflection access follows the member by default
         kind = "manual"
     else:
-        access = arg if arg in ACCESS_KEYWORDS else member_access
+        access = access_tok or member_access
         method = f"{which}_{prop}"
         kind = "generate"
         if which == "get":
-            code = f"\t{ty} {method}() const {{ return {member}; }}"
+            if is_ref:
+                code = f"\tconst {ty}& {method}() const {{ return {member}; }}"
+            else:
+                code = f"\t{ty} {method}() const {{ return {member}; }}"
         else:
-            code = f"\tvoid {method}({ty} value) {{ {member} = std::move(value); }}"
+            if is_ref:
+                code = f"\tvoid {method}(const {ty}& value) {{ {member} = value; }}"
+            else:
+                code = f"\tvoid {method}({ty} value) {{ {member} = std::move(value); }}"
         cls.gen_getters.append((access, code, condition))
 
     if which == "get":
