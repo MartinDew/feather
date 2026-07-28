@@ -23,9 +23,15 @@ what it is spelled as in source. That also means it can never emit a type
 other than the one written in the header (the old clang-AST backend could
 silently degrade an unresolved type to `int` when a header failed to parse —
 see REFLECTION_CODEGEN_HANDOFF.md). This is not a general C++ parser: it
-assumes well-formed, not-too-exotic C++ (no raw string literals, no digraphs,
-no reflected declarations inside preprocessor-conditional branches that differ
-in shape from the compiled branch).
+assumes well-formed, not-too-exotic C++ (no raw string literals, no digraphs).
+
+A reflected member may sit inside #if/#ifdef/#ifndef/#elif/#else/#endif —
+arbitrarily nested, with arbitrary condition text (negation, &&/||, defined(),
+...), since that text is only ever copied, never evaluated. See
+iter_conditioned_chunks() for how the #if-stack is tracked and
+generate_gen_header()/_bind_members_body() for how the *same* condition is
+reproduced around the generated code, so one .gen.h is correct for every
+build config (no per-config regeneration).
 
 All writes go through write_if_changed(), so unchanged files keep their mtime
 and xmake performs no needless rebuilds.
@@ -64,6 +70,11 @@ _ACCESS_SPEC_RE = re.compile(r"\s*(public|protected|private)\s*:")
 
 _QUALIFIER_RE = re.compile(r"^(?:static|mutable|inline|constexpr)\b\s*")
 
+# A preprocessor directive line: '#' then a keyword, only ever matched right
+# at the start of a (whitespace-stripped) logical line -- see iter_member_chunks.
+_PP_KEYWORD_RE = re.compile(r"[ \t]*#[ \t]*(\w+)")
+_PP_CONDITIONAL_KEYWORDS = {"if", "ifdef", "ifndef", "elif", "else", "endif"}
+
 
 # --------------------------------------------------------------------------- #
 # Data model
@@ -81,6 +92,7 @@ class PropertyPlan:
     setter_kind: str = "none"
     setter_access: str = "public"
     setter_method: str = ""
+    condition: str = None   # verbatim (flattened) #if expression guarding this member, if any
 
 
 @dataclass
@@ -90,6 +102,7 @@ class MethodPlan:
     access: str             # public / protected / private
     strict: bool            # true when force-bound via [[method]] (hard error if unbindable)
     is_static: bool = False
+    condition: str = None   # verbatim (flattened) #if expression guarding this member, if any
 
 
 @dataclass
@@ -102,7 +115,7 @@ class ClassDesc:
     is_singleton: bool = False
     is_abstract: bool = False
     properties: list = dc_field(default_factory=list)     # list[PropertyPlan]
-    gen_getters: list = dc_field(default_factory=list)    # (access, code) inline accessor defs
+    gen_getters: list = dc_field(default_factory=list)    # (access, code, condition) inline accessor defs
     methods: list = dc_field(default_factory=list)        # list[MethodPlan]
 
 
@@ -260,23 +273,77 @@ def _parse_base(base_clause: str) -> str:
     return name.split("<")[0].strip().split("::")[-1]
 
 
+def _logical_line_end(body: str, start: int) -> int:
+    """Returns the index just past the end of the (possibly backslash-newline
+    -spliced) logical line starting at start -- i.e. past the first '\\n' that
+    isn't itself preceded by a line-continuing '\\' (optionally through a
+    '\\r'), so a long #if condition spread over several physical lines is
+    still treated as one directive."""
+    n = len(body)
+    i = start
+    while True:
+        nl = body.find("\n", i)
+        if nl == -1:
+            return n
+        j = nl - 1
+        if j >= i and body[j] == "\r":
+            j -= 1
+        if j >= i and body[j] == "\\":
+            i = nl + 1
+            continue
+        return nl + 1
+
+
 def iter_member_chunks(body: str):
-    """Yields ("access", level) for each access specifier and ("member", text,
-    offset) for each other depth-0 member chunk in body (body is class-body
-    text, strictly between the class's { and }; offset is relative to body's
-    own start). A member chunk is the text up to a depth-0 ';', or up to (and
-    including a ';' immediately following, if any) the matching '}' of a
-    depth-0 brace block — this covers plain declarations, inline method
-    bodies, and default member initializers that themselves contain balanced
-    (), [], {} (e.g. `Color _c = Color(1.0f, 1.0f, 1.0f, 1.0f);`). A nested
-    class/struct definition is swallowed whole into a single opaque chunk by
-    the same rule (its '{' opens depth 1 same as any other brace block) — its
-    members, including any [[...]] they carry, are never seen as this class's
-    own members, since only a chunk's *leading* attribute is ever read (see
-    classify_chunk)."""
+    """Yields ("access", level) for each access specifier, ("pp", keyword,
+    rest) for each preprocessor directive line, and ("member", text, offset)
+    for each other depth-0 member chunk in body (body is class-body text,
+    strictly between the class's { and }; offset is relative to body's own
+    start).
+
+    A preprocessor directive ('#' as the first non-whitespace token on a
+    logical line, any number of backslash-continued physical lines) is
+    recognized and consumed as its own zero-content unit *before* the member-
+    chunk scan ever gets a chance to run into it -- this matters: without it,
+    a directive sitting between two real declarations (e.g. an '#if EDITOR_
+    BUILD' guarding one member) would otherwise get glued onto whatever
+    non-terminated text follows it into one garbled chunk, silently losing a
+    leading [[...]] attribute inside that chunk (classify_chunk only ever
+    reads a *leading* attribute) and, if an access specifier happens to fall
+    inside the same swallowed span, desyncing the access-level tracking for
+    every member after it. keyword/rest are handed to iter_conditioned_chunks
+    to build up the #if/#ifdef/#ifndef/#elif/#else/#endif stack; this
+    function itself has no opinion on what the directives mean.
+
+    A member chunk is the text up to a depth-0 ';', or up to (and including a
+    ';' immediately following, if any) the matching '}' of a depth-0 brace
+    block — this covers plain declarations, inline method bodies, and default
+    member initializers that themselves contain balanced (), [], {} (e.g.
+    `Color _c = Color(1.0f, 1.0f, 1.0f, 1.0f);`). A nested class/struct
+    definition is swallowed whole into a single opaque chunk by the same rule
+    (its '{' opens depth 1 same as any other brace block) — its members,
+    including any [[...]] they carry, are never seen as this class's own
+    members, since only a chunk's *leading* attribute is ever read (see
+    classify_chunk). Directives *inside* a single declaration (e.g. splitting
+    a parameter list) aren't supported — real code doesn't do this for
+    reflected members, and it's not worth the complexity."""
     n = len(body)
     pos = 0
     while pos < n:
+        while pos < n and body[pos] in " \t\r\n":
+            pos += 1
+        if pos >= n:
+            return
+        if body[pos] == "#":
+            m = _PP_KEYWORD_RE.match(body, pos)
+            end = _logical_line_end(body, pos)
+            keyword = m.group(1) if m else ""
+            rest = body[m.end():end] if m else ""
+            rest = re.sub(r"\\\r?\n", " ", rest)
+            rest = re.sub(r"\s+", " ", rest).strip()
+            yield "pp", keyword, rest
+            pos = end
+            continue
         m = _ACCESS_SPEC_RE.match(body, pos)
         if m:
             yield "access", m.group(1)
@@ -309,6 +376,110 @@ def iter_member_chunks(body: str):
         if chunk.strip():
             yield "member", chunk, pos
         pos = max(end, pos + 1)
+
+
+@dataclass
+class _CondFrame:
+    """One #if/#ifdef/#ifndef...#endif nesting level. chain is a unique id
+    per opening directive, shared by every #elif/#else branch that follows it
+    (so sibling branches of the same chain can be recognized as mutually
+    exclusive); branch counts up from 0 for each. own_text is this branch's
+    own condition text (already normalized: #ifdef X -> "defined(X)", #ifndef
+    X -> "!defined(X)", #if/#elif kept verbatim) -- None for an #else branch,
+    whose effective condition is only known once every prior sibling's own
+    text has been collected (see effective_text)."""
+    chain: int
+    branch: int = 0
+    prior_texts: list = dc_field(default_factory=list)
+    own_text: str = None
+
+    def effective_text(self) -> str:
+        if self.own_text is not None:
+            return self.own_text
+        # #else: true exactly when none of the prior branches' conditions held.
+        return " && ".join(f"!({t})" for t in self.prior_texts) if self.prior_texts else "1"
+
+
+def _normalize_directive_condition(keyword: str, rest: str) -> str:
+    if keyword == "ifdef":
+        return f"defined({rest})"
+    if keyword == "ifndef":
+        return f"!defined({rest})"
+    return rest  # if / elif: rest is already a plain boolean expression
+
+
+def _mutually_exclusive(path_a: tuple, path_b: tuple) -> bool:
+    """True if path_a and path_b (each a tuple of (chain, branch) — one entry
+    per #if-region enclosing a member, outermost first, as produced by
+    iter_conditioned_chunks) are *provably* mutually exclusive: they're
+    nested identically up to some #if-chain, where they land in different
+    branches of that same chain (the "#if X ... #else ... #endif" duplicate-
+    impl idiom). Only that direct-sibling-branches pattern is recognized —
+    two unrelated/independent conditions (different chains, even if the
+    condition text happens to look similar) are conservatively treated as
+    NOT provably exclusive, same as the old plain name-count check treated
+    every same-named occurrence. This never affects unconditional code: two
+    empty paths compare as not-exclusive, matching the pre-existing
+    "duplicate name -> ambiguous, skip" behavior exactly."""
+    for (chain_a, branch_a), (chain_b, branch_b) in zip(path_a, path_b):
+        if chain_a != chain_b:
+            break
+        if branch_a != branch_b:
+            return True
+    return False
+
+
+def iter_conditioned_chunks(body: str):
+    """Wraps iter_member_chunks(), tracking a stack of active #if/#ifdef/
+    #ifndef/#elif/#else regions. Yields:
+      ("access", level)
+      ("member", chunk_text, offset, condition, cond_path)
+    condition is None when the member is unconditional, else the flattened,
+    fully-parenthesized '(A) && (B)' boolean-expression text of every
+    enclosing region, verbatim from source (never interpreted -- negation,
+    &&/||, defined(), arbitrary nesting all just come along for the ride
+    since it's plain text copy-and-conjoin, not something evaluated). Each
+    #if/#ifdef/#ifndef opens one frame; #elif/#else advance the top frame in
+    place (same chain, new branch); #endif closes it. Raises ParseError if
+    the stack isn't back to empty at the end of body (unbalanced #if/#endif)
+    -- that's a shape this scanner can't safely reason about, independent of
+    whether any annotated member was involved.
+    cond_path is that same stack reduced to (chain, branch) pairs, used only
+    by build_class() to recognize when two same-named methods live in
+    mutually exclusive branches of one #if-chain (see _mutually_exclusive)."""
+    stack: list = []
+    chain_counter = [0]
+
+    for item in iter_member_chunks(body):
+        kind = item[0]
+        if kind == "pp":
+            _, keyword, rest = item
+            if keyword not in _PP_CONDITIONAL_KEYWORDS:
+                continue  # e.g. a stray #pragma/#define inside a class body
+            if keyword in ("if", "ifdef", "ifndef"):
+                chain_counter[0] += 1
+                stack.append(_CondFrame(chain=chain_counter[0],
+                                         own_text=_normalize_directive_condition(keyword, rest)))
+            elif keyword in ("elif", "else"):
+                if stack:
+                    top = stack[-1]
+                    top.prior_texts.append(top.effective_text())
+                    top.branch += 1
+                    top.own_text = _normalize_directive_condition("if", rest) if keyword == "elif" else None
+            elif keyword == "endif":
+                if stack:
+                    stack.pop()
+            continue
+        if kind == "access":
+            yield item
+            continue
+        _, chunk, offset = item
+        condition = " && ".join(f"({f.effective_text()})" for f in stack) if stack else None
+        cond_path = tuple((f.chain, f.branch) for f in stack)
+        yield "member", chunk, offset, condition, cond_path
+
+    if stack:
+        raise ParseError(f"unbalanced #if/#endif inside a class body ({len(stack)} still open)")
 
 
 def _strip_leading_attrs(chunk: str):
@@ -428,46 +599,57 @@ def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclas
         is_abstract="abstract" in modifiers,
     )
 
-    # First pass: tally method names (constructors/destructors/operators
-    # excluded, matching the old clang backend's CXXMethodDecl-only tally) so
-    # overloaded names can be excluded from binding below — &T::name would be
-    # ambiguous for an overload, whether or not the overload itself is
-    # annotated.
-    method_names: dict = {}
-    for item in iter_member_chunks(body):
-        if item[0] != "member":
-            continue
-        info = classify_chunk(item[1])
-        if info["kind"] == "method" and not info["is_dtor"]:
-            n = info["name"]
-            if n != name:  # constructor
-                method_names[n] = method_names.get(n, 0) + 1
+    try:
+        # First pass: tally method names by (source offset, cond_path)
+        # (constructors/destructors excluded, matching the old clang
+        # backend's CXXMethodDecl-only tally) so overloaded names can be
+        # excluded from binding below — &T::name would be ambiguous for an
+        # overload, whether or not the overload itself is annotated. Keyed
+        # by offset (not just name) so a method can be compared against every
+        # *other* same-named occurrence without matching itself; cond_path
+        # lets _handle_method recognize the common "#if X ... #else ... #endif"
+        # duplicate-impl idiom as NOT actually ambiguous (see _mutually_exclusive).
+        method_paths: dict = {}
+        for item in iter_conditioned_chunks(body):
+            if item[0] != "member":
+                continue
+            _, chunk, offset, _condition, cond_path = item
+            info = classify_chunk(chunk)
+            if info["kind"] == "method" and not info["is_dtor"]:
+                n = info["name"]
+                if n != name:  # constructor
+                    method_paths.setdefault(n, []).append((offset, cond_path))
 
-    default_access = "public" if tag == "struct" else "private"
-    current_access = default_access
+        default_access = "public" if tag == "struct" else "private"
+        current_access = default_access
 
-    for item in iter_member_chunks(body):
-        if item[0] == "access":
-            current_access = item[1]
-            continue
-        _, chunk, offset = item
-        info = classify_chunk(chunk)
-        attrs = info["attrs"]
-        kind = info["kind"]
-        if kind is None:
-            if attrs:
-                raise ParseError(
-                    f"{header}:{_line_of(body, offset) + fclass_line - 1}: class {name}: "
-                    f"couldn't parse an annotated member (attrs={attrs!r}): {chunk.strip()[:120]!r}"
-                )
-            continue
+        for item in iter_conditioned_chunks(body):
+            if item[0] == "access":
+                current_access = item[1]
+                continue
+            _, chunk, offset, condition, cond_path = item
+            info = classify_chunk(chunk)
+            attrs = info["attrs"]
+            kind = info["kind"]
+            if kind is None:
+                if attrs:
+                    raise ParseError(
+                        f"{header}:{_line_of(body, offset) + fclass_line - 1}: class {name}: "
+                        f"couldn't parse an annotated member (attrs={attrs!r}): {chunk.strip()[:120]!r}"
+                    )
+                continue
 
-        if kind == "field":
-            _handle_field(cls, info, current_access, header, body, offset, fclass_line)
-        elif kind == "method":
-            if info["is_dtor"] or info["name"] == name:
-                continue  # destructor / constructor, never reflectable
-            _handle_method(cls, info, current_access, method_names, header, body, offset, fclass_line)
+            if kind == "field":
+                _handle_field(cls, info, current_access, condition, header, body, offset, fclass_line)
+            elif kind == "method":
+                if info["is_dtor"] or info["name"] == name:
+                    continue  # destructor / constructor, never reflectable
+                _handle_method(cls, info, current_access, condition, offset, cond_path, method_paths,
+                                header, body, fclass_line)
+    except ParseError as exc:
+        if str(exc).startswith("unbalanced #if"):
+            raise ParseError(f"{header}: class {name}: {exc}") from None
+        raise
 
     return cls
 
@@ -476,7 +658,8 @@ def _prop_name(member: str) -> str:
     return member[1:] if member.startswith("_") and len(member) > 1 else member
 
 
-def _handle_field(cls: ClassDesc, info: dict, access: str, header: Path, body: str, offset: int, fclass_line: int):
+def _handle_field(cls: ClassDesc, info: dict, access: str, condition: str,
+                   header: Path, body: str, offset: int, fclass_line: int):
     if info["is_static"]:
         return
     member = info["name"]
@@ -501,7 +684,7 @@ def _handle_field(cls: ClassDesc, info: dict, access: str, header: Path, body: s
     # [[name(foo)]] overrides the reflected property name (default: member without
     # its leading underscore).
     prop = attrs.get("name") or _prop_name(member)
-    plan = PropertyPlan(prop_name=prop, member_name=member, type_spelling=type_spelling)
+    plan = PropertyPlan(prop_name=prop, member_name=member, type_spelling=type_spelling, condition=condition)
 
     if not present_get and not present_set:
         present_get = present_set = True
@@ -511,15 +694,15 @@ def _handle_field(cls: ClassDesc, info: dict, access: str, header: Path, body: s
         set_arg = attrs.get("set")
 
     if present_get:
-        _plan_accessor(plan, "get", get_arg, access, cls)
+        _plan_accessor(plan, "get", get_arg, access, condition, cls)
     if present_set:
-        _plan_accessor(plan, "set", set_arg, access, cls)
+        _plan_accessor(plan, "set", set_arg, access, condition, cls)
 
     if plan.getter_kind != "none" or plan.setter_kind != "none":
         cls.properties.append(plan)
 
 
-def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, cls: ClassDesc):
+def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, condition: str, cls: ClassDesc):
     """Resolve one accessor per the property rules and, when generating, record
     the inline accessor code."""
     prop, member, ty = plan.prop_name, plan.member_name, plan.type_spelling
@@ -536,7 +719,7 @@ def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, cls:
             code = f"\t{ty} {method}() const {{ return {member}; }}"
         else:
             code = f"\tvoid {method}({ty} value) {{ {member} = std::move(value); }}"
-        cls.gen_getters.append((access, code))
+        cls.gen_getters.append((access, code, condition))
 
     if which == "get":
         plan.getter_kind, plan.getter_access, plan.getter_method = kind, access, method
@@ -544,8 +727,8 @@ def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, cls:
         plan.setter_kind, plan.setter_access, plan.setter_method = kind, access, method
 
 
-def _handle_method(cls: ClassDesc, info: dict, access: str, method_names: dict,
-                    header: Path, body: str, offset: int, fclass_line: int):
+def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offset: int, cond_path: tuple,
+                    method_paths: dict, header: Path, body: str, fclass_line: int):
     name = info["name"]
     attrs = info["attrs"]
     if "ignore" in attrs:
@@ -556,13 +739,19 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, method_names: dict,
     if not forced:
         return
     # Skip templated/overloaded names: &T::name would be ambiguous. Overloads
-    # must be disambiguated by hand rather than auto-bound.
-    if method_names.get(name, 0) > 1:
+    # must be disambiguated by hand rather than auto-bound -- UNLESS every
+    # other same-named occurrence is provably in a mutually exclusive #if
+    # branch of the same chain (the common "#if X ... #else ... #endif"
+    # duplicate-impl idiom), in which case only one of them is ever actually
+    # compiled and &T::name is never really ambiguous.
+    others = [p for (o, p) in method_paths.get(name, []) if o != offset]
+    if any(not _mutually_exclusive(cond_path, p) for p in others):
         return
     bind_name = attrs.get("method") or name
 
     cls.methods.append(MethodPlan(
-        name=name, bind_name=bind_name, access=access, strict=forced, is_static=info["is_static"]
+        name=name, bind_name=bind_name, access=access, strict=forced,
+        is_static=info["is_static"], condition=condition
     ))
 
 
@@ -591,6 +780,34 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
               "#undef CURRENT_FILE_ID",
               f"#define CURRENT_FILE_ID {fid}",
               ""]
+    helper_insert_at = len(lines)
+
+    # #if/#endif cannot be spliced into a backslash-continued macro body: line
+    # -splicing (translation phase 2) happens before directives are recognized
+    # (phase 3/4), so a "#if"/"#endif" written as a continuation line of a
+    # #define is just literal '#' 'if' text in the macro's replacement list,
+    # not a directive -- FCLASS() would expand to a syntax error. So a
+    # conditional accessor's code is instead hoisted into its own top-level
+    # macro, guarded by a REAL #if/#else/#endif (one physical line each, never
+    # spliced into anything), and the main GEN_BODY macro merely references
+    # that macro's bare name -- which *does* get expanded normally on rescan
+    # when GEN_BODY() itself is invoked, after every #define in this file has
+    # already been processed. One .gen.h is then correct for every build
+    # config; no per-config regeneration needed.
+    helper_blocks: list = []
+    helper_counter = [0]
+
+    def hoist(macro: str, acc: str, code_lines: list, condition: str) -> str:
+        helper_counter[0] += 1
+        helper_name = f"{macro}_{acc.upper()}_COND{helper_counter[0]}"
+        helper_blocks.append(f"#if {condition}")
+        helper_blocks.append(f"#define {helper_name} \\")
+        helper_blocks.append(" \\\n".join(code_lines))
+        helper_blocks.append("#else")
+        helper_blocks.append(f"#define {helper_name}")
+        helper_blocks.append("#endif")
+        helper_blocks.append("")
+        return helper_name
 
     for c in classes:
         macro = f"{fid}_{c.fclass_line}_GEN_BODY"
@@ -611,12 +828,22 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
         body.append(f"\tusing Super = {c.parent};")
         body.append("\tstatic void _bind_members();")
 
-        # Generated accessors, grouped by access level.
+        # Generated accessors, grouped by access level; within a group,
+        # unconditional lines are emitted directly (unchanged from before),
+        # and conditional lines are grouped by their (already-flattened)
+        # condition text into one hoisted helper macro per unique condition.
         for acc in ("public", "protected", "private"):
-            group = [code for (a, code) in c.gen_getters if a == acc]
-            if group:
-                body.append(f"{acc}:")
-                body.extend(group)
+            group = [(code, cond) for (a, code, cond) in c.gen_getters if a == acc]
+            if not group:
+                continue
+            body.append(f"{acc}:")
+            body.extend(code for code, cond in group if cond is None)
+            by_condition: dict = {}
+            for code, cond in group:
+                if cond is not None:
+                    by_condition.setdefault(cond, []).append(code)
+            for cond, code_lines in by_condition.items():
+                body.append(hoist(macro, acc, code_lines, cond))
         body.append("private:")
 
         # Emit as a single function-like macro with line continuations.
@@ -624,10 +851,24 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
         lines.append(" \\\n".join(body))
         lines.append("")
 
+    if helper_blocks:
+        lines[helper_insert_at:helper_insert_at] = helper_blocks
+
     return "\n".join(lines) + "\n"
 
 
 def _bind_members_body(c: ClassDesc) -> list:
+    # Unlike the .gen.h macro, this is a real function body -- #if/#endif can
+    # wrap a conditional binding call directly, no hoisted-helper-macro
+    # indirection needed.
+    def emit(out: list, condition: str, stmt: str):
+        if condition:
+            out.append(f"#if {condition}")
+            out.append(stmt)
+            out.append("#endif")
+        else:
+            out.append(stmt)
+
     out = [f"void {c.name}::_bind_members() {{"]
     for p in c.properties:
         ga = ACCESS_ENUM[p.getter_access]
@@ -635,22 +876,22 @@ def _bind_members_body(c: ClassDesc) -> list:
         has_get = p.getter_kind != "none"
         has_set = p.setter_kind != "none"
         if has_get and has_set:
-            out.append(f"\tClassDB::bind_property_accessors_if_bindable("
-                       f"&{c.name}::{p.getter_method}, &{c.name}::{p.setter_method}, "
-                       f'"{p.prop_name}", {ga}, {sa});')
+            emit(out, p.condition, f"\tClassDB::bind_property_accessors_if_bindable("
+                 f"&{c.name}::{p.getter_method}, &{c.name}::{p.setter_method}, "
+                 f'"{p.prop_name}", {ga}, {sa});')
         elif has_get:
-            out.append(f"\tClassDB::bind_property_get_if_bindable("
-                       f'&{c.name}::{p.getter_method}, "{p.prop_name}", {ga});')
+            emit(out, p.condition, f"\tClassDB::bind_property_get_if_bindable("
+                 f'&{c.name}::{p.getter_method}, "{p.prop_name}", {ga});')
         elif has_set:
-            out.append(f"\tClassDB::bind_property_set_if_bindable("
-                       f'&{c.name}::{p.setter_method}, "{p.prop_name}", {sa});')
+            emit(out, p.condition, f"\tClassDB::bind_property_set_if_bindable("
+                 f'&{c.name}::{p.setter_method}, "{p.prop_name}", {sa});')
     for m in c.methods:
         acc = ACCESS_ENUM[m.access]
         if m.is_static:
-            out.append(f'\tClassDB::bind_static_method(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+            emit(out, m.condition, f'\tClassDB::bind_static_method(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
         else:
             bind = "bind_method" if m.strict else "bind_method_if_bindable"
-            out.append(f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+            emit(out, m.condition, f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
     out.append("}")
     return out
 

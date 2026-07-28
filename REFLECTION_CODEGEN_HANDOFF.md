@@ -60,15 +60,52 @@ All writes go through `write_if_changed()` — unchanged files keep their mtime.
 
 **Not a general C++ parser** — it assumes well-formed, not-too-exotic C++:
 no raw string literals, no digraphs/trigraphs, base clauses limited to a single
-simple (possibly namespace/template-qualified) base, and reflected
-declarations that don't differ in shape between preprocessor-conditional
-branches. This matches everything actually written in the ~22 `FCLASS`
-headers today. Because a chunk's attributes are only ever read from its own
-*leading* `[[...]]`, a nested class/struct definition is swallowed whole as
-one opaque chunk and never contributes members of its own, even if something
-inside it happens to carry a `[[method]]`/`[[get]]` — so there's no need to
-special-case "don't recurse into nested types" the way the old clang backend
-had to.
+simple (possibly namespace/template-qualified) base, no directive splitting a
+single declaration mid-way (e.g. inside a parameter list). This matches
+everything actually written in the ~22 `FCLASS` headers today. Because a
+chunk's attributes are only ever read from its own *leading* `[[...]]`, a
+nested class/struct definition is swallowed whole as one opaque chunk and
+never contributes members of its own, even if something inside it happens to
+carry a `[[method]]`/`[[get]]` — so there's no need to special-case "don't
+recurse into nested types" the way the old clang backend had to. A `#if`
+guarding the *entire class declaration* (rather than members inside an
+always-present class) isn't supported — only conditionals found between a
+class's `{` and `}` are tracked.
+
+**Conditional members** (`#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`
+around a `[[get]]`/`[[set]]`/`[[method]]`-annotated declaration) are fully
+supported, arbitrarily nested, with arbitrary condition text — negation,
+`&&`/`||`, `defined()`, all just copied verbatim, never evaluated (the tool
+still never resolves what anything *means*). `iter_conditioned_chunks()`
+tracks a condition stack per class body and flattens it (parenthesized,
+conjoined) into one boolean-expression string per member; `#else`/`#elif`
+correctly negate every prior sibling branch of the same `#if`-chain. The
+*same* condition is reproduced around the generated code so **one `.gen.h` is
+correct for every build config** — no per-config regeneration:
+- `_bind_members()` (a real function body) just wraps the conditional
+  `ClassDB::bind_*` call in a literal `#if .../ #endif`.
+- The `.gen.h` `GEN_BODY` macro **cannot** do that directly — the C
+  preprocessor splices backslash-continued lines (translation phase 2)
+  *before* directives are recognized (phase 3/4), so a `#if`/`#endif` written
+  as a continuation line of a `#define` is just literal text in the macro's
+  replacement list, not a directive; `FCLASS()` would expand to a syntax
+  error. Instead, conditional accessor code is hoisted into its own
+  top-level macro guarded by a *real* `#if`/`#else`/`#endif` (never spliced
+  into anything), and the main `GEN_BODY` macro merely references that
+  helper macro's bare name — which *does* expand normally on rescan when
+  `FCLASS()` itself is invoked, since every `#define` in the `.gen.h` has
+  already been processed by then. See `generate_gen_header()`'s `hoist()`.
+
+The one adjacent behavior this touches: the method-overload-ambiguity guard
+(`&T::name` is ambiguous if the same name appears more than once) is now
+aware of the common `#if X ... #else ... #endif` duplicate-impl idiom —
+`_mutually_exclusive()` recognizes direct sibling branches of the *same*
+`#if`-chain as provably non-overlapping and exempts them from the ambiguity
+check, so a `[[method]]`-annotated method with the same name in each branch
+still auto-binds correctly in every branch. Two *unrelated* conditions
+(different chains, even with identical-looking text) are conservatively
+still treated as ambiguous, same as the pre-existing behavior — this can't
+be proven safe without real evaluation, so it isn't attempted.
 
 **Runtime**
 - `ClassInfo` (`core/framework/class_info.h`): `enum AccessLevel {Public,Protected,
@@ -191,13 +228,15 @@ Singletons: `WorldSim`, `ProjectSettings`, `ResourceLoader` (and `ClassDB` uses
 
 - **The scanner is syntactic, not semantic** (see "Not a general C++ parser" above). If a
   new `FCLASS` header uses a shape it can't handle — multiple inheritance, a raw string
-  literal, a reflected member whose declaration differs between `#if` branches — the
-  generator raises a `ParseError` naming the file (fatal, on purpose: a silently-skipped
-  annotated member is exactly the failure mode this rewrite was meant to eliminate; see the
-  git history around "Replace the clang AST backend" for the incident that motivated it —
-  clang would silently degrade an unresolved type to `int` on a parse failure, which passed
-  CI on Linux and broke only on Windows). Fix is almost always to simplify the declaration's
-  shape, not to extend the scanner.
+  literal, an unbalanced `#if`/`#endif` inside a class body, a `#if` guarding a whole class
+  declaration rather than members within it — the generator raises a `ParseError` naming the
+  file (fatal, on purpose: a silently-skipped annotated member is exactly the failure mode
+  this rewrite was meant to eliminate; see the git history around "Replace the clang AST
+  backend" for the incident that motivated it — clang would silently degrade an unresolved
+  type to `int` on a parse failure, which passed CI on Linux and broke only on Windows). Fix
+  is almost always to simplify the declaration's shape, not to extend the scanner. (A `#if`
+  guarding one or more *members* of an always-present class is fine — see "Conditional
+  members" above — it's only a `#if` around the class declaration itself that's unsupported.)
 - **Attribute detection is leading-only**: `classify_chunk()` only reads a member's *own*
   leading `[[...]]`, immediately before its declarator (on the same line or the line above,
   any number of blank lines apart — anything else in between is not scanned). Don't rely on
