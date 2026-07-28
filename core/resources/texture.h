@@ -44,13 +44,18 @@ public:
 	bool load_from_file();
 
 	// Direct data setting (for procedural textures)
-	void set_data(const std::string& path, const std::vector<uint8_t>& data, uint32_t width, uint32_t height,
-			TextureFormat format);
+	void set_data(
+			const std::string& path,
+			const std::vector<uint8_t>& data,
+			uint32_t width,
+			uint32_t height,
+			TextureFormat format
+	);
 
 	// Getters
 	const std::vector<uint8_t>& get_pixel_data() const { return _pixel_data; }
 	TextureFormat get_format() const { return _format; }
-	bool is_loaded() const { return _is_loaded; }
+	bool is_loaded() override { return _is_loaded; }
 
 	// Get bytes per pixel for format
 	static uint32_t get_bytes_per_pixel(TextureFormat format);
