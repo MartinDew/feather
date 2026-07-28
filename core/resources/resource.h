@@ -16,7 +16,7 @@ class Resource : public Reflected {
 
 	RID _rid;
 
-	[[name(path), get(public), set(public)]]
+	[[name(path), get(public, ref), set(public, ref)]]
 	Path _cached_path;
 
 protected:
@@ -25,7 +25,9 @@ protected:
 public:
 	// Resources may give specific ids
 	[[method]]
-	virtual RID get_rid() { return _rid; };
+	virtual RID get_rid() {
+		return _rid;
+	};
 
 	virtual bool is_loaded() { return false; };
 };
