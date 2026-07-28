@@ -736,14 +736,19 @@ def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, cond
     so `ref` unconditionally means const-ref -- there is no separate spelling
     for a mutable-reference accessor."""
     prop, member, ty = plan.prop_name, plan.member_name, plan.type_spelling
-    tokens = _split_top_level(arg) if arg else []
-    access_tok = next((t for t in tokens if t in ACCESS_KEYWORDS), None)
-    is_ref = _REF_KEYWORD in tokens
-    manual_toks = [t for t in tokens if t not in ACCESS_KEYWORDS and t != _REF_KEYWORD]
 
     def err(msg: str):
         return ParseError(f"{header}: class {cls.name} field '{member}' near line "
                            f"{_line_of(body, offset) + fclass_line - 1}: {msg}")
+
+    tokens = _split_top_level(arg) if arg else []
+    for tok in tokens:
+        if re.search(r"\s", tok):
+            raise err(f"[[{which}({arg})]]: multiple arguments must be comma-separated, not "
+                      f"space-separated (e.g. '{', '.join(tok.split())}' instead of {tok!r})")
+    access_tok = next((t for t in tokens if t in ACCESS_KEYWORDS), None)
+    is_ref = _REF_KEYWORD in tokens
+    manual_toks = [t for t in tokens if t not in ACCESS_KEYWORDS and t != _REF_KEYWORD]
 
     if manual_toks:
         if len(manual_toks) > 1:
