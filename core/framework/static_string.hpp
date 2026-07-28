@@ -97,6 +97,8 @@ struct StaticString {
 	constexpr bool operator==(const StaticString& other) const noexcept { return _hash == other._hash; }
 	constexpr bool operator==(const std::string_view& other) const { return _view == other; }
 
+	constexpr size_t size() const noexcept { return _view.size(); }
+
 private:
 	std::string_view _view;
 	uint32_t _hash;
