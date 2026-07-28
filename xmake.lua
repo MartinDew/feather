@@ -147,8 +147,9 @@ local function apply_compile_flags(target)
 
     -- is_toolchain() is a description-scope global and nil inside on_config,
     -- so query the resolved tool instead.
-    local function is_msvc()  return target:has_tool("cxx", "cl", "clang_cl") end
-    local function is_clang() return target:has_tool("cxx", "clang", "clangxx", "clang-cl") end
+    local function is_msvc()     return target:has_tool("cxx", "cl", "clang_cl") end
+    local function is_clang()    return target:has_tool("cxx", "clang", "clangxx", "clang-cl") end
+    local function is_clang_cl() return target:has_tool("cxx", "clang_cl") end
 
     if want_lto and not is_msvc() then
         target:add("cxflags", "-flto=thin", {force = true})
@@ -168,6 +169,16 @@ local function apply_compile_flags(target)
     -- that the generator reads textually; compilers only need to ignore them.
     if is_msvc() then
         target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
+        if is_clang_cl() then
+            -- clang-cl matches is_msvc() above (it accepts /-style flags), but it
+            -- emits its own Clang diagnostics for our bare attributes rather than
+            -- MSVC's C5030 -- e.g. "unknown attribute 'method' ignored
+            -- [-Wunknown-attributes]" -- so /wd5030 alone doesn't silence it.
+            -- clang-cl also accepts Clang's -W/-Wno- flags directly (no /clang:
+            -- prefix needed), so pass the same ones the plain-Clang branch below
+            -- uses.
+            target:add("cxflags", "-Wno-attributes", "-Wno-unknown-attributes", {force = true})
+        end
         if is_mode("debug") then
             target:add("cxflags", "/Od", "/Zi", {force = true})
         elseif is_mode("releasedbg") then
