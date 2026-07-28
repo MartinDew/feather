@@ -1,6 +1,6 @@
 // MIT License
 
-// Copyright (c) 2023 Martin Dufour
+// Copyright (c) 2023 MartinDew
 
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,8 @@
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -72,35 +72,39 @@ constexpr uint32_t crc32(const std::string_view str) {
 }
 
 struct StaticString {
-	constexpr StaticString(const StaticString& str) { view = str.view; }
+	constexpr StaticString(const StaticString& str) : _view { str._view }, _hash { str._hash } {}
 	constexpr StaticString(StaticString&& str) = default;
-	explicit constexpr StaticString(const char* str, const size_t len) : view { str, len } {}
-	constexpr StaticString(const std::string_view str) : view { str } {}
+	explicit constexpr StaticString(const char* str, const size_t len) : _view { str, len }, _hash { crc32(_view) } {}
+	constexpr StaticString(const std::string_view str) : _view { str }, _hash { crc32(_view) } {}
 	constexpr StaticString& operator=(StaticString& str) {
-		view = str.view;
+		_view = str._view;
+		_hash = str._hash;
 		return *this;
 	};
 	constexpr StaticString& operator=(StaticString&& str) = default;
 
-	constexpr bool operator==(uint32_t str) const { return crc32(view) == str; }
+	constexpr bool operator==(uint32_t str) const { return _hash == str; }
 
-	constexpr size_t hash() const noexcept { return crc32(view); }
+	constexpr size_t hash() const noexcept { return _hash; }
 
-	constexpr operator size_t() const noexcept { return hash(); }
+	constexpr operator size_t() const noexcept { return _hash; }
 
-	[[nodiscard]] constexpr const char* data() const noexcept { return view.data(); }
+	[[nodiscard]] constexpr const char* data() const noexcept { return _view.data(); }
 
-	constexpr operator std::string_view() const noexcept { return view; }
-	constexpr std::string_view str() const noexcept { return view; }
-	constexpr operator std::string() const { return std::string(view); }
-	constexpr bool operator==(const StaticString& other) const noexcept { return hash() == other.hash(); }
-	constexpr bool operator==(const std::string_view& other) const { return view == other; }
+	constexpr operator std::string_view() const noexcept { return _view; }
+	constexpr std::string_view str() const noexcept { return _view; }
+	constexpr operator std::string() const { return std::string(_view); }
+	constexpr bool operator==(const StaticString& other) const noexcept { return _hash == other._hash; }
+	constexpr bool operator==(const std::string_view& other) const { return _view == other; }
+
+	constexpr size_t size() const noexcept { return _view.size(); }
 
 private:
-	std::string_view view;
+	std::string_view _view;
+	uint32_t _hash;
 };
 
-} //namespace nassimp
+} // namespace nassimp
 
 using namespace nassimp;
 
@@ -108,8 +112,7 @@ constexpr auto operator""_ss(const char* str, std::size_t len) {
 	return nassimp::StaticString { str, len };
 }
 
-template <>
-struct std::hash<StaticString> {
+template <> struct std::hash<StaticString> {
 	constexpr size_t operator()(const StaticString& s) const noexcept { return s.hash(); }
 };
 
