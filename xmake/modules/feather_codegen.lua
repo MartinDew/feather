@@ -9,7 +9,7 @@
 -- modules are. import("feather_codegen") is the supported way to share logic
 -- across script-scope closures in different xmake.lua files.
 --
--- tools/generate_reflection.py parses headers syntactically (Python stdlib
+-- tools/codegen/generate_reflection.py parses headers syntactically (Python stdlib
 -- only) rather than via a clang AST dump, so unlike the old clang-backed
 -- generator this needs no compiler resolution and no include-dir collection --
 -- just the script path and the directories to scan.
@@ -17,7 +17,7 @@
 local function common_argv(extra)
     local proj = os.projectdir()
     local argv = {
-        path.join(proj, "tools", "generate_reflection.py"),
+        path.join(proj, "tools", "codegen", "generate_reflection.py"),
         "--core-path", path.join(proj, "core"),
         "--project-root", proj,
     }

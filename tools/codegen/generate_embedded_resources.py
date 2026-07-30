@@ -80,7 +80,7 @@ def read_existing_hash(output_file: Path):
 
 
 def generate_header(source_file: Path, output_file: Path, base_path: Path,
-                     source_hash: str, dry_run: bool = False) -> str:
+                    source_hash: str, dry_run: bool = False) -> str:
     """
     Generate a self-contained header embedding the bytes of `source_file`.
     Returns the variable name used.
@@ -217,7 +217,7 @@ def main():
     args = parser.parse_args()
 
     script_dir = Path(__file__).parent.resolve()
-    project_root = script_dir.parent
+    project_root = script_dir.parent.parent
     raw_resources_dir = project_root / 'raw_resources'
 
     if not raw_resources_dir.exists():

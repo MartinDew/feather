@@ -46,7 +46,7 @@ end
 
 local FEATHER_ROOT = resolve_feather_root()
 if FEATHER_ROOT then
-    includes(path.join(FEATHER_ROOT, "tools", "FeatherSDK.lua"))
+    includes(path.join(FEATHER_ROOT, "tools", "SDK", "FeatherSDK.lua"))
 
     -- "editor" or "standalone" -- must match which engine binary this DLL
     -- will be loaded into.

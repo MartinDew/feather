@@ -5,7 +5,7 @@
 -- FeatherEngine checkout themselves (see tools/templates/consumer_xmake_template.lua
 -- for the standard discovery block), then:
 --
---   includes("/path/to/feather/tools/FeatherSDK.lua")
+--   includes("/path/to/feather/tools/SDK/FeatherSDK.lua")
 --   feather_sdk_setup("mygame_plugin", "standalone")   -- or "editor"
 --
 --   target("mygame_plugin")                            -- SEPARATE, reopened block --
