@@ -10,12 +10,9 @@
 
 namespace feather {
 
-// Free enum, not nested in Light: FSTRUCT()/FCLASS() must be the first thing
-// in the class body, so a generated inline accessor's return type (e.g.
-// `LightType get_type() const`) is textually emitted at that same point --
-// before any nested type declared later in the class would be visible to
-// ordinary (non-complete-class-context) name lookup. A property's type has to
-// already be visible at the top of the class, same as Vector3/Color below.
+// Free enum, not nested in Light: FSTRUCT's generated accessors are emitted at
+// the top of the class body, before a nested type declared later would be
+// visible to name lookup -- same reason Vector3/Color aren't nested either.
 enum class LightType : uint8_t {
 	Directional,
 	Point,

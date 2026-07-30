@@ -117,9 +117,7 @@ class Variant {
 
 	void set_class_info(StaticString class_name);
 
-	// Shared method-call implementation. When enforce_public is true the call is
-	// denied unless the method is publicly accessible; the privileged *_internal
-	// entry points pass false to bypass the check.
+	// enforce_public denies non-Public methods; *_internal entry points pass false.
 	[[nodiscard]] Variant
 	_internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const;
 
@@ -234,9 +232,8 @@ public:
 	// Object property access
 	std::string get_name() const;
 
-	// Script-facing property/method access. These enforce reflection accessibility:
-	// only members bound as AccessLevel::Public are reachable; protected/private
-	// members return NIL (get/call) or are ignored (set).
+	// Script-facing: only AccessLevel::Public members are reachable (get/call
+	// return NIL, set is ignored otherwise).
 	Variant get(std::string_view key) const;
 	void set(std::string_view key, const Variant& value);
 	// Object method call
@@ -244,9 +241,8 @@ public:
 	template <class... TArgs>
 	Variant call(std::string_view method_name, TArgs&&... args) const;
 
-	// Privileged property/method access for trusted engine systems (e.g. the
-	// editor inspector). These bypass reflection accessibility checks and can
-	// reach protected/private members. Do not expose to scripts.
+	// Privileged access for trusted engine systems (e.g. editor inspector);
+	// bypasses accessibility checks. Do not expose to scripts.
 	Variant get_internal(std::string_view key) const;
 	void set_internal(std::string_view key, const Variant& value);
 	Variant call_internal(std::string_view method_name);

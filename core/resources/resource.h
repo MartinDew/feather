@@ -19,6 +19,9 @@ class Resource : public Reflected {
 	[[name(path), get(public, ref), set(public, ref)]]
 	Path _cached_path;
 
+	[[get(public), set(protected)]]
+	bool _should_be_loaded;
+
 protected:
 	Resource() = default;
 

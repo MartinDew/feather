@@ -4,23 +4,17 @@
 
 namespace feather {
 
-// Forward-declared, not included: reflected.h itself includes this header
-// (before Reflected is defined) to get is_reflected_class_type/object_cast, so
-// #include <framework/reflected.h> here would see an incomplete Reflected at
-// best and a circular-include no-op at worst. is_base_of_v below only needs
-// Reflected complete at the point a concrete T is actually checked against the
-// concept (a dependent expression, resolved at instantiation) -- by then every
-// translation unit that cares has reflected.h fully included.
+// Forward-declared, not included: reflected.h includes this header before
+// Reflected is defined, so including it back here would be circular.
+// is_base_of_v below is a dependent expression, only resolved once a concrete
+// T is checked -- by then reflected.h is fully included wherever it matters.
 class Reflected;
 
 template <class T>
 concept is_reflected_class_type = requires { T::get_class_static(); };
 
-// A value type (FSTRUCT / FCLASS(novtable)): reflected, but deliberately NOT
-// derived from Reflected — no vtable pointer, so it stays exactly as small as
-// its plain members (the point of reflecting e.g. an ECS component). It has no
-// object_cast/is_of_type polymorphism and no ClassDB factory; see
-// ClassDB::register_value_class.
+// Value type (FSTRUCT / FCLASS(novtable)): reflected but not derived from
+// Reflected, so no vtable pointer -- see ClassDB::register_value_class.
 template <class T>
 concept is_reflected_value_type = is_reflected_class_type<T> && !std::is_base_of_v<Reflected, T>;
 

@@ -2,45 +2,31 @@
 """
 generate_reflection.py — FeatherEngine reflection code generator.
 
-Replaces the old regex-based generate_core_registers.py. For every reflected
-class (one that uses the FCLASS(...) macro) this tool:
+For every reflected class (uses FCLASS(...)/FSTRUCT(...)) this tool recovers
+the name/parent from the C++ declaration, extracts [[attribute]]-annotated
+members and methods, emits a per-header "<name>.gen.h" (Unreal-style GEN_BODY
+macro: reflection boilerplate + generated accessors + _bind_members() decl),
+and emits per-subfolder "register_<sub>_types.gen.{h,cpp}" defining every
+_bind_members() body plus the register_<sub>_types() entry point.
 
-  * recovers the class name and parent from the C++ declaration,
-  * extracts member variables (with C++ accessibility) and their [[attributes]],
-  * extracts bindable methods (opt-in per class via [[method]]),
-  * emits a per-header "<name>.gen.h" holding the Unreal-style GEN_BODY macro
-    (reflection boilerplate + generated getters/setters + optional singleton
-    boilerplate + the _bind_members() declaration), and
-  * emits, per top-level subfolder, a "register_<sub>_types.gen.{h,cpp}" that
-    defines every _bind_members() body and the register_<sub>_types() entry
-    point the engine calls manually.
+Parsing is purely syntactic (stdlib `re`, no compiler) and opt-in: a
+member/method is only ever inspected once annotated, so the tool never
+resolves what a type actually is, only how it's spelled -- it can't silently
+degrade an unresolved type to `int` the way the old clang-AST backend could
+(see REFLECTION_CODEGEN_HANDOFF.md). Not a general C++ parser: assumes
+well-formed, not-too-exotic C++ (no raw string literals, no digraphs).
 
-Parsing is purely syntactic (Python stdlib `re`, no external process, no
-compiler, no pip package) — reflection is opt-in (a member/method is only ever
-inspected once it carries a [[get]]/[[set]]/[[name]]/[[method]] attribute), so
-the tool never needs to resolve what a type or base class actually means, only
-what it is spelled as in source. That also means it can never emit a type
-other than the one written in the header (the old clang-AST backend could
-silently degrade an unresolved type to `int` when a header failed to parse —
-see REFLECTION_CODEGEN_HANDOFF.md). This is not a general C++ parser: it
-assumes well-formed, not-too-exotic C++ (no raw string literals, no digraphs).
+[[get(...)]]/[[set(...)]] accept an access keyword and/or `ref` (e.g.
+[[get(protected, ref)]]) for a const-reference accessor instead of by-value;
+see _plan_accessor() for why only const-ref (not mutable T&) is supported.
 
-[[get(...)]]/[[set(...)]] accept an access keyword and/or `ref` (in any order,
-e.g. [[get(protected, ref)]]) — `ref` returns/takes the property by const
-reference (`const T&`) instead of by-value copy; see _plan_accessor() for why
-that's the only reference form supported (a mutable T&/T& accessor can't
-actually be bound through ClassDB).
+A reflected member may sit inside arbitrarily nested #if/#ifdef/.../#endif;
+condition text is only ever copied, never evaluated. See
+iter_conditioned_chunks() for the #if-stack tracking and
+generate_gen_header()/_bind_members_body() for how that same condition is
+reproduced around generated code, so one .gen.h covers every build config.
 
-A reflected member may sit inside #if/#ifdef/#ifndef/#elif/#else/#endif —
-arbitrarily nested, with arbitrary condition text (negation, &&/||, defined(),
-...), since that text is only ever copied, never evaluated. See
-iter_conditioned_chunks() for how the #if-stack is tracked and
-generate_gen_header()/_bind_members_body() for how the *same* condition is
-reproduced around the generated code, so one .gen.h is correct for every
-build config (no per-config regeneration).
-
-All writes go through write_if_changed(), so unchanged files keep their mtime
-and xmake performs no needless rebuilds.
+Writes go through write_if_changed(), so unchanged files keep their mtime.
 """
 
 import argparse
@@ -49,11 +35,8 @@ import sys
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
-# Extension modules (tools/codegen/extensions/*.py, and anything passed via
-# --extension) `from modifier_api import ...` -- this needs to resolve the
-# same way for the engine's own built-ins and a project's own extension file,
-# so this script's own directory goes on sys.path once, here, rather than
-# each extension needing its own path hack.
+# So extension modules' `from modifier_api import ...` resolves the same way
+# for built-ins and project extensions, without each needing its own path hack.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from modifier_api import EmitContext, ModifierError, Registry, load_extension_path  # noqa: E402
 
@@ -65,19 +48,14 @@ GENERATED_NOTICE = (
 ACCESS_KEYWORDS = {"public", "protected", "private"}
 ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Protected", "private": "AccessLevel::Private"}
 
-# FCLASS(...)/FSTRUCT(...) invocation, capturing the macro name and the modifier
-# list. Matches FCLASS( ... ) but not FCLASS_ANYTHING( — \b at both ends keeps us
-# from matching a longer identifier (there are no other FCLASS_* macros anymore,
-# but be safe). Both macros expand identically (see reflection_macros.h); which
-# one was written only ever changes what this generator puts in the body.
+# FCLASS(...)/FSTRUCT(...) invocation: macro name + modifier list. \b at both
+# ends avoids matching a longer identifier like FCLASS_ANYTHING(.
 _FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
 # `class Name ... {` / `struct Name ... {`, optionally `final`, optionally a
-# base-clause. Only matches an actual *definition* (requires the opening `{`
-# immediately after an optional base clause) — a forward declaration
-# ("class Foo;") never matches since nothing between the name and the `{`
-# that base-clause group would need to stop at is present.
+# base-clause. Requires the opening `{` right after, so a forward declaration
+# ("class Foo;") never matches.
 _CLASS_DEF_RE = re.compile(
     r"\b(class|struct)\s+(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
 )
@@ -86,8 +64,7 @@ _ACCESS_SPEC_RE = re.compile(r"\s*(public|protected|private)\s*:")
 
 _QUALIFIER_RE = re.compile(r"^(?:static|mutable|inline|constexpr)\b\s*")
 
-# A preprocessor directive line: '#' then a keyword, only ever matched right
-# at the start of a (whitespace-stripped) logical line -- see iter_member_chunks.
+# A preprocessor directive: '#' at the start of a logical line -- see iter_member_chunks.
 _PP_KEYWORD_RE = re.compile(r"[ \t]*#[ \t]*(\w+)")
 _PP_CONDITIONAL_KEYWORDS = {"if", "ifdef", "ifndef", "elif", "else", "endif"}
 
@@ -196,12 +173,10 @@ def parse_field_attributes(prefix_text: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 class ParseError(RuntimeError):
-    """Raised for a source shape the scanner cannot make sense of, only once an
-    [[...]] attribute says the declaration in question is actually meant to be
-    reflected — an annotated member/method that can't be parsed must fail loud
-    (a silently-skipped class/property/method is exactly the kind of bug that
-    made the old clang backend's silent 'int' fallback so painful; see
-    REFLECTION_CODEGEN_HANDOFF.md)."""
+    """Raised for a source shape the scanner can't make sense of, only once an
+    [[...]] attribute marks the declaration as meant to be reflected -- fails
+    loud rather than silently skipping, unlike the old clang backend's 'int'
+    fallback (see REFLECTION_CODEGEN_HANDOFF.md)."""
 
 
 def _line_of(text: str, offset: int) -> int:
@@ -209,14 +184,12 @@ def _line_of(text: str, offset: int) -> int:
 
 
 def blank_comments_and_literals(text: str) -> str:
-    """Return a same-length copy of text with `//` / `/* */` comment bodies and
-    string/char literal bodies replaced by spaces (newlines preserved), so
-    every offset and line number computed against the result still lines up
-    exactly with the original source. Downstream scanning never needs to special
-    -case comments again (in particular this is what stops "// FCLASS() plain
-    reflected class" in reflection_macros.h's own doc-comment from ever being
-    mistaken for a real occurrence). Doesn't understand raw string literals
-    (R"(...)") — none of the reflected headers use them."""
+    """Return a same-length copy of text with comment/string/char literal
+    bodies blanked to spaces (newlines preserved), so offsets/line numbers
+    still line up with the original and downstream scanning never has to
+    special-case comments (e.g. reflection_macros.h's own doc-comment
+    mentioning "FCLASS()" can't be mistaken for a real occurrence). Doesn't
+    understand raw string literals (R"(...)") -- unused in reflected headers."""
     out = []
     i, n = 0, len(text)
     while i < n:
@@ -274,13 +247,9 @@ def _find_matching_brace(text: str, open_pos: int) -> int:
 
 def find_class_bodies(text: str):
     """Yields (name, parent, tag, body_start, body_end, decl_line) for every
-    class/struct *definition* at file or namespace scope. A class nested inside
-    another class/struct body is not yielded separately — scanning resumes
-    right after a match's closing brace, so a reflected class's own body is
-    never re-entered looking for more top-level classes (mirrors the old
-    clang-backed collect_records(), which stopped recursing once it found an
-    enclosing record: a class nested inside a reflected class was never itself
-    a candidate)."""
+    class/struct *definition* at file or namespace scope. A nested class isn't
+    yielded separately -- scanning resumes right after a match's closing brace
+    (mirrors the old clang backend, which never recursed into a found record)."""
     pos, n = 0, len(text)
     while pos < n:
         m = _CLASS_DEF_RE.search(text, pos)
@@ -329,36 +298,24 @@ def _logical_line_end(body: str, start: int) -> int:
 def iter_member_chunks(body: str):
     """Yields ("access", level) for each access specifier, ("pp", keyword,
     rest) for each preprocessor directive line, and ("member", text, offset)
-    for each other depth-0 member chunk in body (body is class-body text,
-    strictly between the class's { and }; offset is relative to body's own
-    start).
+    for each other depth-0 member chunk in body (class-body text strictly
+    between { and }; offset relative to body's own start).
 
-    A preprocessor directive ('#' as the first non-whitespace token on a
-    logical line, any number of backslash-continued physical lines) is
-    recognized and consumed as its own zero-content unit *before* the member-
-    chunk scan ever gets a chance to run into it -- this matters: without it,
-    a directive sitting between two real declarations (e.g. an '#if EDITOR_
-    BUILD' guarding one member) would otherwise get glued onto whatever
-    non-terminated text follows it into one garbled chunk, silently losing a
-    leading [[...]] attribute inside that chunk (classify_chunk only ever
-    reads a *leading* attribute) and, if an access specifier happens to fall
-    inside the same swallowed span, desyncing the access-level tracking for
-    every member after it. keyword/rest are handed to iter_conditioned_chunks
-    to build up the #if/#ifdef/#ifndef/#elif/#else/#endif stack; this
-    function itself has no opinion on what the directives mean.
+    A directive is consumed as its own zero-content unit *before* the member-
+    chunk scan reaches it -- otherwise it would glue onto whatever follows
+    into one garbled chunk, silently losing a leading [[...]] attribute
+    (classify_chunk only reads a *leading* attribute) and desyncing the
+    access-level tracking if an access specifier falls in the same span.
+    keyword/rest feed iter_conditioned_chunks' #if-stack; this function has no
+    opinion on what the directives mean.
 
-    A member chunk is the text up to a depth-0 ';', or up to (and including a
-    ';' immediately following, if any) the matching '}' of a depth-0 brace
-    block — this covers plain declarations, inline method bodies, and default
-    member initializers that themselves contain balanced (), [], {} (e.g.
-    `Color _c = Color(1.0f, 1.0f, 1.0f, 1.0f);`). A nested class/struct
-    definition is swallowed whole into a single opaque chunk by the same rule
-    (its '{' opens depth 1 same as any other brace block) — its members,
-    including any [[...]] they carry, are never seen as this class's own
-    members, since only a chunk's *leading* attribute is ever read (see
-    classify_chunk). Directives *inside* a single declaration (e.g. splitting
-    a parameter list) aren't supported — real code doesn't do this for
-    reflected members, and it's not worth the complexity."""
+    A member chunk runs to a depth-0 ';', or through the matching '}' of a
+    depth-0 brace block (plus a trailing ';' if present) -- covers plain
+    declarations, inline method bodies, and initializers with balanced (){}[]
+    (e.g. `Color _c = Color(1.0f, 1.0f, 1.0f, 1.0f);`). A nested class/struct
+    is swallowed whole by the same rule, so its members are never seen as this
+    class's own. Directives *inside* a single declaration aren't supported --
+    not worth the complexity for code that doesn't do this."""
     n = len(body)
     pos = 0
     while pos < n:
@@ -412,14 +369,12 @@ def iter_member_chunks(body: str):
 
 @dataclass
 class _CondFrame:
-    """One #if/#ifdef/#ifndef...#endif nesting level. chain is a unique id
-    per opening directive, shared by every #elif/#else branch that follows it
-    (so sibling branches of the same chain can be recognized as mutually
-    exclusive); branch counts up from 0 for each. own_text is this branch's
-    own condition text (already normalized: #ifdef X -> "defined(X)", #ifndef
-    X -> "!defined(X)", #if/#elif kept verbatim) -- None for an #else branch,
-    whose effective condition is only known once every prior sibling's own
-    text has been collected (see effective_text)."""
+    """One #if/#ifdef/#ifndef...#endif nesting level. chain is a unique id per
+    opening directive, shared by every #elif/#else that follows (so sibling
+    branches can be recognized as mutually exclusive); branch counts up from 0.
+    own_text is this branch's normalized condition (#ifdef X -> "defined(X)",
+    etc.) -- None for #else, whose condition is only known once every prior
+    sibling's text is collected (see effective_text)."""
     chain: int
     branch: int = 0
     prior_texts: list = dc_field(default_factory=list)
@@ -441,18 +396,14 @@ def _normalize_directive_condition(keyword: str, rest: str) -> str:
 
 
 def _mutually_exclusive(path_a: tuple, path_b: tuple) -> bool:
-    """True if path_a and path_b (each a tuple of (chain, branch) — one entry
-    per #if-region enclosing a member, outermost first, as produced by
-    iter_conditioned_chunks) are *provably* mutually exclusive: they're
-    nested identically up to some #if-chain, where they land in different
-    branches of that same chain (the "#if X ... #else ... #endif" duplicate-
-    impl idiom). Only that direct-sibling-branches pattern is recognized —
-    two unrelated/independent conditions (different chains, even if the
-    condition text happens to look similar) are conservatively treated as
-    NOT provably exclusive, same as the old plain name-count check treated
-    every same-named occurrence. This never affects unconditional code: two
-    empty paths compare as not-exclusive, matching the pre-existing
-    "duplicate name -> ambiguous, skip" behavior exactly."""
+    """True if path_a and path_b (tuples of (chain, branch), outermost first,
+    from iter_conditioned_chunks) are *provably* mutually exclusive: nested
+    identically up to some #if-chain, then landing in different branches of it
+    (the "#if X ... #else ... #endif" duplicate-impl idiom). Only that direct-
+    sibling pattern is recognized -- independent conditions in different
+    chains are conservatively NOT treated as exclusive, and two empty paths
+    (unconditional code) compare as not-exclusive, matching the old
+    "duplicate name -> ambiguous, skip" behavior."""
     for (chain_a, branch_a), (chain_b, branch_b) in zip(path_a, path_b):
         if chain_a != chain_b:
             break
@@ -466,19 +417,13 @@ def iter_conditioned_chunks(body: str):
     #ifndef/#elif/#else regions. Yields:
       ("access", level)
       ("member", chunk_text, offset, condition, cond_path)
-    condition is None when the member is unconditional, else the flattened,
-    fully-parenthesized '(A) && (B)' boolean-expression text of every
-    enclosing region, verbatim from source (never interpreted -- negation,
-    &&/||, defined(), arbitrary nesting all just come along for the ride
-    since it's plain text copy-and-conjoin, not something evaluated). Each
-    #if/#ifdef/#ifndef opens one frame; #elif/#else advance the top frame in
-    place (same chain, new branch); #endif closes it. Raises ParseError if
-    the stack isn't back to empty at the end of body (unbalanced #if/#endif)
-    -- that's a shape this scanner can't safely reason about, independent of
-    whether any annotated member was involved.
-    cond_path is that same stack reduced to (chain, branch) pairs, used only
-    by build_class() to recognize when two same-named methods live in
-    mutually exclusive branches of one #if-chain (see _mutually_exclusive)."""
+    condition is None when unconditional, else the flattened, fully-
+    parenthesized '(A) && (B)' text of every enclosing region, verbatim and
+    never interpreted. Each #if/#ifdef/#ifndef opens a frame; #elif/#else
+    advance the top frame in place; #endif closes it. Raises ParseError on an
+    unbalanced #if/#endif. cond_path is that stack reduced to (chain, branch)
+    pairs, used by build_class() to spot same-named methods in mutually
+    exclusive #if branches (see _mutually_exclusive)."""
     stack: list = []
     chain_counter = [0]
 
@@ -611,17 +556,14 @@ def classify_chunk(chunk: str):
 def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclass_index: list,
                  body_start: int, body_end: int, registry: Registry, dir_name: str) -> "ClassDesc | None":
     """Returns None if no FCLASS(...)/FSTRUCT(...) occurrence falls inside
-    [body_start, body_end) — find_class_bodies() finds every class/struct
-    definition in the file, reflected or not, so this is what stops a plain
-    helper struct sharing a header with a real FCLASS class from being
-    reflected too."""
+    [body_start, body_end) -- find_class_bodies() finds every class/struct
+    definition, reflected or not, so this is what stops a plain helper struct
+    sharing a header with a real FCLASS class from being reflected too."""
     modifiers, fclass_line, macro, matched = set(), 0, "FCLASS", False
     for (off, line, args, mac) in fclass_index:
         if body_start <= off <= body_end:
-            # _split_top_level (not a naive .split(",")) so a modifier that
-            # itself takes comma-separated arguments -- e.g. a future
-            # System(OnUpdate, Position, Velocity) -- doesn't get shredded
-            # into garbage tokens at its own inner commas.
+            # _split_top_level, not .split(","), so a modifier taking its own
+            # comma-separated args (e.g. System(OnUpdate, Position)) survives intact.
             modifiers = set(_split_top_level(args))
             fclass_line = line
             macro = mac
@@ -658,15 +600,12 @@ def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclas
     cls.resolved_modifiers = resolved
 
     try:
-        # First pass: tally method names by (source offset, cond_path)
-        # (constructors/destructors excluded, matching the old clang
-        # backend's CXXMethodDecl-only tally) so overloaded names can be
-        # excluded from binding below — &T::name would be ambiguous for an
-        # overload, whether or not the overload itself is annotated. Keyed
-        # by offset (not just name) so a method can be compared against every
-        # *other* same-named occurrence without matching itself; cond_path
-        # lets _handle_method recognize the common "#if X ... #else ... #endif"
-        # duplicate-impl idiom as NOT actually ambiguous (see _mutually_exclusive).
+        # First pass: tally method names by (source offset, cond_path),
+        # excluding ctors/dtors, so an overloaded name (ambiguous for &T::name)
+        # can be excluded from binding below. Keyed by offset so a method can
+        # be compared against every *other* same-named occurrence without
+        # matching itself; cond_path lets _handle_method recognize the "#if X
+        # ... #else ... #endif" duplicate-impl idiom as NOT ambiguous (see _mutually_exclusive).
         method_paths: dict = {}
         for item in iter_conditioned_chunks(body):
             if item[0] != "member":
@@ -729,9 +668,8 @@ def _handle_field(cls: ClassDesc, info: dict, access: str, condition: str,
 
     present_get = "get" in attrs
     present_set = "set" in attrs
-    # Properties are opt-in: a member reflects only when annotated with at least
-    # one of [[get]]/[[set]]/[[name]] (mirrors Unreal's explicit UPROPERTY()).
-    # A bare [[name(foo)]] with no get/set still implies both accessors.
+    # Opt-in: reflects only with [[get]]/[[set]]/[[name]]. A bare [[name(foo)]]
+    # with no get/set still implies both accessors.
     if not present_get and not present_set and "name" not in attrs:
         return
 
@@ -766,23 +704,18 @@ _REF_KEYWORD = "ref"
 def _plan_accessor(plan: PropertyPlan, which: str, arg, member_access: str, condition: str, cls: ClassDesc,
                     header: Path, body: str, offset: int, fclass_line: int):
     """Resolve one accessor per the property rules and, when generating, record
-    the inline accessor code. arg is the raw (possibly comma-joined) text
-    inside [[get(...)]]/[[set(...)]] -- e.g. "public", "ref", "public, ref",
-    or a manual accessor method name -- or None for a bare [[get]]/[[set]].
+    the inline accessor code. arg is the raw text inside [[get(...)]]/
+    [[set(...)]] -- e.g. "public", "ref", "public, ref", or a manual accessor
+    name -- or None for a bare [[get]]/[[set]].
 
-    `ref` opts a generated accessor into pass/return-by-const-reference
-    instead of by-value: a getter returns `const T&` instead of `T`, a
-    setter takes `const T&` instead of `T` (skipping the by-value copy
-    -- so its body copy-assigns rather than std::move()s, since you can't
-    move out of a const reference). Only the const-ref shape is supported
-    (not a mutable T&/T&): ClassDB's bind_property_get(_if_bindable) requires
-    the getter be a `const` member function, so a mutable reference could
-    never actually be returned from it; and the setter marshalling call site
-    in class_db.inl does `(obj->*setter)(std::move(result.value()))`, which
-    won't bind to a non-const T& parameter (can't bind an rvalue to a mutable
-    lvalue reference). Both are real compile errors, not style preferences,
-    so `ref` unconditionally means const-ref -- there is no separate spelling
-    for a mutable-reference accessor."""
+    `ref` makes a generated accessor pass/return by const-reference instead of
+    by-value (getter returns `const T&`, setter takes `const T&` and
+    copy-assigns rather than std::move()s). Only const-ref is supported, not
+    mutable T&: the getter must be `const` (bind_property_get(_if_bindable)
+    requires it, so it could never actually return a mutable reference), and
+    the setter call site in class_db.inl passes `std::move(result.value())`,
+    which won't bind to a non-const T& parameter. Both are real compile
+    errors, so `ref` unconditionally means const-ref."""
     prop, member, ty = plan.prop_name, plan.member_name, plan.type_spelling
 
     def err(msg: str):
@@ -836,15 +769,12 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offs
     attrs = info["attrs"]
     if "ignore" in attrs:
         return
-    # Methods are opt-in: only [[method]] (optionally [[method(name)]] to rebind
-    # under a custom reflected name) binds a method, whether static or not.
+    # Opt-in: only [[method]] (or [[method(name)]] to rebind) binds a method.
     forced = "method" in attrs
     if not forced:
         return
-    # ClassDB::bind_method stores a std::function<TRet(Reflected*, ...)> and
-    # dispatches through object_cast<T>(instance) -- there is no Reflected* to
-    # dispatch on for a value type, and no vtable to cast through. A static
-    # method is fine: bind_static_method takes no instance at all.
+    # bind_method dispatches through object_cast<T>(Reflected*), which a
+    # vtable-free value type has no way to support; a static method is fine.
     if cls.is_value_type and not info["is_static"]:
         raise ParseError(
             f"{header}: class {cls.name} method '{name}' near line "
@@ -853,12 +783,9 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offs
             f"dispatches through object_cast<T>(Reflected*), which a vtable-free type has no way "
             f"to support. Make the method static, or drop 'novtable'/use FCLASS instead."
         )
-    # Skip templated/overloaded names: &T::name would be ambiguous. Overloads
-    # must be disambiguated by hand rather than auto-bound -- UNLESS every
-    # other same-named occurrence is provably in a mutually exclusive #if
-    # branch of the same chain (the common "#if X ... #else ... #endif"
-    # duplicate-impl idiom), in which case only one of them is ever actually
-    # compiled and &T::name is never really ambiguous.
+    # Skip overloaded names (&T::name is ambiguous) unless every other
+    # same-named occurrence is provably in a mutually exclusive #if branch of
+    # the same chain (the "#if X ... #else ... #endif" duplicate-impl idiom).
     others = [p for (o, p) in method_paths.get(name, []) if o != offset]
     if any(not _mutually_exclusive(cond_path, p) for p in others):
         return
@@ -905,18 +832,13 @@ def generate_gen_header(classes: list, header: Path, project_root: Path, registr
               ""]
     helper_insert_at = len(lines)
 
-    # #if/#endif cannot be spliced into a backslash-continued macro body: line
-    # -splicing (translation phase 2) happens before directives are recognized
-    # (phase 3/4), so a "#if"/"#endif" written as a continuation line of a
-    # #define is just literal '#' 'if' text in the macro's replacement list,
-    # not a directive -- FCLASS() would expand to a syntax error. So a
-    # conditional accessor's code is instead hoisted into its own top-level
-    # macro, guarded by a REAL #if/#else/#endif (one physical line each, never
-    # spliced into anything), and the main GEN_BODY macro merely references
-    # that macro's bare name -- which *does* get expanded normally on rescan
-    # when GEN_BODY() itself is invoked, after every #define in this file has
-    # already been processed. One .gen.h is then correct for every build
-    # config; no per-config regeneration needed.
+    # #if/#endif can't be spliced into a backslash-continued macro body (line-
+    # splicing happens before directives are recognized, so it'd just be
+    # literal text, not a directive -- FCLASS() would expand to a syntax
+    # error). So a conditional accessor is hoisted into its own top-level
+    # macro guarded by a real #if/#else/#endif, and GEN_BODY merely references
+    # that macro's bare name, expanded normally on rescan. One .gen.h then
+    # covers every build config; no per-config regeneration needed.
     helper_blocks: list = []
     helper_counter = [0]
 
@@ -951,12 +873,9 @@ def generate_gen_header(classes: list, header: Path, project_root: Path, registr
         body.append("public:")
         body.append(f'\tconstexpr static StaticString get_class_static() {{ return "{c.name}"_ss; }}')
         body.append(f'\tconstexpr static StaticString get_parent_name() {{ return "{c.parent}"_ss; }}')
-        # A value type (FSTRUCT / FCLASS(novtable)) gets NO virtual member at
-        # all -- that's the whole point: no vtable pointer, so e.g. an ECS
-        # component keeps its exact plain-struct layout and size. Everything
-        # else below is static, a typedef or an inline accessor, none of which
-        # costs a byte. Runtime type queries for such a type go through
-        # ClassInfo's name/parent chain in ClassDB instead of is_of_type().
+        # A value type gets no virtual member at all -- that's the point: no
+        # vtable, so e.g. an ECS component keeps its exact plain-struct size.
+        # Runtime type queries go through ClassInfo instead of is_of_type().
         if not c.is_value_type:
             body.append("\tbool is_of_type(StaticString type_name) const override "
                         "{ return get_class_static() == type_name || Super::is_of_type(type_name); }")
@@ -964,9 +883,8 @@ def generate_gen_header(classes: list, header: Path, project_root: Path, registr
         body.extend(public_lines)
         body.append("protected:")
         body.append(f"\tusing Type = {c.name};")
-        # A rootless type has no base clause, so there is nothing to alias --
-        # emitting `using Super = ;` would be a syntax error. Only a value type
-        # can be rootless (a Reflected-derived one always names a base).
+        # A rootless type (only possible for a value type) has no base clause
+        # to alias -- `using Super = ;` would be a syntax error.
         if c.parent:
             body.append(f"\tusing Super = {c.parent};")
         body.append("\tstatic void _bind_members();")
@@ -991,10 +909,8 @@ def generate_gen_header(classes: list, header: Path, project_root: Path, registr
         if private_lines:
             body.append("private:")
             body.extend(private_lines)
-        # Restore the access level the type started with, so members written
-        # after the macro keep the accessibility the author expects. Getting
-        # this wrong is silent: a `private:` tail inside a struct would quietly
-        # privatize every field declared below FSTRUCT().
+        # Restore the type's starting access level, or a `private:` tail would
+        # silently privatize every field declared below FSTRUCT() in a struct.
         body.append("public:" if c.tag == "struct" else "private:")
 
         # Emit as a single function-like macro with line continuations.
@@ -1162,15 +1078,11 @@ def generate_register_header(subfolder: str, dir_emissions: list) -> str:
 
 def validate_hierarchy(classes: list):
     """A value type and a Reflected-derived type can't share an inheritance
-    chain: the derived one either overrides an is_of_type() that doesn't exist,
-    or fails to override one that's pure virtual. Both are real compile errors,
-    but they surface deep inside a generated macro expansion, so catch them here
-    where we can name both classes and the macro to fix.
-
-    Only classes reflected in the *same* source dir are cross-checked (that's
-    the set this pass knows about) -- a chain crossing directory boundaries is
-    left to the compiler, in keeping with the scanner never resolving what a
-    base class spelling actually refers to."""
+    chain (one ends up overriding an is_of_type() that doesn't exist, or
+    missing one that's pure virtual) -- both real compile errors, but they'd
+    surface deep inside a generated macro expansion, so catch them here where
+    we can name both classes. Only cross-checks classes in the *same* source
+    dir; a chain crossing directories is left to the compiler."""
     known = {c.name: c for c in classes}
     for c in classes:
         base = known.get(c.parent)
@@ -1223,16 +1135,13 @@ def scan_fclass_occurrences(text: str) -> list:
 
 
 def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str) -> list:
-    # newline="" disables universal-newline translation: on a CRLF checkout (the
-    # git default on Windows unless core.autocrlf/.gitattributes forces LF),
-    # Path.read_text()'s default translation of "\r\n" -> "\n" would silently
-    # collapse one byte per line, making every offset/line number computed here
-    # increasingly diverge from the raw on-disk bytes. build_class()'s
-    # occurrence-to-body range check then misses classes further down the file
-    # -- observed as PBRMaterial (last class in material.h) silently missing
-    # its GEN_BODY macro on a CRLF Windows checkout while earlier classes in
-    # the same file still resolved. Path.open()'s newline param works on all
-    # Python 3 versions, unlike Path.read_text()'s (3.13+ only).
+    # newline="" disables universal-newline translation: on a CRLF checkout,
+    # Path.read_text()'s "\r\n" -> "\n" translation would silently collapse
+    # one byte per line, making offsets increasingly diverge from on-disk
+    # bytes -- observed as PBRMaterial (last class in material.h) silently
+    # missing its GEN_BODY macro on a CRLF Windows checkout while earlier
+    # classes in the same file still resolved. Path.open()'s newline param
+    # works on all Python 3 versions, unlike Path.read_text()'s (3.13+ only).
     raw = header.open(encoding="utf-8", errors="replace", newline="").read()
     text = blank_comments_and_literals(raw)
     occ = scan_fclass_occurrences(text)
@@ -1256,12 +1165,10 @@ _BUILTIN_EXTENSIONS_DIR = Path(__file__).resolve().parent / "extensions"
 
 
 def build_registry(dir_path: Path, extra_extensions: list) -> Registry:
-    """The engine's own modifiers (tools/codegen/extensions/*.py) are always
-    loaded -- they define the base modifier vocabulary, not an opt-in. Each
-    (scope, path) in extra_extensions (from --extension) additionally loads
-    only when dir_path falls inside scope, so a project extension can never
-    change what core/ (or an unrelated module) generates -- see the module
-    docstring in modifier_api.py for why that matters."""
+    """Built-in modifiers (tools/codegen/extensions/*.py) always load. Each
+    (scope, path) in extra_extensions (--extension) additionally loads only
+    when dir_path falls inside scope, so a project extension can never change
+    what core/ (or an unrelated module) generates -- see modifier_api.py."""
     registry = Registry()
     if _BUILTIN_EXTENSIONS_DIR.is_dir():
         try:
@@ -1283,14 +1190,12 @@ def build_registry(dir_path: Path, extra_extensions: list) -> Registry:
 def process_source_dir(dir_path: Path, name: str, include_base: Path, project_root: Path,
                         extra_extensions: list) -> int:
     """Scan dir_path recursively for FCLASS headers, emit each header's .gen.h,
-    and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the per-core-
-    subfolder loop and the --module-path loop in main() -- a module directory is
-    processed exactly like a core subfolder, just outside core/ and named after
-    itself rather than a core subfolder name. include_base is what the generated
-    #include paths in register_<name>_types.gen.cpp are computed relative to
-    (core_path for core subfolders, the module dir itself for modules, so e.g.
-    "vex_renderer.h" rather than "modules/vex_renderer/vex_renderer.h"). Returns
-    the number of files written."""
+    and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the core-
+    subfolder loop and the --module-path loop in main() -- a module dir is
+    processed exactly like a core subfolder. include_base is what generated
+    #include paths are computed relative to (core_path for core, the module
+    dir itself for modules, so e.g. "vex_renderer.h" not
+    "modules/vex_renderer/vex_renderer.h"). Returns files-written count."""
     changed = 0
     registry = build_registry(dir_path, extra_extensions)
     classes_by_header: dict = {}

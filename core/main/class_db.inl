@@ -278,8 +278,7 @@ inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_vi
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
 
-// Guarded property binds — skip binding when the property type isn't
-// Variant-marshalable so generated code never fails to compile on such members.
+// Guarded property binds — no-op when the property type isn't Variant-marshalable.
 template <class T, class TGet, class TSet>
 inline void ClassDB::bind_property_accessors_if_bindable(TGet (T::*getter)() const,
 														 void (T::*setter)(TSet),
@@ -317,7 +316,6 @@ inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...), std::s
 	if constexpr (method_signature_bindable<TRet, TArgs...>) {
 		bind_method(method, name, access);
 	}
-	// else: signature is not Variant-marshalable — silently skip (opt-out safety).
 }
 
 template <class T, class TRet, class... TArgs>
@@ -326,7 +324,6 @@ ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...) const, std::string_
 	if constexpr (method_signature_bindable<TRet, TArgs...>) {
 		bind_method(method, name, access);
 	}
-	// else: signature is not Variant-marshalable — silently skip (opt-out safety).
 }
 
 } //namespace feather
