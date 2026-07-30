@@ -9,7 +9,7 @@
 namespace feather {
 
 class MathWorldFeature final : public EcsFeature {
-	FCLASS();
+	FCLASS(EcsModule);
 
 public:
 	MathWorldFeature();

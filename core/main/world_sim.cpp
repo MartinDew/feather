@@ -15,7 +15,7 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 	_world.set<Ecs::Rest>({});
 #endif
 
-	register_core_ecs_features(_world);
+	register_core_components(_world);
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());

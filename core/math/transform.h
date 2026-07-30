@@ -1,17 +1,24 @@
 #pragma once
 
 #include "math_defs.h"
+#include <framework/reflection_macros.h>
+
+#ifndef FEATHER_REFLECTION_PARSER
+#include "transform.gen.h"
+#endif
 
 namespace feather {
 
 struct Transform {
+	FSTRUCT(Component);
+
 	// Feather uses right-handed coordinates
 	// up = Y
 	// right = X
 	// forward = -Z
-	Vector3 position = Vector3::zero; // X, Y, Z
-	Quaternion rotation = Quaternion::identity; // Quaternion
-	Vector3 scale = Vector3::one; // X, Y, Z
+	[[get, set]] Vector3 position = Vector3::zero; // X, Y, Z
+	[[get, set]] Quaternion rotation = Quaternion::identity; // Quaternion
+	[[get, set]] Vector3 scale = Vector3::one; // X, Y, Z
 
 	Transform() = default;
 	explicit Transform(const Matrix& transformationMat);

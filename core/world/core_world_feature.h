@@ -9,7 +9,7 @@
 namespace feather {
 
 class CoreWorldFeature : public EcsFeature {
-	FCLASS();
+	FCLASS(EcsModule);
 
 public:
 	CoreWorldFeature() = default;
