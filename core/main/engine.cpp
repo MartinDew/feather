@@ -87,7 +87,7 @@ bool Engine::run() {
 				.emplace<MeshInstance>(std::make_shared<BoxMesh>());
 
 		auto dir = Vector3 { -0.5f, -1.0f, -1.f };
-		Light l { .type = Light::Type::Directional,
+		Light l { .type = LightType::Directional,
 				  .position = Vector3::zero,
 				  .direction = dir,
 				  .color = Color(1.0f, 1.0f, 1.0f, 1.0f),

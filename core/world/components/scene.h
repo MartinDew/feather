@@ -1,13 +1,20 @@
 ﻿#pragma once
 #include <world/ecs_defs.h>
+#include <framework/reflection_macros.h>
 #include <framework/static_string.hpp>
 
 #include <cstdint>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "scene.gen.h"
+#endif
+
 namespace feather {
 
 struct Scene {
-	int64_t _scene_id = -1;
+	FSTRUCT(Component);
+
+	[[get, set]] int64_t _scene_id = -1;
 
 	Scene() = default;
 	Scene(StaticString name);
@@ -20,8 +27,12 @@ struct Scene {
 };
 
 // Relationship Tag
-struct ActiveScene {};
+struct ActiveScene {
+	FSTRUCT(Component);
+};
 
-struct InScene {};
+struct InScene {
+	FSTRUCT(Component);
+};
 
 } //namespace feather

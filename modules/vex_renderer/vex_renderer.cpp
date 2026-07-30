@@ -804,7 +804,7 @@ VexRenderer::_get_texture_handle(const Texture* texture, vex::CommandContext& ct
 }
 
 Matrix VexRenderer::_compute_light_view_proj(const Light& light, const RenderScene& capture) const {
-	if (light.type == Light::Type::Directional) {
+	if (light.type == LightType::Directional) {
 		Vector3 sceneCenter = _compute_scene_center(capture);
 		float sceneRadius = _compute_scene_radius(capture, sceneCenter);
 
@@ -819,7 +819,7 @@ Matrix VexRenderer::_compute_light_view_proj(const Light& light, const RenderSce
 		return view * proj;
 	}
 
-	if (light.type == Light::Type::Spot) {
+	if (light.type == LightType::Spot) {
 		Matrix view = Matrix::create_look_at(light.position, light.position + light.direction, Vector3(0, 1, 0));
 		float fov = light.spot_angle * 2.0f;
 		Matrix proj = Matrix::create_perspective_field_of_view(deg_to_rad(fov), 1.0f, 0.1f, light.range);

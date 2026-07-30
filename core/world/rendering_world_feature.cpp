@@ -9,10 +9,6 @@
 
 namespace feather {
 
-void RenderingWorldFeature::_load_module(WorldSim* sim) {
-	sim->get_world()->import <Type>();
-}
-
 inline void _begin_render_scene(const flecs::iter& it) {
 	auto* rs = RenderingServer::get();
 	rs->begin_scene_frame();
@@ -27,10 +23,6 @@ inline void _update_meshes(Entity e, Transform transform, MeshInstance& mesh, Ma
 RenderingWorldFeature::RenderingWorldFeature(World world) {
 	std::println("importing module {} ", get_class_static());
 	world.module<Type>();
-
-	world.component<MeshInstance>("MeshInstance");
-	world.component<MaterialInstance>("MaterialInstance");
-	world.component<Light>("Light");
 
 	world.system("Begin Render Scene").kind(flecs::PreStore).run(&_begin_render_scene);
 

@@ -35,6 +35,16 @@ struct NO_PARENT {};
 //   FCLASS(abstract)          force registration as abstract (usually redundant:
 //                             abstract/non-default-constructible classes are
 //                             detected automatically in ClassDB::register_class)
+//   FCLASS(novtable)          reflect WITHOUT any virtual function (no vtable
+//                             pointer) — see FSTRUCT below, this is the same
+//                             thing spelled for a `class`. Every class in a
+//                             local inheritance chain must agree on this (the
+//                             generator errors otherwise); properties still
+//                             work, but a non-static [[method]] cannot bind
+//                             (ClassDB::bind_method needs a Reflected* to
+//                             dispatch through object_cast, which a vtable-
+//                             free type has no way to support — bind a static
+//                             method instead).
 //
 // Both properties and methods are opt-in (mirrors Unreal's UPROPERTY/UFUNCTION):
 // a data member reflects only when annotated with [[get]]/[[set]]/[[name(...)]],
@@ -46,10 +56,21 @@ struct NO_PARENT {};
 // header (re)defines CURRENT_FILE_ID to a token unique to that header, so the
 // "<header>.gen.h" include MUST be the LAST include of the header — that
 // guarantees CURRENT_FILE_ID names the current file at the point FCLASS expands.
+//
+// FSTRUCT(...) is FCLASS(...) with `novtable` implied — the natural spelling on
+// a `struct` that just wants reflected properties (e.g. an ECS component) and
+// none of the polymorphism baggage. It takes the same modifiers as FCLASS
+// (though `novtable` is redundant on it) and expands identically; only the
+// generator treats it differently. It does NOT need to inherit Reflected, and
+// typically inherits nothing at all — reflection here is purely properties
+// (+ optional static methods) registered through ClassDB::register_value_class,
+// with no factory and no polymorphic is_of_type/get_class_name.
 #ifdef FEATHER_REFLECTION_PARSER
 // The generator parses headers with this defined so member/method extraction
 // never depends on generated output that may not exist yet.
 #define FCLASS(...)
+#define FSTRUCT(...)
 #else
 #define FCLASS(...) FEATHER_JOIN(CURRENT_FILE_ID, FEATHER_JOIN(_, FEATHER_JOIN(__LINE__, _GEN_BODY)))()
+#define FSTRUCT(...) FEATHER_JOIN(CURRENT_FILE_ID, FEATHER_JOIN(_, FEATHER_JOIN(__LINE__, _GEN_BODY)))()
 #endif

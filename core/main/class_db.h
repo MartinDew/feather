@@ -54,6 +54,14 @@ public:
 	template <is_reflected_class_type T>
 	static void register_singleton_class();
 
+	// Register a value type (FSTRUCT / FCLASS(novtable)): properties (and
+	// static methods) only, no Reflected base, no object_create_func -- there
+	// is no vtable to construct a polymorphic factory through. See
+	// is_reflected_value_type.
+	template <is_reflected_value_type T>
+	requires (!std::is_base_of_v<Reflected, T>)
+	static void register_value_class();
+
 	// Create a property backed directly by a data member (generates trivial
 	// get/set accessors that read/write the member). Both accessors share the
 	// member's accessibility.

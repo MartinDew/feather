@@ -28,6 +28,11 @@ struct ClassInfo {
 	// and singleton classes have a null factory.
 	bool is_abstract = false;
 	bool is_singleton = false;
+	// True for a value type (FSTRUCT / FCLASS(novtable)): registered through
+	// ClassDB::register_value_class, no Reflected base, no factory. Consumers
+	// of Property::getter/setter must treat the void* they're handed as a raw
+	// T*, never a Reflected* -- there is no vtable to cast through.
+	bool is_value_type = false;
 
 	struct Property {
 		StaticString name;

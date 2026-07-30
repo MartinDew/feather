@@ -18,19 +18,19 @@ class Mesh;
 class Material;
 
 struct MeshInstance {
+	FSTRUCT(Component);
+
 	std::shared_ptr<Mesh> mesh;
 };
 
 struct MaterialInstance {
+	FSTRUCT(Component);
+
 	std::shared_ptr<Material> material; // todo: multiple materials
 };
 
 class RenderingWorldFeature : public EcsFeature {
-	FCLASS();
-
-protected:
-	[[method(_import_module)]]
-	static void _load_module(WorldSim* sim);
+	FCLASS(EcsModule);
 
 public:
 	RenderingWorldFeature() = default;

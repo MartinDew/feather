@@ -113,6 +113,37 @@ template <is_reflected_class_type T> void ClassDB::register_singleton_class() {
 	_fire_subclass_delegates(T::get_class_static());
 }
 
+template <is_reflected_value_type T>
+	requires(!std::is_base_of_v<Reflected, T>)
+void ClassDB::register_value_class() {
+	std::println("Registering class '{}' as {} object", T::get_class_static(), "value type");
+
+	static_assert(is_reflected_value_type<T>, "Attempt to register a non-value reflected class type");
+	static_assert(has_bind_method_v<T>, "Class doesn't have a static _bind_members function");
+	ClassDB& instance = *get();
+
+	ClassInfo& info = instance._class_infos[T::get_class_static()];
+	info.name = T::get_class_static();
+	info.parent = T::get_parent_name();
+	info.is_abstract = false;
+	info.is_singleton = false;
+	info.is_value_type = true;
+	// No Reflected base means no polymorphic factory -- Variant's pointer path
+	// requires std::is_base_of_v<Reflected, T>, which a value type never satisfies.
+	info.object_create_func = nullptr;
+
+	instance._current_info = &info;
+
+	if (T::get_parent_name() != "") {
+		instance._class_infos[T::get_parent_name()].children.emplace_back(&info);
+	}
+
+	T::_bind_members();
+
+	instance._current_info = nullptr;
+	_fire_subclass_delegates(T::get_class_static());
+}
+
 // Property binding
 
 template <class T, class U>
@@ -155,12 +186,10 @@ inline void ClassDB::bind_property_accessors(
 	}
 	using U = std::decay_t<TGet>;
 
-	ClassInfo::Property prop {
-		.name = StaticString(name),
-		.type = get_variant_type<U>(),
-		.getter_access = getter_access,
-		.setter_access = setter_access
-	};
+	ClassInfo::Property prop { .name = StaticString(name),
+							   .type = get_variant_type<U>(),
+							   .getter_access = getter_access,
+							   .setter_access = setter_access };
 
 	prop.getter = [getter](void* obj_ptr) -> Variant { return Variant((static_cast<T*>(obj_ptr)->*getter)()); };
 	prop.setter = [setter, name](void* obj_ptr, Variant val) {
@@ -267,7 +296,8 @@ inline void ClassDB::bind_property_accessors_if_bindable(
 }
 
 template <class T, class TGet>
-inline void ClassDB::bind_property_get_if_bindable(TGet (T::*getter)() const, std::string_view name, AccessLevel access) {
+inline void
+ClassDB::bind_property_get_if_bindable(TGet (T::*getter)() const, std::string_view name, AccessLevel access) {
 	if constexpr (VariantCompatible<std::decay_t<TGet>>) {
 		bind_property_get(getter, name, access);
 	}
@@ -283,7 +313,8 @@ inline void ClassDB::bind_property_set_if_bindable(void (T::*setter)(TSet), std:
 // A method signature is bindable when its return type and every parameter type
 // are Variant-marshalable (see the VariantCompatible concept in variant.h).
 template <class TRet, class... TArgs>
-concept method_signature_bindable = VariantCompatible<std::decay_t<TRet>> && (VariantCompatible<std::decay_t<TArgs>> && ...);
+concept method_signature_bindable =
+		VariantCompatible<std::decay_t<TRet>> && (VariantCompatible<std::decay_t<TArgs>> && ...);
 
 template <class T, class TRet, class... TArgs>
 inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access) {
@@ -294,7 +325,8 @@ inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...), std::s
 }
 
 template <class T, class TRet, class... TArgs>
-inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access) {
+inline void
+ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access) {
 	if constexpr (method_signature_bindable<TRet, TArgs...>) {
 		bind_method(method, name, access);
 	}

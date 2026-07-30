@@ -49,6 +49,14 @@ import sys
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
+# Extension modules (tools/codegen/extensions/*.py, and anything passed via
+# --extension) `from modifier_api import ...` -- this needs to resolve the
+# same way for the engine's own built-ins and a project's own extension file,
+# so this script's own directory goes on sys.path once, here, rather than
+# each extension needing its own path hack.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from modifier_api import EmitContext, ModifierError, Registry, load_extension_path  # noqa: E402
+
 GENERATED_NOTICE = (
     "// THIS FILE IS AUTO-GENERATED — DO NOT EDIT BY HAND.\n"
     "// Re-run tools/generate_reflection.py to refresh.\n"
@@ -57,10 +65,12 @@ GENERATED_NOTICE = (
 ACCESS_KEYWORDS = {"public", "protected", "private"}
 ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Protected", "private": "AccessLevel::Private"}
 
-# FCLASS(...) invocation, capturing the modifier list. Matches FCLASS( ... ) but
-# not FCLASS_ANYTHING( — the trailing lookahead keeps us from matching a longer
-# identifier (there are no other FCLASS_* macros anymore, but be safe).
-_FCLASS_RE = re.compile(r"\bFCLASS\s*\(([^)]*)\)")
+# FCLASS(...)/FSTRUCT(...) invocation, capturing the macro name and the modifier
+# list. Matches FCLASS( ... ) but not FCLASS_ANYTHING( — \b at both ends keeps us
+# from matching a longer identifier (there are no other FCLASS_* macros anymore,
+# but be safe). Both macros expand identically (see reflection_macros.h); which
+# one was written only ever changes what this generator puts in the body.
+_FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
 # `class Name ... {` / `struct Name ... {`, optionally `final`, optionally a
@@ -117,9 +127,21 @@ class ClassDesc:
     parent: str
     header: Path
     fclass_line: int
-    modifiers: set = dc_field(default_factory=set)
-    is_singleton: bool = False
-    is_abstract: bool = False
+    tag: str = "class"      # "class" or "struct", as the type was declared
+    modifiers: set = dc_field(default_factory=set)   # raw tokens, e.g. {"singleton", "System(A, B)"}
+    # list[(Modifier, arg_text_or_None)], resolved against the dir's Registry
+    # by build_class -- see modifier_api.Registry.resolve. singleton/abstract
+    # are no longer special fields: a modifier's presence (and its
+    # register_statements()/gen_body_lines() hooks) is the single source of
+    # truth, same as any other modifier.
+    resolved_modifiers: list = dc_field(default_factory=list)
+    # A value type is reflected WITHOUT any virtual function: no vtable pointer,
+    # so it stays trivially small (the point of reflecting an ECS component).
+    # Set by FSTRUCT(...) or by FCLASS(novtable) — never inferred from the base
+    # clause: a purely syntactic scanner can't tell whether a parent spelled in
+    # another header eventually reaches Reflected, so the declaration site says
+    # so explicitly. See generate_gen_header() for what is left out.
+    is_value_type: bool = False
     properties: list = dc_field(default_factory=list)     # list[PropertyPlan]
     gen_getters: list = dc_field(default_factory=list)    # (access, code, condition) inline accessor defs
     methods: list = dc_field(default_factory=list)        # list[MethodPlan]
@@ -587,16 +609,22 @@ def classify_chunk(chunk: str):
 # --------------------------------------------------------------------------- #
 
 def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclass_index: list,
-                 body_start: int, body_end: int) -> "ClassDesc | None":
-    """Returns None if no FCLASS(...) occurrence falls inside [body_start,
-    body_end) — find_class_bodies() finds every class/struct definition in the
-    file, reflected or not, so this is what stops a plain helper struct
-    sharing a header with a real FCLASS class from being reflected too."""
-    modifiers, fclass_line, matched = set(), 0, False
-    for (off, line, args) in fclass_index:
+                 body_start: int, body_end: int, registry: Registry, dir_name: str) -> "ClassDesc | None":
+    """Returns None if no FCLASS(...)/FSTRUCT(...) occurrence falls inside
+    [body_start, body_end) — find_class_bodies() finds every class/struct
+    definition in the file, reflected or not, so this is what stops a plain
+    helper struct sharing a header with a real FCLASS class from being
+    reflected too."""
+    modifiers, fclass_line, macro, matched = set(), 0, "FCLASS", False
+    for (off, line, args, mac) in fclass_index:
         if body_start <= off <= body_end:
-            modifiers = {a.strip() for a in args.split(",") if a.strip()}
+            # _split_top_level (not a naive .split(",")) so a modifier that
+            # itself takes comma-separated arguments -- e.g. a future
+            # System(OnUpdate, Position, Velocity) -- doesn't get shredded
+            # into garbage tokens at its own inner commas.
+            modifiers = set(_split_top_level(args))
             fclass_line = line
+            macro = mac
             matched = True
             break
     if not matched:
@@ -604,10 +632,30 @@ def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclas
 
     cls = ClassDesc(
         name=name, parent=parent, header=header, fclass_line=fclass_line,
-        modifiers=modifiers,
-        is_singleton="singleton" in modifiers,
-        is_abstract="abstract" in modifiers,
+        tag=tag, modifiers=modifiers,
+        is_value_type=(macro == "FSTRUCT" or "novtable" in modifiers),
     )
+
+    def perr(msg: str) -> ParseError:
+        return ParseError(f"{header}:{fclass_line}: class {name}: {msg}")
+
+    try:
+        resolved = registry.resolve(modifiers)
+    except ModifierError as exc:
+        raise perr(str(exc)) from None
+    ctx = EmitContext(dir_name=dir_name)
+    for modifier, _arg in resolved:
+        if "class" not in modifier.targets:
+            raise perr(f"modifier '{modifier.name}' can't be applied to a class (targets {sorted(modifier.targets)})")
+        if modifier.value_type is not None and modifier.value_type != cls.is_value_type:
+            want = "a value type (FSTRUCT / FCLASS(novtable))" if modifier.value_type \
+                else "a non-value (Reflected-derived) type"
+            raise perr(f"modifier '{modifier.name}' requires {want}")
+        try:
+            modifier.validate(cls, ctx)
+        except ModifierError as exc:
+            raise perr(f"modifier '{modifier.name}': {exc}") from None
+    cls.resolved_modifiers = resolved
 
     try:
         # First pass: tally method names by (source offset, cond_path)
@@ -793,6 +841,18 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offs
     forced = "method" in attrs
     if not forced:
         return
+    # ClassDB::bind_method stores a std::function<TRet(Reflected*, ...)> and
+    # dispatches through object_cast<T>(instance) -- there is no Reflected* to
+    # dispatch on for a value type, and no vtable to cast through. A static
+    # method is fine: bind_static_method takes no instance at all.
+    if cls.is_value_type and not info["is_static"]:
+        raise ParseError(
+            f"{header}: class {cls.name} method '{name}' near line "
+            f"{_line_of(body, offset) + fclass_line - 1}: [[method]] on a non-static method of a "
+            f"value type (FSTRUCT / FCLASS(novtable)) can't be bound -- ClassDB::bind_method "
+            f"dispatches through object_cast<T>(Reflected*), which a vtable-free type has no way "
+            f"to support. Make the method static, or drop 'novtable'/use FCLASS instead."
+        )
     # Skip templated/overloaded names: &T::name would be ambiguous. Overloads
     # must be disambiguated by hand rather than auto-bound -- UNLESS every
     # other same-named occurrence is provably in a mutually exclusive #if
@@ -822,15 +882,23 @@ def file_id(header: Path, project_root: Path) -> str:
     return "feather_" + re.sub(r"[^0-9a-zA-Z]", "_", rel)
 
 
-def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
+def generate_gen_header(classes: list, header: Path, project_root: Path, registry: Registry, dir_name: str) -> str:
     fid = file_id(header, project_root)
-    any_singleton = any(c.is_singleton for c in classes)
+
+    extra_includes, seen_inc = [], set()
+    plain_ctx = EmitContext(dir_name=dir_name)
+    for c in classes:
+        for modifier, _arg in c.resolved_modifiers:
+            for inc in modifier.gen_header_includes(c, plain_ctx):
+                if inc not in seen_inc:
+                    seen_inc.add(inc)
+                    extra_includes.append(inc)
 
     lines = [GENERATED_NOTICE, "#pragma once", "",
              "#include <framework/static_string.hpp>",
              "#include <utility>"]
-    if any_singleton:
-        lines.append("#include <framework/singleton_helpers.h>")
+    for inc in extra_includes:
+        lines.append(f"#include <{inc}>")
     lines += ["",
               "#undef CURRENT_FILE_ID",
               f"#define CURRENT_FILE_ID {fid}",
@@ -866,22 +934,43 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
 
     for c in classes:
         macro = f"{fid}_{c.fclass_line}_GEN_BODY"
+        cls_ctx = EmitContext(dir_name=dir_name, _hoist=lambda code_lines, cond: hoist(macro, "MOD", code_lines, cond))
+
+        pre_lines, public_lines, protected_lines, private_lines = [], [], [], []
+        section_lines = {"pre": pre_lines, "public": public_lines,
+                          "protected": protected_lines, "private": private_lines}
+        for modifier, _arg in c.resolved_modifiers:
+            for section, line in modifier.gen_body_lines(c, cls_ctx):
+                section_lines[section].append(line)
+
         body = []
         body.append("friend class ClassDB;")
         body.append("struct _class_type {};")
         body.append("template <class T> friend void has_bind_method(const T& t);")
-        if c.is_singleton:
-            body.append(f"FDECLARE_SINGLETON({c.name});")
+        body.extend(pre_lines)
         body.append("public:")
         body.append(f'\tconstexpr static StaticString get_class_static() {{ return "{c.name}"_ss; }}')
         body.append(f'\tconstexpr static StaticString get_parent_name() {{ return "{c.parent}"_ss; }}')
-        body.append("\tbool is_of_type(StaticString type_name) const override "
-                    "{ return get_class_static() == type_name || Super::is_of_type(type_name); }")
-        body.append("\tvirtual StaticString get_class_name() override { return get_class_static(); }")
+        # A value type (FSTRUCT / FCLASS(novtable)) gets NO virtual member at
+        # all -- that's the whole point: no vtable pointer, so e.g. an ECS
+        # component keeps its exact plain-struct layout and size. Everything
+        # else below is static, a typedef or an inline accessor, none of which
+        # costs a byte. Runtime type queries for such a type go through
+        # ClassInfo's name/parent chain in ClassDB instead of is_of_type().
+        if not c.is_value_type:
+            body.append("\tbool is_of_type(StaticString type_name) const override "
+                        "{ return get_class_static() == type_name || Super::is_of_type(type_name); }")
+            body.append("\tvirtual StaticString get_class_name() override { return get_class_static(); }")
+        body.extend(public_lines)
         body.append("protected:")
         body.append(f"\tusing Type = {c.name};")
-        body.append(f"\tusing Super = {c.parent};")
+        # A rootless type has no base clause, so there is nothing to alias --
+        # emitting `using Super = ;` would be a syntax error. Only a value type
+        # can be rootless (a Reflected-derived one always names a base).
+        if c.parent:
+            body.append(f"\tusing Super = {c.parent};")
         body.append("\tstatic void _bind_members();")
+        body.extend(protected_lines)
 
         # Generated accessors, grouped by access level; within a group,
         # unconditional lines are emitted directly (unchanged from before),
@@ -899,7 +988,14 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
                     by_condition.setdefault(cond, []).append(code)
             for cond, code_lines in by_condition.items():
                 body.append(hoist(macro, acc, code_lines, cond))
-        body.append("private:")
+        if private_lines:
+            body.append("private:")
+            body.extend(private_lines)
+        # Restore the access level the type started with, so members written
+        # after the macro keep the accessibility the author expects. Getting
+        # this wrong is silent: a `private:` tail inside a struct would quietly
+        # privatize every field declared below FSTRUCT().
+        body.append("public:" if c.tag == "struct" else "private:")
 
         # Emit as a single function-like macro with line continuations.
         lines.append(f"#define {macro}() \\")
@@ -912,7 +1008,7 @@ def generate_gen_header(classes: list, header: Path, project_root: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _bind_members_body(c: ClassDesc) -> list:
+def _bind_members_body(c: ClassDesc, dir_name: str) -> list:
     # Unlike the .gen.h macro, this is a real function body -- #if/#endif can
     # wrap a conditional binding call directly, no hoisted-helper-macro
     # indirection needed.
@@ -947,6 +1043,10 @@ def _bind_members_body(c: ClassDesc) -> list:
         else:
             bind = "bind_method" if m.strict else "bind_method_if_bindable"
             emit(out, m.condition, f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+    ctx = EmitContext(dir_name=dir_name)
+    for modifier, _arg in c.resolved_modifiers:
+        for stmt in modifier.bind_members_lines(c, ctx):
+            out.append(f"\t{stmt}")
     out.append("}")
     return out
 
@@ -968,9 +1068,10 @@ def topological_sort(classes: list) -> list:
     return result
 
 
-def generate_register_cpp(subfolder: str, classes: list, core_path: Path) -> str:
+def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_emissions: list) -> str:
     func = f"register_{subfolder}_types"
     ordered = topological_sort(classes)
+    ctx = EmitContext(dir_name=subfolder)
 
     includes, seen = [], set()
     for c in ordered:
@@ -978,6 +1079,17 @@ def generate_register_cpp(subfolder: str, classes: list, core_path: Path) -> str
         if rel not in seen:
             seen.add(rel)
             includes.append(rel)
+    for c in ordered:
+        for modifier, _arg in c.resolved_modifiers:
+            for inc in modifier.register_cpp_includes(c, ctx):
+                if inc not in seen:
+                    seen.add(inc)
+                    includes.append(inc)
+    for de in dir_emissions:
+        for inc in de.cpp_includes:
+            if inc not in seen:
+                seen.add(inc)
+                includes.append(inc)
 
     lines = [GENERATED_NOTICE,
              f'#include "register_{subfolder}_types.gen.h"',
@@ -988,24 +1100,89 @@ def generate_register_cpp(subfolder: str, classes: list, core_path: Path) -> str
     lines += ["", "namespace feather {", ""]
 
     for c in ordered:
-        lines.extend(_bind_members_body(c))
+        lines.extend(_bind_members_body(c, subfolder))
         lines.append("")
+        for modifier, _arg in c.resolved_modifiers:
+            defs = modifier.register_cpp_definitions(c, ctx)
+            if defs:
+                lines.extend(defs)
+                lines.append("")
 
     lines.append(f"void {func}() {{")
     if ordered:
         for c in ordered:
-            reg = "register_abstract_class" if c.is_abstract else "register_class"
-            lines.append(f"\tClassDB::{reg}<{c.name}>();")
+            # A modifier may replace the default register_class/register_value_class
+            # call entirely (e.g. singleton -> register_singleton_class); the first
+            # applied modifier (in resolved/sorted order) that opts in wins.
+            stmts = None
+            for modifier, _arg in c.resolved_modifiers:
+                stmts = modifier.register_statements(c, ctx)
+                if stmts is not None:
+                    break
+            if stmts is None:
+                # No Reflected base for a value type, so no factory and no method
+                # dispatch -- register_value_class binds properties (and static
+                # methods) only.
+                reg = "register_value_class" if c.is_value_type else "register_class"
+                stmts = [f"ClassDB::{reg}<{c.name}>();"]
+            for stmt in stmts:
+                lines.append(f"\t{stmt}")
     else:
         lines.append("\t// No reflected classes found in this module.")
-    lines += ["}", "", "} // namespace feather", ""]
+    lines += ["}", ""]
+
+    for de in dir_emissions:
+        lines.extend(de.cpp_lines)
+
+    lines += ["} // namespace feather", ""]
     return "\n".join(lines) + "\n"
 
 
-def generate_register_header(subfolder: str) -> str:
+def generate_register_header(subfolder: str, dir_emissions: list) -> str:
     func = f"register_{subfolder}_types"
-    return (f"{GENERATED_NOTICE}#pragma once\n\nnamespace feather {{\n\n"
-            f"void {func}();\n\n}} // namespace feather\n")
+
+    extra_includes, seen = [], set()
+    for de in dir_emissions:
+        for inc in de.header_includes:
+            if inc not in seen:
+                seen.add(inc)
+                extra_includes.append(inc)
+
+    lines = [GENERATED_NOTICE, "#pragma once", ""]
+    for inc in extra_includes:
+        lines.append(f'#include "{inc}"')
+    if extra_includes:
+        lines.append("")
+    lines += ["namespace feather {", "", f"void {func}();", ""]
+    for de in dir_emissions:
+        lines.extend(de.header_decls)
+    lines += ["} // namespace feather", ""]
+    return "\n".join(lines) + "\n"
+
+
+def validate_hierarchy(classes: list):
+    """A value type and a Reflected-derived type can't share an inheritance
+    chain: the derived one either overrides an is_of_type() that doesn't exist,
+    or fails to override one that's pure virtual. Both are real compile errors,
+    but they surface deep inside a generated macro expansion, so catch them here
+    where we can name both classes and the macro to fix.
+
+    Only classes reflected in the *same* source dir are cross-checked (that's
+    the set this pass knows about) -- a chain crossing directory boundaries is
+    left to the compiler, in keeping with the scanner never resolving what a
+    base class spelling actually refers to."""
+    known = {c.name: c for c in classes}
+    for c in classes:
+        base = known.get(c.parent)
+        if base is None or base.is_value_type == c.is_value_type:
+            continue
+        kind, base_kind = ("a value type", "not") if c.is_value_type else ("not a value type", "is")
+        raise ParseError(
+            f"{c.header}:{c.fclass_line}: class {c.name} is {kind} (FSTRUCT/novtable) but its "
+            f"parent {base.name} ({base.header}:{base.fclass_line}) {base_kind} -- a vtable-free "
+            f"type and a Reflected-derived type can't be in the same inheritance chain. Use the "
+            f"same form for both."
+        )
 
 
 def _relative_include(header: Path, core_path: Path) -> str:
@@ -1027,11 +1204,12 @@ def write_if_changed(path: Path, content: str) -> bool:
 
 
 def scan_fclass_occurrences(text: str) -> list:
-    """Return [(offset, line, raw_args), ...] for each real FCLASS(...) in the
-    (already comment/literal-blanked) text, skipping the macro definition line
-    in reflection_macros.h. Comment occurrences (e.g. reflection_macros.h's own
-    "//   FCLASS()  plain reflected class" doc-comment) never reach here at all
-    — blank_comments_and_literals() already erased them before this runs."""
+    """Return [(offset, line, raw_args, macro), ...] for each real FCLASS(...)
+    or FSTRUCT(...) in the (already comment/literal-blanked) text, skipping the
+    macro definition lines in reflection_macros.h. Comment occurrences (e.g.
+    reflection_macros.h's own "//   FCLASS()  plain reflected class"
+    doc-comment) never reach here at all — blank_comments_and_literals()
+    already erased them before this runs."""
     out = []
     for m in _FCLASS_RE.finditer(text):
         line_start = text.rfind("\n", 0, m.start()) + 1
@@ -1040,11 +1218,11 @@ def scan_fclass_occurrences(text: str) -> list:
         if "#define" in prefix:
             continue
         line = text.count("\n", 0, m.start()) + 1
-        out.append((m.start(), line, m.group(1)))
+        out.append((m.start(), line, m.group(2), m.group(1)))
     return out
 
 
-def process_header(header: Path, project_root: Path) -> list:
+def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str) -> list:
     # newline="" disables universal-newline translation: on a CRLF checkout (the
     # git default on Windows unless core.autocrlf/.gitattributes forces LF),
     # Path.read_text()'s default translation of "\r\n" -> "\n" would silently
@@ -1064,7 +1242,7 @@ def process_header(header: Path, project_root: Path) -> list:
     classes = []
     for name, parent, tag, body_start, body_end, _decl_line in find_class_bodies(text):
         body = text[body_start:body_end]
-        cls = build_class(name, parent, tag, body, header, occ, body_start, body_end)
+        cls = build_class(name, parent, tag, body, header, occ, body_start, body_end, registry, dir_name)
         if cls is not None:
             classes.append(cls)
     return classes
@@ -1074,7 +1252,36 @@ def find_headers(folder: Path):
     return sorted(folder.rglob("*.h")) + sorted(folder.rglob("*.hpp"))
 
 
-def process_source_dir(dir_path: Path, name: str, include_base: Path, project_root: Path) -> int:
+_BUILTIN_EXTENSIONS_DIR = Path(__file__).resolve().parent / "extensions"
+
+
+def build_registry(dir_path: Path, extra_extensions: list) -> Registry:
+    """The engine's own modifiers (tools/codegen/extensions/*.py) are always
+    loaded -- they define the base modifier vocabulary, not an opt-in. Each
+    (scope, path) in extra_extensions (from --extension) additionally loads
+    only when dir_path falls inside scope, so a project extension can never
+    change what core/ (or an unrelated module) generates -- see the module
+    docstring in modifier_api.py for why that matters."""
+    registry = Registry()
+    if _BUILTIN_EXTENSIONS_DIR.is_dir():
+        try:
+            load_extension_path(registry, _BUILTIN_EXTENSIONS_DIR)
+        except ModifierError as exc:
+            print(f"[ERROR] loading built-in extensions: {exc}", file=sys.stderr)
+            sys.exit(1)
+    resolved_dir = dir_path.resolve()
+    for scope, path in extra_extensions:
+        if resolved_dir == scope or scope in resolved_dir.parents:
+            try:
+                load_extension_path(registry, path)
+            except ModifierError as exc:
+                print(f"[ERROR] loading extension {path}: {exc}", file=sys.stderr)
+                sys.exit(1)
+    return registry
+
+
+def process_source_dir(dir_path: Path, name: str, include_base: Path, project_root: Path,
+                        extra_extensions: list) -> int:
     """Scan dir_path recursively for FCLASS headers, emit each header's .gen.h,
     and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the per-core-
     subfolder loop and the --module-path loop in main() -- a module directory is
@@ -1085,11 +1292,12 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
     "vex_renderer.h" rather than "modules/vex_renderer/vex_renderer.h"). Returns
     the number of files written."""
     changed = 0
+    registry = build_registry(dir_path, extra_extensions)
     classes_by_header: dict = {}
     all_classes: list = []
     for header in find_headers(dir_path):
         try:
-            classes = process_header(header, project_root)
+            classes = process_header(header, project_root, registry, name)
         except ParseError as exc:  # an annotated declaration we couldn't parse -- fatal
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1097,23 +1305,57 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
             classes_by_header[header] = classes
             all_classes.extend(classes)
 
+    try:
+        validate_hierarchy(all_classes)
+    except ParseError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    dir_ctx = EmitContext(dir_name=name)
+    dir_emissions = []
+    for modifier in registry.modifiers():
+        try:
+            de = modifier.emit_dir(all_classes, dir_ctx)
+        except ModifierError as exc:
+            print(f"[ERROR] {dir_path}: modifier '{modifier.name}'.emit_dir: {exc}", file=sys.stderr)
+            sys.exit(1)
+        if de:
+            dir_emissions.append(de)
+
     # Per-header gen.h files
     for header, classes in classes_by_header.items():
         gen_h = header.with_name(header.stem + ".gen.h")
-        if write_if_changed(gen_h, generate_gen_header(classes, header, project_root)):
+        if write_if_changed(gen_h, generate_gen_header(classes, header, project_root, registry, name)):
             changed += 1
             print(f"  [{name}] updated {gen_h.name}")
 
     # register_<name>_types.gen.{h,cpp} (always emitted so the caller has the symbol)
     out_h = dir_path / f"register_{name}_types.gen.h"
     out_cpp = dir_path / f"register_{name}_types.gen.cpp"
-    if write_if_changed(out_h, generate_register_header(name)):
+    if write_if_changed(out_h, generate_register_header(name, dir_emissions)):
         changed += 1
         print(f"  [{name}] updated {out_h.name}")
-    if write_if_changed(out_cpp, generate_register_cpp(name, all_classes, include_base)):
+    if write_if_changed(out_cpp, generate_register_cpp(name, all_classes, include_base, dir_emissions)):
         changed += 1
         print(f"  [{name}] updated {out_cpp.name}")
     return changed
+
+
+def _parse_extension_arg(raw: str) -> tuple:
+    """--extension scope=path -- scope is a source dir (or an ancestor of one)
+    the extension applies to; path is a .py file or a directory of them. Both
+    sides are resolved to absolute paths so scope-matching in build_registry
+    doesn't depend on the caller's cwd."""
+    if "=" not in raw:
+        print(f"[ERROR] --extension expects 'scope=path', got: {raw!r}", file=sys.stderr)
+        sys.exit(1)
+    scope, _, path = raw.partition("=")
+    scope_path = Path(scope).resolve()
+    ext_path = Path(path).resolve()
+    if not ext_path.exists():
+        print(f"[ERROR] --extension {raw!r}: path not found: {ext_path}", file=sys.stderr)
+        sys.exit(1)
+    return (scope_path, ext_path)
 
 
 def main():
@@ -1132,10 +1374,16 @@ def main():
                          "may compile before the main executable's before_build has "
                          "produced core's, so both the module's own before_build and "
                          "the executable's must generate core in full.")
+    ap.add_argument("--extension", action="append", default=[], dest="extensions",
+                    help="'scope=path': load the FCLASS/FSTRUCT modifier extension at path "
+                         "(a .py file or a directory of them) only when processing scope or a "
+                         "directory beneath it. Repeatable. See xmake/modules/feather_codegen.lua's "
+                         "add_extension() for how a project's own xmake.lua wires this in.")
     args = ap.parse_args()
 
     core_path = args.core_path.resolve()
     project_root = args.project_root.resolve()
+    extra_extensions = [_parse_extension_arg(raw) for raw in args.extensions]
 
     total_changed = 0
 
@@ -1146,7 +1394,7 @@ def main():
         subfolders = [e.name for e in sorted(core_path.iterdir()) if e.is_dir()]
         for sub in subfolders:
             folder = core_path / sub
-            total_changed += process_source_dir(folder, sub, core_path, project_root)
+            total_changed += process_source_dir(folder, sub, core_path, project_root, extra_extensions)
 
     for mp in args.module_paths:
         mod_path = Path(mp).resolve()
@@ -1157,7 +1405,7 @@ def main():
         # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp} -- the
         # module's own xmake.lua adds that cpp to its file list, same idea as
         # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp.
-        total_changed += process_source_dir(mod_path, mod_path.name, mod_path, project_root)
+        total_changed += process_source_dir(mod_path, mod_path.name, mod_path, project_root, extra_extensions)
 
     print(f"Done ({total_changed} file(s) updated).")
 
