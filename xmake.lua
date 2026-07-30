@@ -189,8 +189,13 @@ local function apply_compile_flags(target)
     else
         target:add("cxflags",
             "-Wall", "-Wextra", "-pedantic", "-Wno-unused-parameter",
-            "-Wno-attributes", "-Wno-unknown-attributes",
+            "-Wno-attributes",
             {force = true})
+        if is_clang() then
+            -- GCC only recognizes -Wno-attributes for this; -Wno-unknown-attributes
+            -- is Clang's spelling and GCC rejects it as an unrecognized option.
+            target:add("cxflags", "-Wno-unknown-attributes", {force = true})
+        end
         if is_mode("debug") then
             target:add("cxflags", "-g", "-O0", {force = true})
         elseif is_mode("releasedbg") then
