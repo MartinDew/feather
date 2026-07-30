@@ -79,11 +79,9 @@ bool Engine::run() {
 		w.entity("BoxChild").emplace<Transform>(t4).emplace<MeshInstance>(std::make_shared<BoxMesh>()).child_of(_);
 
 		_world_sim.create_entity(s, "Floor")
-				.emplace<Transform>(
-						Vector3 { 0, -2, 0 },
-						Quaternion::create_from_yaw_pitch_roll({ 0, 0, 0 }),
-						Vector3 { 200, 0.1f, 200 }
-				)
+				.emplace<Transform>(Vector3 { 0, -2, 0 },
+									Quaternion::create_from_yaw_pitch_roll({ 0, 0, 0 }),
+									Vector3 { 200, 0.1f, 200 })
 				.emplace<MeshInstance>(std::make_shared<BoxMesh>());
 
 		auto dir = Vector3 { -0.5f, -1.0f, -1.f };
@@ -102,8 +100,7 @@ bool Engine::run() {
 				.each([](flecs::iter& it, size_t, const MeshInstance& mi, Transform& t) {
 					t.rotation = t.rotation *
 							Quaternion::create_from_yaw_pitch_roll(
-										 Vector3 { 0, static_cast<real_t>(it.delta_time()), 0 }
-							);
+										 Vector3 { 0, static_cast<real_t>(it.delta_time()), 0 });
 				});
 
 		auto q = w.query_builder<Transform, MeshInstance, MaterialInstance*>("Test")

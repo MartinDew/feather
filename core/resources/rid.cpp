@@ -2,8 +2,12 @@
 
 namespace feather {
 
-constexpr RID RID::invalid() { return RID { 0 }; }
+constexpr RID RID::invalid() {
+	return RID { 0 };
+}
 
-bool RID::is_valid() const { return id != invalid().id; }
+bool RID::is_valid() const {
+	return id != invalid().id;
+}
 
 } //namespace feather

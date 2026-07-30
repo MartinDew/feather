@@ -20,13 +20,17 @@ Projection Projection::create_perspective(float fov_y_radians, float aspect_rati
 	return proj;
 }
 
-Projection Projection::create_perspective_fov(
-		float fov_y_degrees, float aspect_ratio, float near_plane, float far_plane) {
+Projection
+Projection::create_perspective_fov(float fov_y_degrees, float aspect_ratio, float near_plane, float far_plane) {
 	return create_perspective(deg_to_rad(fov_y_degrees), aspect_ratio, near_plane, far_plane);
 }
 
-Projection Projection::create_perspective_off_center(
-		float left, float right, float bottom, float top, float near_plane, float far_plane) {
+Projection Projection::create_perspective_off_center(float left,
+													 float right,
+													 float bottom,
+													 float top,
+													 float near_plane,
+													 float far_plane) {
 	Projection proj;
 	proj._type = ProjectionType::Perspective;
 	proj._near_plane = near_plane;
@@ -55,8 +59,12 @@ Projection Projection::create_orthographic(float width, float height, float near
 	return proj;
 }
 
-Projection Projection::create_orthographic_off_center(
-		float left, float right, float bottom, float top, float near_plane, float far_plane) {
+Projection Projection::create_orthographic_off_center(float left,
+													  float right,
+													  float bottom,
+													  float top,
+													  float near_plane,
+													  float far_plane) {
 	Projection proj;
 	proj._type = ProjectionType::Orthographic;
 	proj._near_plane = near_plane;
@@ -110,7 +118,9 @@ void Projection::set_fov_y(float fov_y_radians) {
 	_rebuild_perspective();
 }
 
-void Projection::set_fov_y_degrees(float fov_y_degrees) { set_fov_y(deg_to_rad(fov_y_degrees)); }
+void Projection::set_fov_y_degrees(float fov_y_degrees) {
+	set_fov_y(deg_to_rad(fov_y_degrees));
+}
 
 void Projection::set_orthographic_size(float width, float height) {
 	if (_type != ProjectionType::Orthographic)
@@ -157,8 +167,9 @@ Vector3 Projection::project_point(const Vector3& world_point, const Matrix& view
 	return Vector3(clip_space.x, clip_space.y, clip_space.z);
 }
 
-Vector3 Projection::unproject_point(
-		const Vector3& screen_point, const Matrix& view_matrix, const Vector2& viewport_size) const {
+Vector3 Projection::unproject_point(const Vector3& screen_point,
+									const Matrix& view_matrix,
+									const Vector2& viewport_size) const {
 	// Convert screen coordinates to NDC (-1 to 1)
 	Vector3 ndc;
 	ndc.x = (screen_point.x / viewport_size.x) * 2.0f - 1.0f;

@@ -57,9 +57,7 @@ struct Transform {
 	static Transform create_look_at(const Vector3& eye, const Vector3& target, const Vector3& up);
 
 	bool operator==(const Transform&) const;
-	Transform operator*(const Transform& other) const {
-		return multiply(*this, other);
-	}
+	Transform operator*(const Transform& other) const { return multiply(*this, other); }
 
 	Transform& operator*=(const Transform& other) {
 		*this = multiply(*this, other);
@@ -73,7 +71,11 @@ struct Transform {
 	static Transform get_relative_transform_using_matrix_with_scale(const Transform& base, const Transform& relative);
 };
 
-Transform make_transform_screen_space_sized_billboard(Transform objectTransform, Vector3 cameraPosition, float fovDeg, Vector2 minScreenSpaceSize, Vector2 screenSize);
+Transform make_transform_screen_space_sized_billboard(Transform objectTransform,
+													  Vector3 cameraPosition,
+													  float fovDeg,
+													  Vector2 minScreenSpaceSize,
+													  Vector2 screenSize);
 Transform make_transform_billboard(Transform objectTransform, Vector3 cameraPosition);
 
 } //namespace feather

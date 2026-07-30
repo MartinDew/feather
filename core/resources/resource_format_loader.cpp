@@ -3,6 +3,4 @@
 #include "resource_loader.h"
 #include <core/main/class_db.h>
 
-namespace feather {
-
-} // namespace feather
+namespace feather {} // namespace feather

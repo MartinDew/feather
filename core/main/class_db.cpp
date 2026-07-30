@@ -63,10 +63,9 @@ std::string ClassDB::get_children_names_string(StaticString object_name, bool ex
 	return children_str;
 }
 
-Delegate<std::string_view>::id_t ClassDB::on_subclass_registered(
-		std::string_view base_class_name,
-		const Delegate<std::string_view>::DelegateFuncType& callback
-) {
+Delegate<std::string_view>::id_t
+ClassDB::on_subclass_registered(std::string_view base_class_name,
+								const Delegate<std::string_view>::DelegateFuncType& callback) {
 	return get()->_subclass_delegates[StaticString(base_class_name)].subscribe(callback);
 }
 
@@ -109,10 +108,10 @@ void ClassDB::print_db() {
 
 Callable ClassDB::get_static_method(const StaticString& class_name, std::string_view func_name) {
 	auto ci = _get_class_info_internal(class_name);
-	if (!ci) return {};
-	auto it = std::find_if(ci->methods.begin(), ci->methods.end(), [&func_name](ClassInfo::Method& m) {
-		return m.name == func_name;
-	});
+	if (!ci)
+		return {};
+	auto it = std::find_if(
+			ci->methods.begin(), ci->methods.end(), [&func_name](ClassInfo::Method& m) { return m.name == func_name; });
 
 	if (it != ci->methods.end()) {
 		return it->callable;

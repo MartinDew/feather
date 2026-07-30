@@ -134,7 +134,9 @@ inline Vector3 get_axis(const Matrix& mat, Axis axis) {
 	return { mat.m[i][0], mat.m[i][1], mat.m[i][2] };
 }
 
-inline Vector3 get_origin(const Matrix& mat) { return { mat.m[3][0], mat.m[3][1], mat.m[3][2] }; }
+inline Vector3 get_origin(const Matrix& mat) {
+	return { mat.m[3][0], mat.m[3][1], mat.m[3][2] };
+}
 
 } //namespace math::matrices
 

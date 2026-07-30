@@ -17,8 +17,7 @@ ResourceLoader::ResourceLoader() {
 		auto loader = ClassDB::create_object<ResourceFormatLoader>(class_name);
 		if (loader) {
 			std::println(std::cout, "Registered resource format loader: {}", class_name);
-			ResourceLoader::get()->add_resource_format_loader(
-					std::shared_ptr<ResourceFormatLoader>(std::move(loader)));
+			ResourceLoader::get()->add_resource_format_loader(std::shared_ptr<ResourceFormatLoader>(std::move(loader)));
 		}
 	});
 };
@@ -34,7 +33,8 @@ void ResourceLoader::register_resource(std::shared_ptr<Resource> res) {
 
 static std::string strip_extension(const Path& path) {
 	std::string ext = path.extension().string();
-	if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
+	if (!ext.empty() && ext[0] == '.')
+		ext = ext.substr(1);
 	return ext;
 }
 
@@ -64,7 +64,8 @@ std::shared_ptr<Resource> ResourceLoader::load(const Path& path) {
 	for (const auto& loader : get()->_format_loaders) {
 		if (loader->recognize_extension(extension)) {
 			auto res = loader->instantiate(localized);
-			if (!res) return nullptr;
+			if (!res)
+				return nullptr;
 			res->_rid = generate_rid();
 			get()->_cache[res->_rid] = res;
 			get()->_path_cache[path.string()] = res;
@@ -91,24 +92,29 @@ void ResourceLoader::remove_resource_format_loader(std::shared_ptr<ResourceForma
 
 void ResourceLoader::index_project() {
 	auto project_path = ProjectSettings::get()->get_project_path();
-	if (project_path.empty() || !std::filesystem::exists(project_path)) return;
+	if (project_path.empty() || !std::filesystem::exists(project_path))
+		return;
 
 	auto& self = *get();
 	size_t count = 0;
 
 	for (const auto& entry : std::filesystem::recursive_directory_iterator(project_path)) {
-		if (!entry.is_regular_file()) continue;
+		if (!entry.is_regular_file())
+			continue;
 
 		Path path = entry.path();
-		if (self._path_cache.contains(path.string())) continue;
+		if (self._path_cache.contains(path.string()))
+			continue;
 
 		auto extension = strip_extension(path);
 
 		for (const auto& loader : self._format_loaders) {
-			if (!loader->recognize_extension(extension)) continue;
+			if (!loader->recognize_extension(extension))
+				continue;
 
 			auto res = loader->instantiate(path);
-			if (!res) break; // loader explicitly declined (e.g. DLL without _load_extension)
+			if (!res)
+				break; // loader explicitly declined (e.g. DLL without _load_extension)
 
 			res->_rid = generate_rid();
 			self._cache[res->_rid] = res;

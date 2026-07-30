@@ -25,10 +25,10 @@ class RenderingServer {
 	std::unique_ptr<Renderer> _renderer = nullptr;
 
 	std::array<RenderScene, 2> _buffers;
-	std::atomic<int>  _write_idx{0};
-	std::atomic<bool> _dirty{false};
-	spinlock          _write_lock;
-	std::mutex        _wait_mutex;
+	std::atomic<int> _write_idx { 0 };
+	std::atomic<bool> _dirty { false };
+	spinlock _write_lock;
+	std::mutex _wait_mutex;
 	std::condition_variable _wait_cv;
 
 	std::jthread _render_thread;
@@ -36,7 +36,7 @@ class RenderingServer {
 	void _run();
 	void _render_function();
 
-	std::atomic<bool> _needs_resize{false};
+	std::atomic<bool> _needs_resize { false };
 
 public:
 	RenderingServer();

@@ -40,18 +40,15 @@ vex::PlatformWindowHandle VexRenderer::_create_vex_window(Window& window) {
 		vex_window = { PlatformWindowHandle::X11Handle {
 				.window = static_cast<::Window>(SDL_GetNumberProperty(pid, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, {})),
 				.display = static_cast<Display*>(
-						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr)
-				),
+						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr)),
 		} };
 	}
 	else if (SDL_HasProperty(pid, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER)) {
 		vex_window = { PlatformWindowHandle::WaylandHandle {
 				.window = static_cast<::wl_surface*>(
-						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr)
-				),
+						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr)),
 				.display = static_cast<::wl_display*>(
-						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr)
-				) } };
+						SDL_GetPointerProperty(pid, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr)) } };
 	}
 	else {
 		fassert(false, "VexRenderer : No supported video driver found");
@@ -59,8 +56,7 @@ vex::PlatformWindowHandle VexRenderer::_create_vex_window(Window& window) {
 #elif (_WIN32)
 	using NativeWindow = HWND;
 	vex_window = { PlatformWindowHandle::WindowsHandle { .window = static_cast<NativeWindow>(SDL_GetPointerProperty(
-																 pid, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr
-														 )) } };
+																 pid, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr)) } };
 
 #elifdef __APPLE__
 	// macOS implementation would go here
@@ -72,123 +68,100 @@ vex::PlatformWindowHandle VexRenderer::_create_vex_window(Window& window) {
 static const std::filesystem::path shader_path = std::filesystem::current_path() / "shaders";
 
 VexRenderer::VexRenderer()
-		: graphics(
-				  vex::GraphicsCreateDesc {
-						  .platformWindow = { .windowHandle = _create_vex_window(Engine::get().get_main_window()),
-											  .width = static_cast<uint32_t>(
-													  Engine::get().get_main_window().properties.width
-											  ),
-											  .height = static_cast<uint32_t>(
-													  Engine::get().get_main_window().properties.height
-											  ) },
-						  .enableGPUDebugLayer = !VEX_SHIPPING,
-						  .enableGPUBasedValidation = !VEX_SHIPPING,
-				  }
-		  )
+		: graphics(vex::GraphicsCreateDesc {
+				  .platformWindow = { .windowHandle = _create_vex_window(Engine::get().get_main_window()),
+									  .width = static_cast<uint32_t>(Engine::get().get_main_window().properties.width),
+									  .height = static_cast<uint32_t>(
+											  Engine::get().get_main_window().properties.height) },
+				  .enableGPUDebugLayer = !VEX_SHIPPING,
+				  .enableGPUBasedValidation = !VEX_SHIPPING,
+		  })
 		, _use_reverse_z { true } {
 	auto main_window = Engine::get().get_main_window();
 	uint32_t width = main_window.properties.width;
 	uint32_t height = main_window.properties.height;
 
 	// Depth texture
-	depthTexture = graphics.CreateTexture(
-			{
-					.name = "Depth Texture",
-					.type = vex::TextureType::Texture2D,
-					.format = vex::TextureFormat::D32_FLOAT,
-					.width = width,
-					.height = height,
-					.usage = vex::TextureUsage::DepthStencil | TextureUsage::ShaderRead,
-					.clearValue =
-							vex::TextureClearValue {
-									.depth = _use_reverse_z ? 0.0f : 1.0f,
-							},
-			}
-	);
+	depthTexture = graphics.CreateTexture({
+			.name = "Depth Texture",
+			.type = vex::TextureType::Texture2D,
+			.format = vex::TextureFormat::D32_FLOAT,
+			.width = width,
+			.height = height,
+			.usage = vex::TextureUsage::DepthStencil | TextureUsage::ShaderRead,
+			.clearValue =
+					vex::TextureClearValue {
+							.depth = _use_reverse_z ? 0.0f : 1.0f,
+					},
+	});
 
 	vex::CommandContext ctx = graphics.CreateCommandContext(vex::QueueType::Graphics);
 
 	// Create GPU buffers
 	_camera_uniform_buffer = graphics.CreateBuffer(
-			vex::BufferDesc::CreateUniformBufferDesc("Camera Uniforms", sizeof(CameraBufferData))
-	);
+			vex::BufferDesc::CreateUniformBufferDesc("Camera Uniforms", sizeof(CameraBufferData)));
 	_lights_structured_buffer =
 			graphics.CreateBuffer(vex::BufferDesc::CreateGenericBufferDesc("Lights Buffer", sizeof(LightBufferData)));
 
-	_per_entity_uniform_buffer = graphics.CreateBuffer(
-			{
-					.name = "Per-Entity Uniform",
-					.byteSize = sizeof(InstanceBufferData),
-					.usage = vex::BufferUsage::ShaderReadUniform,
-					.memoryLocality = vex::ResourceMemoryLocality::GPUOnly,
-			}
-	);
+	_per_entity_uniform_buffer = graphics.CreateBuffer({
+			.name = "Per-Entity Uniform",
+			.byteSize = sizeof(InstanceBufferData),
+			.usage = vex::BufferUsage::ShaderReadUniform,
+			.memoryLocality = vex::ResourceMemoryLocality::GPUOnly,
+	});
 
-	_material_buffer = graphics.CreateBuffer(
-			{
-					.name = "Material Buffer",
-					.byteSize = sizeof(PbrMaterialBufferData),
-					.usage = vex::BufferUsage::ShaderReadUniform,
-					.memoryLocality = vex::ResourceMemoryLocality::GPUOnly,
-			}
-	);
+	_material_buffer = graphics.CreateBuffer({
+			.name = "Material Buffer",
+			.byteSize = sizeof(PbrMaterialBufferData),
+			.usage = vex::BufferUsage::ShaderReadUniform,
+			.memoryLocality = vex::ResourceMemoryLocality::GPUOnly,
+	});
 
 	// Create default textures
 	// White 1x1 texture
 	{
 		std::array<uint8_t, 4> whitePixel = { 255, 255, 255, 255 };
-		_default_white_texture = graphics.CreateTexture(
-				{ .name = "Default White",
-				  .type = vex::TextureType::Texture2D,
-				  .format = vex::TextureFormat::RGBA8_UNORM,
-				  .width = 1,
-				  .height = 1,
-				  .usage = vex::TextureUsage::ShaderRead }
-		);
+		_default_white_texture = graphics.CreateTexture({ .name = "Default White",
+														  .type = vex::TextureType::Texture2D,
+														  .format = vex::TextureFormat::RGBA8_UNORM,
+														  .width = 1,
+														  .height = 1,
+														  .usage = vex::TextureUsage::ShaderRead });
 		std::span bytes = to_bytes(whitePixel);
 		ctx.EnqueueDataUpload(_default_white_texture, bytes, vex::TextureRegion::SingleMip(0));
 		ctx.Barrier(_default_white_texture, RHIBarrierAccess::ShaderRead);
-		_default_white_handle = graphics.GetBindlessHandle(
-				vex::TextureBinding { .texture = _default_white_texture, .usage = vex::TextureBindingUsage::ShaderRead }
-		);
+		_default_white_handle = graphics.GetBindlessHandle(vex::TextureBinding {
+				.texture = _default_white_texture, .usage = vex::TextureBindingUsage::ShaderRead });
 	}
 
 	// Default normal map (0.5, 0.5, 1.0, 1.0)
 	{
 		std::array<uint8_t, 4> normalPixel = { 128, 128, 255, 255 };
-		_default_normal_texture = graphics.CreateTexture(
-				{ .name = "Default Normal",
-				  .type = vex::TextureType::Texture2D,
-				  .format = vex::TextureFormat::RGBA8_UNORM,
-				  .width = 1,
-				  .height = 1,
-				  .usage = vex::TextureUsage::ShaderRead }
-		);
+		_default_normal_texture = graphics.CreateTexture({ .name = "Default Normal",
+														   .type = vex::TextureType::Texture2D,
+														   .format = vex::TextureFormat::RGBA8_UNORM,
+														   .width = 1,
+														   .height = 1,
+														   .usage = vex::TextureUsage::ShaderRead });
 		ctx.EnqueueDataUpload(_default_normal_texture, to_bytes(normalPixel), vex::TextureRegion::SingleMip(0));
 		ctx.Barrier(_default_normal_texture, RHIBarrierAccess::ShaderRead);
-		_default_normal_handle = graphics.GetBindlessHandle(
-				vex::TextureBinding { .texture = _default_normal_texture,
-									  .usage = vex::TextureBindingUsage::ShaderRead }
-		);
+		_default_normal_handle = graphics.GetBindlessHandle(vex::TextureBinding {
+				.texture = _default_normal_texture, .usage = vex::TextureBindingUsage::ShaderRead });
 	}
 
 	// Default metallic/roughness (0, 1, 0, 0) - non-metallic, rough
 	{
 		std::array<uint8_t, 4> mrPixel = { 0, 255, 0, 0 };
-		_default_metallic_roughness_texture = graphics.CreateTexture(
-				{ .name = "Default Metallic/Roughness",
-				  .type = vex::TextureType::Texture2D,
-				  .format = vex::TextureFormat::RGBA8_UNORM,
-				  .width = 1,
-				  .height = 1,
-				  .usage = vex::TextureUsage::ShaderRead }
-		);
+		_default_metallic_roughness_texture = graphics.CreateTexture({ .name = "Default Metallic/Roughness",
+																	   .type = vex::TextureType::Texture2D,
+																	   .format = vex::TextureFormat::RGBA8_UNORM,
+																	   .width = 1,
+																	   .height = 1,
+																	   .usage = vex::TextureUsage::ShaderRead });
 		ctx.EnqueueDataUpload(_default_metallic_roughness_texture, to_bytes(mrPixel), vex::TextureRegion::SingleMip(0));
 		ctx.Barrier(_default_metallic_roughness_texture, RHIBarrierAccess::ShaderRead);
-		_default_mr_handle = graphics.GetBindlessHandle(
-				vex::TextureBinding { .texture = _default_metallic_roughness_texture,
-									  .usage = vex::TextureBindingUsage::ShaderRead }
-		);
+		_default_mr_handle = graphics.GetBindlessHandle(vex::TextureBinding {
+				.texture = _default_metallic_roughness_texture, .usage = vex::TextureBindingUsage::ShaderRead });
 	}
 
 	// Setup samplers
@@ -210,11 +183,9 @@ VexRenderer::VexRenderer()
 
 	// Initialize shader compiler with the shader directory on the include path
 	// (needed for Slang import resolution even when compiling from embedded source)
-	_shader_compiler = vex::ShaderCompiler(
-			vex::ShaderCompilerSettings {
-					.shaderIncludeDirectories = { shader_path },
-			}
-	);
+	_shader_compiler = vex::ShaderCompiler(vex::ShaderCompilerSettings {
+			.shaderIncludeDirectories = { shader_path },
+	});
 	_compile_engine_shaders();
 	_build_draw_descs();
 
@@ -267,20 +238,18 @@ void VexRenderer::_on_resize() {
 	}
 
 	// Recreate depth texture
-	depthTexture = graphics.CreateTexture(
-			{
-					.name = "Depth Texture",
-					.type = vex::TextureType::Texture2D,
-					.format = vex::TextureFormat::D32_FLOAT,
-					.width = static_cast<uint32_t>(width),
-					.height = static_cast<uint32_t>(height),
-					.usage = vex::TextureUsage::DepthStencil | TextureUsage::ShaderRead,
-					.clearValue =
-							vex::TextureClearValue {
-									.depth = _use_reverse_z ? 0.0f : 1.0f,
-							},
-			}
-	);
+	depthTexture = graphics.CreateTexture({
+			.name = "Depth Texture",
+			.type = vex::TextureType::Texture2D,
+			.format = vex::TextureFormat::D32_FLOAT,
+			.width = static_cast<uint32_t>(width),
+			.height = static_cast<uint32_t>(height),
+			.usage = vex::TextureUsage::DepthStencil | TextureUsage::ShaderRead,
+			.clearValue =
+					vex::TextureClearValue {
+							.depth = _use_reverse_z ? 0.0f : 1.0f,
+					},
+	});
 
 	graphics.OnWindowResized(width, height);
 }
@@ -372,14 +341,12 @@ void VexRenderer::_build_draw_descs() {
 	};
 
 	auto get_view = [&](const std::string& filepath, std::string_view entry_point, vex::ShaderType type) {
-		return _shader_compiler.GetShaderView(
-				{
-						.filepath = filepath,
-						.entryPoint = std::string(entry_point),
-						.type = type,
-						.compiler = vex::ShaderCompilerBackend::Slang,
-				}
-		);
+		return _shader_compiler.GetShaderView({
+				.filepath = filepath,
+				.entryPoint = std::string(entry_point),
+				.type = type,
+				.compiler = vex::ShaderCompilerBackend::Slang,
+		});
 	};
 
 	_depth_pre_pass_desc = vex::DrawDesc {
@@ -490,17 +457,15 @@ void VexRenderer::_render_depth_pre_pass(const RenderScene& capture, vex::Comman
 			.strideByteSize = static_cast<uint32_t>(sizeof(uint32_t)),
 		};
 
-		ctx.DrawIndexed(
-				_depth_pre_pass_desc,
-				{
-						.depthStencil = vex::TextureBinding(depthTexture),
-						.vertexBuffers = { &vertexBufferBinding, 1 },
-						.indexBuffer = indexBufferBinding,
-				},
-				constant_bindings,
-				bindings,
-				meshBuffers.index_count
-		);
+		ctx.DrawIndexed(_depth_pre_pass_desc,
+						{
+								.depthStencil = vex::TextureBinding(depthTexture),
+								.vertexBuffers = { &vertexBufferBinding, 1 },
+								.indexBuffer = indexBufferBinding,
+						},
+						constant_bindings,
+						bindings,
+						meshBuffers.index_count);
 	}
 }
 
@@ -520,20 +485,18 @@ void VexRenderer::_render_shadow_pass(const RenderScene& capture, vex::CommandCo
 		static constexpr size_t h = 1024 * 2;
 		// Ensure we have a shadow map
 		if (i >= _shadow_maps.size()) {
-			_shadow_maps.push_back(graphics.CreateTexture(
-					{
-							.name = "Shadow Map",
-							.type = vex::TextureType::Texture2D,
-							.format = vex::TextureFormat::D32_FLOAT,
-							.width = w,
-							.height = h,
-							.usage = vex::TextureUsage::DepthStencil | vex::TextureUsage::ShaderRead,
-							.clearValue =
-									vex::TextureClearValue {
-											.depth = _use_reverse_z ? 0.0f : 1.0f,
-									},
-					}
-			));
+			_shadow_maps.push_back(graphics.CreateTexture({
+					.name = "Shadow Map",
+					.type = vex::TextureType::Texture2D,
+					.format = vex::TextureFormat::D32_FLOAT,
+					.width = w,
+					.height = h,
+					.usage = vex::TextureUsage::DepthStencil | vex::TextureUsage::ShaderRead,
+					.clearValue =
+							vex::TextureClearValue {
+									.depth = _use_reverse_z ? 0.0f : 1.0f,
+							},
+			}));
 		}
 
 		vex::Texture& shadow_map = _shadow_maps[i];
@@ -573,17 +536,15 @@ void VexRenderer::_render_shadow_pass(const RenderScene& capture, vex::CommandCo
 				.strideByteSize = static_cast<uint32_t>(sizeof(uint32_t)),
 			};
 
-			ctx.DrawIndexed(
-					_shadow_draw_desc,
-					{
-							.depthStencil = TextureBinding { shadow_map },
-							.vertexBuffers = { &vertexBufferBinding, 1 },
-							.indexBuffer = indexBufferBinding,
-					},
-					vex::ConstantBinding(mvp),
-					{},
-					meshBuffers.index_count
-			);
+			ctx.DrawIndexed(_shadow_draw_desc,
+							{
+									.depthStencil = TextureBinding { shadow_map },
+									.vertexBuffers = { &vertexBufferBinding, 1 },
+									.indexBuffer = indexBufferBinding,
+							},
+							vex::ConstantBinding(mvp),
+							{},
+							meshBuffers.index_count);
 		}
 	}
 }
@@ -646,8 +607,7 @@ void VexRenderer::_render_forward_pass(const RenderScene& capture, vex::CommandC
 		std::vector<ResourceBinding> tracked_bindings;
 		for (auto& shadowMap : _shadow_maps) {
 			tracked_bindings.push_back(
-					TextureBinding { .texture = shadowMap, .usage = TextureBindingUsage::ShaderRead }
-			);
+					TextureBinding { .texture = shadowMap, .usage = TextureBindingUsage::ShaderRead });
 		}
 
 		// Draw
@@ -664,14 +624,13 @@ void VexRenderer::_render_forward_pass(const RenderScene& capture, vex::CommandC
 
 		ctx.EnqueueDataUpload(_per_entity_uniform_buffer, to_bytes(entity_uniforms));
 
-		std::array<ResourceBinding, 4> bindings {
-			BufferBinding::CreateConstantBuffer(_camera_uniform_buffer),
-			BufferBinding::CreateConstantBuffer(_per_entity_uniform_buffer),
-			BufferBinding::CreateConstantBuffer(_material_buffer),
-			BufferBinding::CreateStructuredBuffer(
-					_lights_structured_buffer, sizeof(LightBufferData), 0, capture.get_light_count()
-			)
-		};
+		std::array<ResourceBinding, 4> bindings { BufferBinding::CreateConstantBuffer(_camera_uniform_buffer),
+												  BufferBinding::CreateConstantBuffer(_per_entity_uniform_buffer),
+												  BufferBinding::CreateConstantBuffer(_material_buffer),
+												  BufferBinding::CreateStructuredBuffer(_lights_structured_buffer,
+																						sizeof(LightBufferData),
+																						0,
+																						capture.get_light_count()) };
 
 		std::vector<BindlessHandle> handles = graphics.GetBindlessHandles(bindings);
 		tracked_bindings.append_range(bindings);
@@ -680,18 +639,16 @@ void VexRenderer::_render_forward_pass(const RenderScene& capture, vex::CommandC
 		push_data.push_back(capture.get_light_count());
 
 		ConstantBinding constant_bindings { std::span(push_data) };
-		ctx.DrawIndexed(
-				*draw_desc,
-				{
-						.renderTargets = renderTargets,
-						.depthStencil = vex::TextureBinding(depthTexture),
-						.vertexBuffers = { &vertexBufferBinding, 1 },
-						.indexBuffer = indexBufferBinding,
-				},
-				constant_bindings,
-				tracked_bindings,
-				meshBuffers.index_count
-		);
+		ctx.DrawIndexed(*draw_desc,
+						{
+								.renderTargets = renderTargets,
+								.depthStencil = vex::TextureBinding(depthTexture),
+								.vertexBuffers = { &vertexBufferBinding, 1 },
+								.indexBuffer = indexBufferBinding,
+						},
+						constant_bindings,
+						tracked_bindings,
+						meshBuffers.index_count);
 	}
 }
 
@@ -753,8 +710,8 @@ void VexRenderer::_upload_lights_buffer(const RenderScene& capture, vex::Command
 	}
 }
 
-VexRenderer::MeshBuffers&
-VexRenderer::_get_or_create_mesh_buffers(const std::shared_ptr<MeshData>& mesh, vex::CommandContext& ctx) {
+VexRenderer::MeshBuffers& VexRenderer::_get_or_create_mesh_buffers(const std::shared_ptr<MeshData>& mesh,
+																   vex::CommandContext& ctx) {
 	auto it = _mesh_cache.find(mesh);
 	if (it != _mesh_cache.end()) {
 		return it->second;

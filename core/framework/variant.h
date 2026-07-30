@@ -97,20 +97,19 @@ concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
 struct ClassInfo;
 
 class Variant {
-	using InternalVariant = std::variant<
-			std::monostate,
-			bool,
-			int,
-			real_t,
-			Vector2,
-			Vector3,
-			Vertex,
-			Color,
-			std::string,
-			Path,
-			VariantArray,
-			RID,
-			Reflected*>;
+	using InternalVariant = std::variant<std::monostate,
+										 bool,
+										 int,
+										 real_t,
+										 Vector2,
+										 Vector3,
+										 Vertex,
+										 Color,
+										 std::string,
+										 Path,
+										 VariantArray,
+										 RID,
+										 Reflected*>;
 
 	InternalVariant _data;
 	VariantType _type;
@@ -121,7 +120,8 @@ class Variant {
 	// Shared method-call implementation. When enforce_public is true the call is
 	// denied unless the method is publicly accessible; the privileged *_internal
 	// entry points pass false to bypass the check.
-	[[nodiscard]] Variant _internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const;
+	[[nodiscard]] Variant
+	_internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const;
 
 public:
 	// Default constructor - NIL

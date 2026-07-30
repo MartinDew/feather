@@ -37,9 +37,7 @@ RenderingWorldFeature::RenderingWorldFeature(World world) {
 			.kind(flecs::PreStore)
 			.with<ActiveScene>()
 			.up()
-			.each([](Entity e, const Light& light) {
-				RenderingServer::get()->add_light(light);
-			});
+			.each([](Entity e, const Light& light) { RenderingServer::get()->add_light(light); });
 
 	world.system("Commit Render Scene").kind(flecs::OnStore).run([](const flecs::iter&) {
 		RenderingServer::get()->commit_scene_frame();

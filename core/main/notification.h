@@ -10,4 +10,4 @@ enum class Notification : uint32_t {
 	COUNT
 };
 
-}
+} //namespace feather

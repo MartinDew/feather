@@ -4,9 +4,13 @@
 
 namespace feather {
 
-bool Vertex::operator==(const Vertex& other) const { return position == other.position && normal == other.normal; }
+bool Vertex::operator==(const Vertex& other) const {
+	return position == other.position && normal == other.normal;
+}
 
-bool AABB::operator==(const AABB& other) const { return min == other.min && max == other.max; }
+bool AABB::operator==(const AABB& other) const {
+	return min == other.min && max == other.max;
+}
 
 bool AABB::intersects(const AABB& other) const {
 	return (min.x <= other.max.x && max.x >= other.min.x) && (min.y <= other.max.y && max.y >= other.min.y) &&
@@ -18,9 +22,13 @@ bool AABB::intersects(const Vector3& point) const {
 			(point.z >= min.z && point.z <= max.z);
 }
 
-real_t deg_to_rad(real_t degrees) { return degrees / 180.0f * std::numbers::pi; }
+real_t deg_to_rad(real_t degrees) {
+	return degrees / 180.0f * std::numbers::pi;
+}
 
-real_t rad_to_deg(real_t radians) { return radians / std::numbers::pi * 180.0f; }
+real_t rad_to_deg(real_t radians) {
+	return radians / std::numbers::pi * 180.0f;
+}
 
 Vector3 deg_to_rad(const Vector3& degrees) {
 	Vector3 result;

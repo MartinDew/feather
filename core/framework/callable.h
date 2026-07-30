@@ -50,7 +50,8 @@ public:
 	Variant call(auto&&... args) {
 		if constexpr (sizeof...(args) == 0) {
 			return call(std::span<Variant>());
-		} else {
+		}
+		else {
 			Variant params[] = { args... };
 			return call(std::span<Variant>(params, sizeof...(args)));
 		}

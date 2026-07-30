@@ -1,8 +1,8 @@
 #include "rendering_server.h"
 #include "renderer.h"
-#include <resources/shader.h>
 #include <main/engine.h>
 #include <main/notification.h>
+#include <resources/shader.h>
 
 #include <framework/assert.h>
 #include <framework/variant.h>
@@ -66,9 +66,8 @@ RenderingServer::~RenderingServer() {
 void RenderingServer::init() {
 	_renderer = ClassDB::create_object<Renderer>(LaunchSettings::get().renderer.Get());
 
-	Engine::get().get_main_window().register_notification(Notification::WINDOW_RESIZED, [&flag = _needs_resize] {
-		flag.store(true, std::memory_order_relaxed);
-	});
+	Engine::get().get_main_window().register_notification(
+			Notification::WINDOW_RESIZED, [&flag = _needs_resize] { flag.store(true, std::memory_order_relaxed); });
 
 	if (!LaunchSettings::get().force_single_thread.Get())
 		_run();

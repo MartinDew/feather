@@ -35,8 +35,7 @@ bool Variant::operator==(const Variant& other) const {
 				}
 			},
 			_data,
-			other._data
-	);
+			other._data);
 }
 
 std::string Variant::to_string() const {

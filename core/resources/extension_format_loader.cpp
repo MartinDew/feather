@@ -40,7 +40,8 @@ void ExtensionFormatLoader::load(std::shared_ptr<Resource> resource, const Path&
 	if (entry_fn.is_valid()) {
 		entry_fn.call();
 		std::println(std::cout, "ExtensionFormatLoader: Loaded extension '{}' from {}", ext->get_name(), path.string());
-	} else {
+	}
+	else {
 		std::cerr << "ExtensionFormatLoader: Entry point '" << ext->get_entry_point()
 				  << "' not found in extension: " << path << std::endl;
 	}
