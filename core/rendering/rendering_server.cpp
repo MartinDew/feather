@@ -1,8 +1,8 @@
 #include "rendering_server.h"
 #include "renderer.h"
-#include <resources/shader.h>
 #include <main/engine.h>
 #include <main/notification.h>
+#include <resources/shader.h>
 
 #include <framework/assert.h>
 #include <framework/variant.h>

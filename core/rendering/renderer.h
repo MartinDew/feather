@@ -7,6 +7,10 @@
 #include <framework/reflection_macros.h>
 #include <main/engine_settings.h>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "renderer.gen.h"
+#endif
+
 struct SDL_Window;
 
 namespace feather {
@@ -15,7 +19,7 @@ class Shader;
 class Window;
 
 class Renderer : public Reflected {
-	FCLASS(Renderer, Reflected)
+	FCLASS();
 	friend class RenderingServer;
 
 protected:
@@ -28,9 +32,8 @@ protected:
 
 	Window* _window;
 
-	static void _bind_members();
-
 public:
+	[[method]]
 	virtual void _render_scene(RenderScene capture) = 0;
 	~Renderer() override = default;
 };

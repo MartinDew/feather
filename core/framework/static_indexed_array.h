@@ -206,14 +206,16 @@ StaticIndexedArray<T>::Iterator::Iterator(VecIt it, VecIt lowerBound, VecIt uppe
 		: it { it }
 		, lowerBound { lowerBound }
 		, upperBound { upperBound }
-		, first { first } {}
+		, first { first } {
+}
 
 template <class T>
 StaticIndexedArray<T>::ConstIterator::ConstIterator(VecIt it, VecIt lowerBound, VecIt upperBound, VecIt first)
 		: it { it }
 		, lowerBound { lowerBound }
 		, upperBound { upperBound }
-		, first { first } {}
+		, first { first } {
+}
 
 template <class T>
 T& StaticIndexedArray<T>::Iterator::operator*() {
@@ -299,8 +301,10 @@ typename StaticIndexedArray<T>::Iterator StaticIndexedArray<T>::begin() {
 	while (!_free_list.empty() && current < _free_list.size() && _free_list[current] == current)
 		current++;
 
-	return Iterator { _elements.data() + current, _elements.data() + current - 1,
-		_elements.data() + std::max(_elements.size() - 1ULL, 0ULL) + 1, _elements.data() };
+	return Iterator { _elements.data() + current,
+					  _elements.data() + current - 1,
+					  _elements.data() + std::max(_elements.size() - 1ULL, 0ULL) + 1,
+					  _elements.data() };
 }
 
 template <class T>
@@ -315,8 +319,10 @@ typename StaticIndexedArray<T>::ConstIterator StaticIndexedArray<T>::begin() con
 	while (!_free_list.empty() && current < _free_list.size() && _free_list[current] == current)
 		current++;
 
-	return ConstIterator { _elements.data() + current, _elements.data() + current - 1,
-		_elements.data() + std::max(_elements.size() - 1, 0ULL) + 1, _elements.data() };
+	return ConstIterator { _elements.data() + current,
+						   _elements.data() + current - 1,
+						   _elements.data() + std::max(_elements.size() - 1, 0ULL) + 1,
+						   _elements.data() };
 }
 
 template <class T>

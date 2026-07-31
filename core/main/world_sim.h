@@ -9,10 +9,14 @@
 #include <flecs.h>
 #include <flecs/addons/cpp/world.hpp>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "world_sim.gen.h"
+#endif
+
 namespace feather {
 
 class WorldSim final : public Simulation {
-	FCLASS_SINGLETON(WorldSim, Simulation);
+	FCLASS(singleton);
 
 	World _world;
 	Entity _scene_prefab;
@@ -29,11 +33,9 @@ class WorldSim final : public Simulation {
 	}
 
 protected:
-	static void _bind_members();
-
 	template <std::derived_from<class EcsFeature> T>
 	void _import_feature() {
-		_world.import <T>();
+		_world.import<T>();
 	}
 
 public:

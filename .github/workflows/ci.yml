@@ -41,7 +41,7 @@ jobs:
         with:
           submodules: recursive
 
-      # ── Python (required by codegen scripts) ──────────────────────────────
+      # ── Python (required by codegen scripts; stdlib only, no pip install) ──
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -66,12 +66,15 @@ jobs:
           version: "20"
 
       # ── Linux system dependencies ─────────────────────────────────────────
+      # clang itself is no longer installed here: it was only ever needed by
+      # the reflection generator's old clang-AST backend (Linux compiles with
+      # GCC, selected via --toolchain=gcc below). llvm-20 further down is
+      # unrelated -- that one backs lld's gold-plugin LTO support, not codegen.
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends \
-            clang \
             lld \
             python3 \
             libgl1-mesa-dev \

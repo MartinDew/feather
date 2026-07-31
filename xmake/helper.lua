@@ -31,6 +31,13 @@ rule_end()
 --   exe_packages         : packages added to the executables
 --   exe_packages_windows : same, Windows-only
 --   exe_rules             : rule names attached to the executables
+--   generated_files       : like `files`, but for codegen output (e.g. a
+--                           register_<name>_types.gen.cpp from
+--                           generate_reflection.py --module-path) that doesn't
+--                           exist on disk until the first before_build runs.
+--                           Added with {always_added = true} so xmake doesn't
+--                           fail description-time file-existence checks on it,
+--                           matching GENERATED_SOURCE in the top-level xmake.lua.
 
 function feather_module_target(name, module_dir, files, opts)
     opts = opts or {}
@@ -42,6 +49,9 @@ function feather_module_target(name, module_dir, files, opts)
             set_group("modules")
             for _, f in ipairs(files or {}) do
                 add_files(path.join(module_dir, f))
+            end
+            for _, f in ipairs(opts.generated_files or {}) do
+                add_files(path.join(module_dir, f), {always_added = true})
             end
             add_defines(name .. "_ENABLED", {public = true})
             add_defines("EDITOR_BUILD=" .. (variant == "editor" and "1" or "0"))

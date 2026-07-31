@@ -5,6 +5,7 @@
 
 namespace feather {
 
-void Reflected::_bind_members() {}
+void Reflected::_bind_members() {
+}
 
 } //namespace feather

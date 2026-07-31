@@ -1,7 +1,7 @@
 -- feather_public_api: single source of truth for the engine's public API
 -- surface (public include dirs + PUBLIC thirdparty packages), consumed one
 -- hop away via add_deps("feather_public_api"). Used internally by root
--- xmake.lua (modules, executables) AND externally by tools/FeatherSDK.lua
+-- xmake.lua (modules, executables) AND externally by tools/SDK/FeatherSDK.lua
 -- for downstream "project DLL" consumers.
 --
 -- Deliberately uses os.scriptdir() instead of $(projectdir)/os.projectdir():

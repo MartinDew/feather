@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# clang-format staged C/C++ files before commit.
+set -euo pipefail
+
+if ! command -v clang-format >/dev/null 2>&1; then
+	echo "pre-commit: clang-format not found in PATH, skipping formatting" >&2
+	exit 0
+fi
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- \
+	'*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' '*.hxx' '*.inl' |
+	grep -v -E '\.gen\.(h|cpp)$' |
+	grep -v -E '^thirdparty/' || true)
+
+if [ -z "$staged" ]; then
+	exit 0
+fi
+
+to_format=()
+while IFS= read -r f; do
+	[ -f "$f" ] || continue
+	if ! git diff --quiet -- "$f"; then
+		echo "pre-commit: $f has unstaged changes, skipping clang-format (format and stage it yourself)" >&2
+		continue
+	fi
+	to_format+=("$f")
+done <<<"$staged"
+
+if [ ${#to_format[@]} -eq 0 ]; then
+	exit 0
+fi
+
+clang-format -i "${to_format[@]}"
+git add -- "${to_format[@]}"

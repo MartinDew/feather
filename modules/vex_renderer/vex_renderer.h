@@ -11,13 +11,17 @@
 
 #include <Vex.h>
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "vex_renderer.gen.h"
+#endif
+
 namespace feather {
 
 class Texture;
 class MeshData;
 
 class VexRenderer : public Renderer {
-	FCLASS(VexRenderer, Renderer);
+	FCLASS();
 
 	// Core rendering resources
 	vex::Texture depthTexture;
@@ -67,6 +71,7 @@ class VexRenderer : public Renderer {
 	std::string _pbr_forward_path;
 	std::string _shadow_depth_path;
 
+	[[get(public), set(public)]]
 	bool _use_reverse_z;
 
 	// Shader setup
@@ -98,8 +103,6 @@ class VexRenderer : public Renderer {
 protected:
 	void _render_scene(RenderScene capture) override;
 	void _on_resize() override;
-
-	static void _bind_members();
 
 public:
 	VexRenderer();

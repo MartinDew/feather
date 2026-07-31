@@ -41,15 +41,15 @@ public:
 
 	// Perspective projection constructors
 	static Projection create_perspective(float fov_y_radians, float aspect_ratio, float near_plane, float far_plane);
-	static Projection create_perspective_fov(
-			float fov_y_degrees, float aspect_ratio, float near_plane, float far_plane);
-	static Projection create_perspective_off_center(
-			float left, float right, float bottom, float top, float near_plane, float far_plane);
+	static Projection
+	create_perspective_fov(float fov_y_degrees, float aspect_ratio, float near_plane, float far_plane);
+	static Projection
+	create_perspective_off_center(float left, float right, float bottom, float top, float near_plane, float far_plane);
 
 	// Orthographic projection constructors
 	static Projection create_orthographic(float width, float height, float near_plane, float far_plane);
-	static Projection create_orthographic_off_center(
-			float left, float right, float bottom, float top, float near_plane, float far_plane);
+	static Projection
+	create_orthographic_off_center(float left, float right, float bottom, float top, float near_plane, float far_plane);
 
 	// Getters
 	const Matrix& get_matrix() const noexcept { return _projection_matrix; }

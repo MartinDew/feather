@@ -52,9 +52,6 @@ void RenderScene::set_environment(const EnvironmentSettings& env) {
 	_environment = env;
 }
 
-void RenderScene::_bind_members() {
-}
-
 void RenderScene::add_light(const Light& light) {
 	_lights.push_back(light);
 }
@@ -65,7 +62,7 @@ void RenderScene::reserve_lights(size_t count) {
 
 const CowVector<Light>& RenderScene::get_lights() const noexcept {
 	static CowVector<Light> default_light {
-		{ .type = Light::Type::Directional,
+		{ .type = LightType::Directional,
 		  .position = Vector3::zero,
 		  .direction = Vector3 { -0.5f, -1.0f, -1.f },
 		  .color = Color(1.0f, 1.0f, 1.0f, 1.0f),

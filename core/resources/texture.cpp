@@ -7,11 +7,6 @@
 
 namespace feather {
 
-void Texture::_bind_members() {
-	ClassDB::bind_property(&Texture::_width, "width");
-	ClassDB::bind_property(&Texture::_height, "height");
-}
-
 bool Texture::load_from_file() {
 	if (get_path().empty()) {
 		return false;
@@ -21,13 +16,11 @@ bool Texture::load_from_file() {
 	return false;
 }
 
-void Texture::set_data(
-		const std::string& path,
-		const std::vector<uint8_t>& data,
-		uint32_t width,
-		uint32_t height,
-		TextureFormat format
-) {
+void Texture::set_data(const std::string& path,
+					   const std::vector<uint8_t>& data,
+					   uint32_t width,
+					   uint32_t height,
+					   TextureFormat format) {
 	_pixel_data = data;
 	_width = width;
 	_height = height;

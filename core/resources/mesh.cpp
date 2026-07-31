@@ -15,9 +15,6 @@ namespace feather {
 Mesh::Mesh(const std::shared_ptr<MeshData>& mesh_data) : _mesh_data(mesh_data) {
 }
 
-void Mesh::_bind_members() {
-}
-
 void Mesh::set_vertices(const CowVector<Vertex>& vertices) {
 	if (_mesh_data) {
 		_mesh_data->set_vertices(vertices);
@@ -28,13 +25,6 @@ void Mesh::set_indices(const CowVector<Index>& indices) {
 	if (_mesh_data) {
 		_mesh_data->set_indices(indices);
 	}
-}
-
-void ComplexMesh::_bind_members() {
-	ClassDB::bind_method(&ComplexMesh::add_indices, "add_indices");
-	ClassDB::bind_method(&ComplexMesh::add_vertices, "add_vertices");
-	ClassDB::bind_method(&ComplexMesh::get_indices, "get_indices");
-	ClassDB::bind_method(&ComplexMesh::get_vertices, "get_vertices");
 }
 
 void ComplexMesh::add_vertices(const VariantArray vertices) {
@@ -153,10 +143,9 @@ constexpr std::array<uint32_t, 36> cube_indices {
 	20, 22, 23 // right
 };
 
-static std::shared_ptr<MeshData> box_mesh = std::make_shared<MeshData>(
-		std::vector<Vertex> { cube_vertices.begin(), cube_vertices.end() },
-		std::vector<uint32_t> { cube_indices.begin(), cube_indices.end() }
-);
+static std::shared_ptr<MeshData> box_mesh =
+		std::make_shared<MeshData>(std::vector<Vertex> { cube_vertices.begin(), cube_vertices.end() },
+								   std::vector<uint32_t> { cube_indices.begin(), cube_indices.end() });
 
 BoxMesh::BoxMesh() : Super(box_mesh) {
 }

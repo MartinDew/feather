@@ -144,13 +144,11 @@ void Transform::rotate_to(const Vector3& eulerAngles) {
 bool Transform::is_rotation_normalized() const {
 	const auto TestValue =
 			DirectX::XMVectorAbs(DirectX::XMVectorSubtract(Vector3::one, DirectX::XMVector4Dot(rotation, rotation)));
-	return !DirectX::XMVector4Greater(
-			TestValue,
-			Quaternion { quaternion_normalize_threshhold,
-						 quaternion_normalize_threshhold,
-						 quaternion_normalize_threshhold,
-						 quaternion_normalize_threshhold }
-	);
+	return !DirectX::XMVector4Greater(TestValue,
+									  Quaternion { quaternion_normalize_threshhold,
+												   quaternion_normalize_threshhold,
+												   quaternion_normalize_threshhold,
+												   quaternion_normalize_threshhold });
 }
 
 std::tuple<Vector3, Vector3, Vector3> Transform::get_axis() const noexcept {
@@ -196,17 +194,14 @@ Transform Transform::construct_from_matrices_and_scale(const Matrix& mat1, const
 	return result;
 }
 
-Transform make_transform_screen_space_sized_billboard(
-		Transform objectTransform,
-		Vector3 cameraPosition,
-		float fovDeg,
-		Vector2 minScreenSpaceSize,
-		Vector2 screenSize
-) {
+Transform make_transform_screen_space_sized_billboard(Transform objectTransform,
+													  Vector3 cameraPosition,
+													  float fovDeg,
+													  Vector2 minScreenSpaceSize,
+													  Vector2 screenSize) {
 	Vector3 pos = objectTransform.position;
 	objectTransform.rotation = Quaternion::create_from_rotation_matrix(
-			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert()
-	);
+			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert());
 	float distanceToObject = Vector3::distance(cameraPosition, pos);
 	const float maxConstantSizeDistance = 200.0f; // After this distance, object will scale with perspective
 
@@ -235,8 +230,7 @@ Transform make_transform_screen_space_sized_billboard(
 Transform make_transform_billboard(Transform objectTransform, Vector3 cameraPosition) {
 	Vector3 pos = objectTransform.position;
 	objectTransform.rotation = Quaternion::create_from_rotation_matrix(
-			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert()
-	);
+			Matrix::create_look_at(pos, cameraPosition, objectTransform.get_up_vector()).invert());
 	return objectTransform;
 }
 

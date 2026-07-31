@@ -6,6 +6,10 @@
 #include "mesh_data.h"
 #include "resources/material.h"
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "render_scene.gen.h"
+#endif
+
 namespace feather {
 
 class MeshData;
@@ -14,7 +18,8 @@ class Material;
 struct Light;
 
 class RenderScene : public Reflected {
-	FCLASS(RenderScene, Reflected)
+	FCLASS();
+
 public:
 	struct EntityRender {
 		Transform transform;
@@ -69,9 +74,6 @@ public:
 
 	const EnvironmentSettings& get_environment() const noexcept;
 	void set_environment(const EnvironmentSettings& env);
-
-protected:
-	static void _bind_members();
 
 private:
 	Transform _camera_transform;

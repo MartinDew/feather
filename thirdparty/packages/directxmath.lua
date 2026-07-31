@@ -17,7 +17,7 @@ package("directxmath_feather")
         -- os.scriptdir() here is thirdparty/packages/; go up two levels to
         -- the engine root. Deliberately not os.projectdir(): this package
         -- can be resolved by a downstream consumer's build (via
-        -- tools/FeatherSDK.lua), whose top-level project root is NOT the
+        -- tools/SDK/FeatherSDK.lua), whose top-level project root is NOT the
         -- engine's -- os.projectdir() would silently point at the wrong repo.
         local sal_src = path.join(path.directory(path.directory(os.scriptdir())), "thirdparty", "DirectXMath", "sal.h")
         if os.isfile(sal_src) then

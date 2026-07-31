@@ -9,10 +9,6 @@
 
 namespace feather {
 
-void Renderer::_bind_members() {
-	ClassDB::bind_method(&Type::_render_scene, "_render_scene");
-}
-
 Renderer::Renderer() : _window(&Engine::get().get_main_window()) {
 }
 

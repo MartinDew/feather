@@ -9,17 +9,13 @@ namespace feather {
 
 FSINGLETON_INSTANCE(WorldSim);
 
-void WorldSim::_bind_members() {
-	// ClassDB::bind_property(&Type::fixed_tick, "fixed_tick", VariantType::INT);
-}
-
 WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_time) } {
 	FSINGLETON_CONSTRUCT_INSTANCE()
 #if BETA
 	_world.set<Ecs::Rest>({});
 #endif
 
-	register_core_ecs_features(_world);
+	register_core_components(_world);
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());

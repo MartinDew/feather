@@ -1,12 +1,4 @@
 #include "resource.h"
 #include <core/main/class_db.h>
 
-namespace feather {
-
-void Resource::_bind_members() {
-	ClassDB::bind_method(&Resource::get_rid, "get_rid");
-
-	ClassDB::bind_property(&Type::_cached_path, "path");
-}
-
-} // namespace feather
+namespace feather {} // namespace feather

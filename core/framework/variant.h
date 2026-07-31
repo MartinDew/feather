@@ -97,20 +97,19 @@ concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
 struct ClassInfo;
 
 class Variant {
-	using InternalVariant = std::variant<
-			std::monostate,
-			bool,
-			int,
-			real_t,
-			Vector2,
-			Vector3,
-			Vertex,
-			Color,
-			std::string,
-			Path,
-			VariantArray,
-			RID,
-			Reflected*>;
+	using InternalVariant = std::variant<std::monostate,
+										 bool,
+										 int,
+										 real_t,
+										 Vector2,
+										 Vector3,
+										 Vertex,
+										 Color,
+										 std::string,
+										 Path,
+										 VariantArray,
+										 RID,
+										 Reflected*>;
 
 	InternalVariant _data;
 	VariantType _type;
@@ -118,7 +117,9 @@ class Variant {
 
 	void set_class_info(StaticString class_name);
 
-	[[nodiscard]] Variant _internal_call(std::string_view method_name, std::span<Variant> args) const;
+	// enforce_public denies non-Public methods; *_internal entry points pass false.
+	[[nodiscard]] Variant
+	_internal_call(std::string_view method_name, std::span<Variant> args, bool enforce_public) const;
 
 public:
 	// Default constructor - NIL
@@ -230,12 +231,23 @@ public:
 
 	// Object property access
 	std::string get_name() const;
+
+	// Script-facing: only AccessLevel::Public members are reachable (get/call
+	// return NIL, set is ignored otherwise).
 	Variant get(std::string_view key) const;
 	void set(std::string_view key, const Variant& value);
 	// Object method call
 	Variant call(std::string_view method_name);
 	template <class... TArgs>
 	Variant call(std::string_view method_name, TArgs&&... args) const;
+
+	// Privileged access for trusted engine systems (e.g. editor inspector);
+	// bypasses accessibility checks. Do not expose to scripts.
+	Variant get_internal(std::string_view key) const;
+	void set_internal(std::string_view key, const Variant& value);
+	Variant call_internal(std::string_view method_name);
+	template <class... TArgs>
+	Variant call_internal(std::string_view method_name, TArgs&&... args) const;
 
 	// implicit conversion
 	// In variant.h, inside the Variant class:
@@ -259,7 +271,14 @@ template <class... TArgs>
 Variant Variant::call(std::string_view method_name, TArgs&&... args) const {
 	fassert(_type == VariantType::OBJECT, "Variant is not an object");
 	Variant params[] = { as<Reflected*>().value(), args... };
-	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1));
+	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1), true);
+}
+
+template <class... TArgs>
+Variant Variant::call_internal(std::string_view method_name, TArgs&&... args) const {
+	fassert(_type == VariantType::OBJECT, "Variant is not an object");
+	Variant params[] = { as<Reflected*>().value(), args... };
+	return _internal_call(method_name, std::span<Variant>(params, sizeof...(args) + 1), false);
 }
 
 } // namespace feather

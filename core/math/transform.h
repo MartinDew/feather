@@ -1,17 +1,24 @@
 #pragma once
 
 #include "math_defs.h"
+#include <framework/reflection_macros.h>
+
+#ifndef FEATHER_REFLECTION_PARSER
+#include "transform.gen.h"
+#endif
 
 namespace feather {
 
 struct Transform {
+	FSTRUCT(Component);
+
 	// Feather uses right-handed coordinates
 	// up = Y
 	// right = X
 	// forward = -Z
-	Vector3 position = Vector3::zero; // X, Y, Z
-	Quaternion rotation = Quaternion::identity; // Quaternion
-	Vector3 scale = Vector3::one; // X, Y, Z
+	[[get, set]] Vector3 position = Vector3::zero; // X, Y, Z
+	[[get, set]] Quaternion rotation = Quaternion::identity; // Quaternion
+	[[get, set]] Vector3 scale = Vector3::one; // X, Y, Z
 
 	Transform() = default;
 	explicit Transform(const Matrix& transformationMat);
@@ -50,9 +57,7 @@ struct Transform {
 	static Transform create_look_at(const Vector3& eye, const Vector3& target, const Vector3& up);
 
 	bool operator==(const Transform&) const;
-	Transform operator*(const Transform& other) const {
-		return multiply(*this, other);
-	}
+	Transform operator*(const Transform& other) const { return multiply(*this, other); }
 
 	Transform& operator*=(const Transform& other) {
 		*this = multiply(*this, other);
@@ -66,7 +71,11 @@ struct Transform {
 	static Transform get_relative_transform_using_matrix_with_scale(const Transform& base, const Transform& relative);
 };
 
-Transform make_transform_screen_space_sized_billboard(Transform objectTransform, Vector3 cameraPosition, float fovDeg, Vector2 minScreenSpaceSize, Vector2 screenSize);
+Transform make_transform_screen_space_sized_billboard(Transform objectTransform,
+													  Vector3 cameraPosition,
+													  float fovDeg,
+													  Vector2 minScreenSpaceSize,
+													  Vector2 screenSize);
 Transform make_transform_billboard(Transform objectTransform, Vector3 cameraPosition);
 
 } //namespace feather

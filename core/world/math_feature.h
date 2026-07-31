@@ -2,13 +2,14 @@
 #include "ecs_defs.h"
 #include "ecs_feature.h"
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "math_feature.gen.h"
+#endif
+
 namespace feather {
 
 class MathWorldFeature final : public EcsFeature {
-	FCLASS(MathWorldFeature, EcsFeature);
-
-protected:
-	static void _bind_members();
+	FCLASS(EcsModule);
 
 public:
 	MathWorldFeature();

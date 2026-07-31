@@ -2,14 +2,16 @@
 
 #include "resource_format_loader.h"
 
+#ifndef FEATHER_REFLECTION_PARSER
+#include "extension_format_loader.gen.h"
+#endif
+
 namespace feather {
 
 class ExtensionFormatLoader : public ResourceFormatLoader {
-	FCLASS(ExtensionFormatLoader, ResourceFormatLoader);
+	FCLASS();
 
 protected:
-	static void _bind_members();
-
 	std::shared_ptr<Resource> instantiate(const Path& path) override;
 	void load(std::shared_ptr<Resource> resource, const Path& path) override;
 	bool requires_immediate_load() const override { return true; }

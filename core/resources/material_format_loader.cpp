@@ -3,8 +3,6 @@
 
 namespace feather {
 
-void MaterialFormatLoader::_bind_members() {}
-
 bool MaterialFormatLoader::recognize_extension(const std::string& extension) const {
 	return extension == "mat";
 }
