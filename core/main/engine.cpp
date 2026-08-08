@@ -105,14 +105,18 @@ bool Engine::run() {
 
 	bool keep_running = true;
 
-	// Debug stuff
+	// initialization
+	ResourceLoader::get()->index_project();
+
+	// Debug stuff. Must come after index_project(): that's what dlopens a
+	// project's extension DLL and runs its entry point, which is where a
+	// project's own reflected types (and format loaders, etc.) register
+	// themselves with ClassDB. Dumping before it would silently omit every
+	// project-defined type.
 	if (LaunchSettings::get().dump_db.Get()) {
 		ClassDB::get()->print_db();
 		return true;
 	}
-
-	// initialization
-	ResourceLoader::get()->index_project();
 
 	_world_sim.init();
 
