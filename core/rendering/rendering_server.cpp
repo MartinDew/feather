@@ -1,4 +1,5 @@
 #include "rendering_server.h"
+#include "null_renderer.h"
 #include "renderer.h"
 #include <main/engine.h>
 #include <main/notification.h>
@@ -64,13 +65,21 @@ RenderingServer::~RenderingServer() {
 }
 
 void RenderingServer::init() {
-	_renderer = ClassDB::create_object<Renderer>(LaunchSettings::get().renderer.Get());
+	// Both operands are views onto storage that outlives this call: a constexpr
+	// StaticString, or LaunchSettings' own std::string (Get() returns a reference).
+	const std::string_view renderer_name = Engine::is_headless()
+			? std::string_view { NullRenderer::get_class_static() }
+			: std::string_view { LaunchSettings::get().renderer.Get() };
+
+	_renderer = ClassDB::create_object<Renderer>(renderer_name);
+	fassert(_renderer.get(), std::format("Failed to create renderer of type {}", renderer_name));
 
 	Engine::get().get_main_window().register_notification(Notification::WINDOW_RESIZED, [&flag = _needs_resize] {
 		flag.store(true, std::memory_order_relaxed);
 	});
 
-	if (!LaunchSettings::get().force_single_thread.Get())
+	// A render thread whose only job is to call a no-op isn't worth spawning.
+	if (!Engine::is_headless() && !LaunchSettings::get().force_single_thread.Get())
 		_run();
 }
 

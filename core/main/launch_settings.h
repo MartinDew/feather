@@ -42,7 +42,7 @@ public:
 	args::ValueFlag<std::string> windowed { _parser,
 											"window mode",
 											"The window mode to use (windowed {default} | headless )",
-											{ "w" },
+											{ 'w', "window-mode" },
 											"windowed" };
 
 	args::Group rendering { _parser, "Rendering related settings" };

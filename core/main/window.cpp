@@ -32,6 +32,15 @@ constexpr Notification to_notification(const SDL_Event& event) {
 } //namespace
 
 Window::Window() : _internal_event(), _fullscreen_mode() {
+	if (Engine::is_headless()) {
+		// SDL's null video driver. It registers a fake 1024x768 display and
+		// creates windows that never touch a display server, so the same binary
+		// runs windowed or headless without a second Window implementation.
+		// Note it exposes no SDL_PROP_WINDOW_* native handle, which is why
+		// headless also selects NullRenderer (see RenderingServer::init).
+		SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+	}
+
 	if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
 		std::cerr << SDL_GetError() << std::endl;
 		assert(false);

@@ -37,6 +37,10 @@ public:
 
 	static bool is_editor();
 
+	// Headless: no display server and no GPU device. Parsed once from
+	// --window-mode; see the definition in engine.cpp.
+	static bool is_headless();
+
 	Window& get_main_window() { return _main_window; }
 
 	double get_current_delta_time() const;
