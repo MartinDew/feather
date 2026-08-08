@@ -48,10 +48,11 @@ end
 -- a specific directory instead (e.g. from a project with more than one
 -- codegen'd source tree).
 --
--- Usage (a game project's own xmake.lua):
---   import("feather_codegen")
---   feather_codegen.add_extension("codegen/rpg_modifiers.py")
---   feather_codegen.run_module_codegen(os.scriptdir())
+-- Usage (a game project's own xmake.lua): don't call this directly -- pass
+-- codegen_extensions to feather_sdk_setup(), which forwards it as
+-- run_project_codegen's opts.extensions. That keeps registration and the
+-- run_*_codegen call inside the same script closure, which is required (see
+-- the _pending_extensions note above).
 function add_extension(ext_path, opts)
     opts = opts or {}
     table.insert(_pending_extensions, _resolve_extension({path = ext_path, scope = opts.scope}))
@@ -87,12 +88,21 @@ local function _resolve_extensions(extensions_opt)
     return out
 end
 
-local function common_argv(extra)
-    local proj = os.projectdir()
+-- feather_root: the FeatherEngine checkout that owns the generator script and
+-- core/. Defaults to os.projectdir(), which is correct for the engine's own
+-- build but NOT for a downstream project -- there os.projectdir() is the
+-- consumer's repo, so tools/SDK/FeatherSDK.lua passes an explicit root.
+-- project_root: the tree that generated file ids are computed relative to
+-- (see file_id() in generate_reflection.py); the consumer's own root for a
+-- consumer build, so a project header's CURRENT_FILE_ID doesn't depend on
+-- where the engine happens to be checked out.
+local function common_argv(extra, feather_root, project_root)
+    feather_root = feather_root or os.projectdir()
+    project_root = project_root or feather_root
     local argv = {
-        path.join(proj, "tools", "codegen", "generate_reflection.py"),
-        "--core-path", path.join(proj, "core"),
-        "--project-root", proj,
+        path.join(feather_root, "tools", "codegen", "generate_reflection.py"),
+        "--core-path", path.join(feather_root, "core"),
+        "--project-root", project_root,
     }
     for _, e in ipairs(extra or {}) do table.insert(argv, e) end
     return argv
@@ -102,6 +112,7 @@ end
 -- dirs (vex_renderer today) -- the "refresh everything" entry point, attached
 -- to feather.editor/standalone's before_build. module_dirs may be nil/empty.
 -- opts.extensions: see _resolve_extensions above.
+-- opts.feather_root: see common_argv above.
 function run_core_codegen(module_dirs, opts)
     opts = opts or {}
     module_dirs = module_dirs or {}
@@ -118,7 +129,7 @@ function run_core_codegen(module_dirs, opts)
     for _, a in ipairs(_extension_argv(extensions, module_dirs)) do
         table.insert(extra, a)
     end
-    local argv = common_argv(extra)
+    local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py")
     os.vrunv("python3", argv, {curdir = os.projectdir()})
@@ -140,6 +151,7 @@ end
 -- run_core_codegen's own later pass harmless (it just finds 0 files changed;
 -- with the syntactic parser this whole redundant pass costs milliseconds).
 -- opts.extensions: see _resolve_extensions above.
+-- opts.feather_root: see common_argv above.
 function run_module_codegen(module_dir, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)
@@ -150,8 +162,64 @@ function run_module_codegen(module_dir, opts)
     for _, a in ipairs(_extension_argv(extensions, {module_dir})) do
         table.insert(extra, a)
     end
-    local argv = common_argv(extra)
+    local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
     os.vrunv("python3", argv, {curdir = os.projectdir()})
+end
+
+-- Runs generate_reflection.py for a DOWNSTREAM project ("project DLL") repo:
+-- only that project's own source dirs, never core. Called from
+-- tools/SDK/FeatherSDK.lua's before_build; see feather_sdk_setup's codegen_dirs.
+--
+-- --skip-core is the whole point of having a separate entry point from
+-- run_module_codegen: the engine's own module targets legitimately regenerate
+-- core (their headers transitively include core headers whose .gen.h may not
+-- exist yet), but a consumer must never write into someone else's checkout --
+-- that checkout may be read-only, shared between projects, or on a different
+-- commit. The tradeoff is that the engine must already be built (its core
+-- .gen.h files present) before a consumer builds, which feather_sdk_setup's
+-- on_load check enforces with a readable message.
+--
+-- dirs: list of source dirs. Each entry is a plain path string, a
+-- "name=dir" string, or {dir = ..., name = ...}; name overrides the generated
+-- register_<name>_types symbol (a project's sources usually live in a
+-- generically-named "src", which would otherwise give register_src_types).
+-- The "name=dir" string form exists because xmake's set_values() only stores
+-- flat scalars, so FeatherSDK.lua can't hand a list of tables through a target
+-- value into its before_build closure. Relative dirs resolve against project_root.
+-- opts.extensions: see _resolve_extensions above.
+function run_project_codegen(feather_root, project_root, dirs, opts)
+    opts = opts or {}
+    local extensions = _resolve_extensions(opts.extensions)
+
+    local abs_dirs = {}
+    local extra = {"--skip-core"}
+    for _, entry in ipairs(dirs or {}) do
+        local d, name
+        if type(entry) == "table" then
+            d, name = entry.dir, entry.name
+        else
+            local n, sep, rest = entry:match("^([^=]*)(=?)(.*)$")
+            if sep == "=" then
+                d, name = rest, n
+            else
+                d = entry
+            end
+        end
+        local abs = path.absolute(d, project_root)
+        table.insert(abs_dirs, abs)
+        table.insert(extra, "--module-path")
+        table.insert(extra, name and (name .. "=" .. abs) or abs)
+    end
+    -- Project extensions scope to the project's own dirs only, never core --
+    -- core isn't even scanned here, but keep the same invariant as the two
+    -- entry points above so the scoping rule reads identically everywhere.
+    for _, a in ipairs(_extension_argv(extensions, abs_dirs)) do
+        table.insert(extra, a)
+    end
+    local argv = common_argv(extra, feather_root, project_root)
+
+    cprint("${cyan}[codegen]${reset} generate_reflection.py --skip-core (project: %s)", project_root)
+    os.vrunv("python3", argv, {curdir = project_root})
 end

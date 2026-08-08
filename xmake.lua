@@ -141,69 +141,13 @@ local function run_codegen(target)
     }, {curdir = proj})
 end
 
+-- Body lives in xmake/modules/feather_flags.lua so tools/SDK/FeatherSDK.lua can
+-- import() the exact same flags for downstream project DLLs -- notably
+-- -Wno-attributes, which reflection's bare [[get]]/[[method]] attributes need
+-- wherever an FCLASS header is compiled.
 local function apply_compile_flags(target)
-    local want_lto     = has_config("production") or has_config("use_lto")
-    local want_static  = has_config("production") or has_config("static_cpp")
-
-    -- is_toolchain() is a description-scope global and nil inside on_config,
-    -- so query the resolved tool instead.
-    local function is_msvc()     return target:has_tool("cxx", "cl", "clang_cl") end
-    local function is_clang()    return target:has_tool("cxx", "clang", "clangxx", "clang-cl") end
-    local function is_clang_cl() return target:has_tool("cxx", "clang_cl") end
-
-    if want_lto and not is_msvc() then
-        target:add("cxflags", "-flto=thin", {force = true})
-        target:add("ldflags", "-flto=thin", {force = true})
-    end
-
-    if want_static and is_plat("linux") and not is_clang() then
-        target:add("ldflags", "-static-libgcc", "-static-libstdc++", {force = true})
-    end
-
-    if has_config("enable_sanitizers") and is_mode("debug") and not is_msvc() then
-        target:add("cxflags", "-fsanitize=address,undefined", "-fno-omit-frame-pointer", {force = true})
-        target:add("ldflags", "-fsanitize=address,undefined", {force = true})
-    end
-
-    -- Reflection uses bare [[get]]/[[set(...)]]/[[ignore]]/[[method]] attributes
-    -- that the generator reads textually; compilers only need to ignore them.
-    if is_msvc() then
-        target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
-        if is_clang_cl() then
-            -- clang-cl matches is_msvc() above (it accepts /-style flags), but it
-            -- emits its own Clang diagnostics for our bare attributes rather than
-            -- MSVC's C5030 -- e.g. "unknown attribute 'method' ignored
-            -- [-Wunknown-attributes]" -- so /wd5030 alone doesn't silence it.
-            -- clang-cl also accepts Clang's -W/-Wno- flags directly (no /clang:
-            -- prefix needed), so pass the same ones the plain-Clang branch below
-            -- uses.
-            target:add("cxflags", "-Wno-attributes", "-Wno-unknown-attributes", {force = true})
-        end
-        if is_mode("debug") then
-            target:add("cxflags", "/Od", "/Zi", {force = true})
-        elseif is_mode("releasedbg") then
-            target:add("cxflags", "/O2", "/Zi", {force = true})
-        elseif is_mode("release") then
-            target:add("cxflags", "/O2", {force = true})
-        end
-    else
-        target:add("cxflags",
-            "-Wall", "-Wextra", "-pedantic", "-Wno-unused-parameter",
-            "-Wno-attributes",
-            {force = true})
-        if is_clang() then
-            -- GCC only recognizes -Wno-attributes for this; -Wno-unknown-attributes
-            -- is Clang's spelling and GCC rejects it as an unrecognized option.
-            target:add("cxflags", "-Wno-unknown-attributes", {force = true})
-        end
-        if is_mode("debug") then
-            target:add("cxflags", "-g", "-O0", {force = true})
-        elseif is_mode("releasedbg") then
-            target:add("cxflags", "-g", "-O2", {force = true})
-        elseif is_mode("release") then
-            target:add("cxflags", "-O3", {force = true})
-        end
-    end
+    import("feather_flags")
+    feather_flags.apply(target)
 end
 
 -- ---- Main executables ---------------------------------------------------

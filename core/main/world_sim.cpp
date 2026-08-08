@@ -14,20 +14,30 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 #if BETA
 	_world.set<Ecs::Rest>({});
 #endif
+}
 
+WorldSim::~WorldSim() = default;
+
+void WorldSim::init() {
+	// Every reflected Component is registered before any EcsFeature is
+	// imported, so a component's Flecs name never depends on import order.
+	// A project DLL registers its own components from its extension entry
+	// point, which ResourceLoader::index_project() has already called by the
+	// time we get here (see the note on the declaration in world_sim.h).
 	register_core_components(_world);
+
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());
 	set_active_scene(scene);
 
+	// Picks up EcsFeature subclasses from core, from built-in modules, and --
+	// because this runs after index_project() -- from loaded project DLLs.
 	auto children = ClassDB::get_children_names("EcsFeature");
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);
 	}
 }
-
-WorldSim::~WorldSim() = default;
 
 void WorldSim::update(double delta) {
 	// Ecs::query<Transform, MeshInstance, MaterialInstance> q
