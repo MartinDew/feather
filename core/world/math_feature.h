@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "ecs_defs.h"
+#include "ecs_api.h"
 #include "ecs_feature.h"
 
 #ifndef FEATHER_REFLECTION_PARSER

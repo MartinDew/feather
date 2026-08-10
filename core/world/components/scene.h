@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include <framework/reflection_macros.h>
-#include <world/ecs_defs.h>
 #include <framework/static_string.hpp>
 
 #include <cstdint>

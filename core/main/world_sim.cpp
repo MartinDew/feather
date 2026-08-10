@@ -2,34 +2,35 @@
 
 #include "engine.h"
 #include <world/components/scene.h>
+#include <world/ecs_defs.h>
 #include <world/register_core_features.h>
 #include <framework/static_string.hpp>
 
+#include <flecs/addons/cpp/world.hpp>
+
 namespace feather {
+
+struct WorldSim::Impl {
+	World world;
+	Entity scene_prefab;
+	Entity current_scene;
+};
 
 FSINGLETON_INSTANCE(WorldSim);
 
-WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_time) } {
+WorldSim::WorldSim() : _impl(std::make_unique<Impl>()) {
 	FSINGLETON_CONSTRUCT_INSTANCE()
 #if BETA
-	_world.set<Ecs::Rest>({});
+	_impl->world.set<Ecs::Rest>({});
 #endif
 }
 
 WorldSim::~WorldSim() = default;
 
 void WorldSim::init() {
-	// Every reflected Component is registered before any EcsFeature is
-	// imported, so a component's Flecs name never depends on import order.
-	// A project DLL registers its own components from its extension entry
-	// point, which ResourceLoader::index_project() has already called by the
-	// time we get here (see the note on the declaration in world_sim.h).
 	register_core_components(ecs_world());
 
-	_scene_prefab = _world.prefab("Scene");
-	auto scene = create_scene("new scene");
-	fassert(scene.is_valid());
-	set_active_scene(scene);
+	_create_initial_scene();
 
 	// Picks up EcsFeature subclasses from core, from built-in modules, and --
 	// because this runs after index_project() -- from loaded project DLLs.
@@ -40,44 +41,31 @@ void WorldSim::init() {
 }
 
 void WorldSim::update(double delta) {
-	bool result = _world.progress(/*delta*/);
+	bool result = _impl->world.progress(/*delta*/);
 }
 
-Entity WorldSim::create_scene(std::string name) const {
-	Scene s { { name } };
-	return _world.entity(name.c_str()).is_a(_scene_prefab).set<Scene>(s);
-}
+void WorldSim::_create_initial_scene() {
+	_impl->scene_prefab = _impl->world.prefab("Scene");
 
-Entity WorldSim::create_entity(std::string name) const {
-	return _world.entity(name.c_str());
-}
+	Scene s { { "new scene" } };
+	Entity scene = _impl->world.entity("new scene").is_a(_impl->scene_prefab).set<Scene>(s);
+	fassert(scene.is_valid());
+	fassert(scene.is_a(_impl->scene_prefab), "Given scene isn't a scene instance");
 
-Entity WorldSim::create_entity(const Entity& parent_entity, std::string name) const {
-	return _world.entity(name.c_str()).child_of(parent_entity);
-}
-
-void WorldSim::add_to_scene(Entity entity) const {
-	entity.child_of(_current_scene);
-}
-
-bool WorldSim::_is_in_scene(flecs::entity e, Entity scene) const {
-	flecs::entity current = e;
-	while (current.is_valid()) {
-		if (current == scene)
-			return true;
-		current = current.parent();
-	}
-	return false;
-}
-
-void WorldSim::set_active_scene(Entity scene) {
-	fassert(scene.is_a(_scene_prefab), "Given scene isn't a scene instance");
-
-	// Clear old active scene marker
-	_world.remove_all<ActiveScene>();
-
+	// Clear old active scene marker (there is none yet, but this mirrors the
+	// invariant a future set_active_scene() would need to preserve: exactly
+	// one ActiveScene at a time).
+	_impl->world.remove_all<ActiveScene>();
 	scene.add<ActiveScene>();
-	_current_scene = scene;
+	_impl->current_scene = scene;
+}
+
+ecs::FeatherWorld WorldSim::ecs_world() const {
+	return ecs::FeatherWorld { _impl->world.c_ptr() };
+}
+
+ecs::FeatherEntity WorldSim::current_scene_handle() const {
+	return ecs::FeatherEntity { _impl->current_scene.raw_id(), _impl->world.c_ptr() };
 }
 
 } //namespace feather

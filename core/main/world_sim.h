@@ -3,12 +3,9 @@
 #include "simulation.h"
 
 #include <framework/reflection_macros.h>
-#include <world/components/scene.h>
 #include <world/ecs_api.h>
-#include <world/ecs_defs.h>
 
-#include <flecs.h>
-#include <flecs/addons/cpp/world.hpp>
+#include <memory>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "world_sim.gen.h"
@@ -19,29 +16,21 @@ namespace feather {
 class WorldSim final : public Simulation {
 	FCLASS(singleton);
 
-	World _world;
-	Entity _scene_prefab;
-	Entity _current_scene;
+	// The live flecs world, active-scene bookkeeping, etc. live behind this
+	// pimpl (defined in world_sim.cpp) so this header never needs <flecs.h>
+	// -- letting a project DLL get a complete WorldSim (required for
+	// ClassDB::bind_static_method's VariantCompatible<WorldSim*> check --
+	// see e.g. feather-example-project's example_module.h) without flecs
+	// ending up on its include path. Engine-internal code that needs richer
+	// flecs access than ecs_world()/current_scene_handle() below give it
+	// should go through ecs_defs.h's unwrap(), same as
+	// rendering_world_feature.cpp does.
+	struct Impl;
+	std::unique_ptr<Impl> _impl;
 
-	std::vector<Entity> _scenes;
-
-	// In world_sim.h, private section:
-	bool _is_in_scene(flecs::entity e, Entity scene) const;
-
-	template <class... TComps, class TFunc>
-	void _iterate_tree(flecs::entity e, TFunc func) {
-		// Todo
-	}
-
-protected:
-	template <std::derived_from<class EcsFeature> T>
-	void _import_feature() {
-		_world.import<T>();
-	}
+	void _create_initial_scene();
 
 public:
-	const EcsTimer fixed_tick;
-
 	WorldSim();
 	~WorldSim() override;
 
@@ -56,48 +45,13 @@ public:
 
 	void update(double delta) override;
 
-	[[nodiscard]] Entity& get_current_scene() { return _current_scene; }
-
-	// Plugin-safe counterparts of get_world()/get_current_scene(): opaque
-	// handles carrying no flecs type, so calling code (project_main.cpp,
-	// generated register_<name>_components/systems) never needs
-	// <world/ecs_defs.h> or <flecs.h>. Trivial to construct -- see
-	// ecs::FeatherWorld/FeatherEntity's own comments in ecs_api.h.
-	[[nodiscard]] ecs::FeatherWorld ecs_world() const { return ecs::FeatherWorld { _world.c_ptr() }; }
-	[[nodiscard]] ecs::FeatherEntity current_scene_handle() const {
-		return ecs::FeatherEntity { _current_scene.raw_id(), _world.c_ptr() };
-	}
-
-	[[nodiscard]]
-	Entity create_scene(std::string name) const;
-
-	[[nodiscard]]
-	Entity create_entity(std::string name = "") const;
-	[[nodiscard]]
-	Entity create_entity(const Entity& parent_entity, std::string name = "") const;
-
-	// get low level world impl
-	[[nodiscard]] World* get_world() { return &_world; }
-
-	void add_to_scene(Entity entity) const;
-
-	template <class... T>
-	Ecs::system_builder<T...>& execute_fixed(Ecs::system_builder<T...>& system) {
-		return system.tick_source(fixed_tick);
-	}
-
-	void set_active_scene(Entity scene);
-
-	// Build a query scoped to the active scene
-	template <class... TComps>
-	auto scene_query() {
-		return _world.query_builder<TComps...>().template with<ActiveScene>().up(Ecs::ChildOf).build();
-	}
-
-	template <class... TComps>
-	auto scene_system() {
-
-	};
+	// Plugin-safe handles: opaque, carrying no flecs type, so calling code
+	// (project_main.cpp, generated register_<name>_components/systems, an
+	// EcsModule's on_import()) never needs <world/ecs_defs.h> or <flecs.h>.
+	// Trivial to construct -- see ecs::FeatherWorld/FeatherEntity's own
+	// comments in ecs_api.h.
+	[[nodiscard]] ecs::FeatherWorld ecs_world() const;
+	[[nodiscard]] ecs::FeatherEntity current_scene_handle() const;
 };
 
 } //namespace feather

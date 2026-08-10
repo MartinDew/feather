@@ -1,5 +1,4 @@
 #pragma once
-#include "ecs_defs.h"
 #include "ecs_feature.h"
 
 // WorldSim must be a complete type here (not just the forward decl from
