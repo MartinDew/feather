@@ -24,7 +24,7 @@ void WorldSim::init() {
 	// A project DLL registers its own components from its extension entry
 	// point, which ResourceLoader::index_project() has already called by the
 	// time we get here (see the note on the declaration in world_sim.h).
-	register_core_components(_world);
+	register_core_components(ecs_world());
 
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
@@ -40,8 +40,6 @@ void WorldSim::init() {
 }
 
 void WorldSim::update(double delta) {
-	// Ecs::query<Transform, MeshInstance, MaterialInstance> q
-
 	bool result = _world.progress(/*delta*/);
 }
 

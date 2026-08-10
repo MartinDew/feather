@@ -4,6 +4,7 @@
 
 #include <framework/reflection_macros.h>
 #include <world/components/scene.h>
+#include <world/ecs_api.h>
 #include <world/ecs_defs.h>
 
 #include <flecs.h>
@@ -56,6 +57,16 @@ public:
 	void update(double delta) override;
 
 	[[nodiscard]] Entity& get_current_scene() { return _current_scene; }
+
+	// Plugin-safe counterparts of get_world()/get_current_scene(): opaque
+	// handles carrying no flecs type, so calling code (project_main.cpp,
+	// generated register_<name>_components/systems) never needs
+	// <world/ecs_defs.h> or <flecs.h>. Trivial to construct -- see
+	// ecs::FeatherWorld/FeatherEntity's own comments in ecs_api.h.
+	[[nodiscard]] ecs::FeatherWorld ecs_world() const { return ecs::FeatherWorld { _world.c_ptr() }; }
+	[[nodiscard]] ecs::FeatherEntity current_scene_handle() const {
+		return ecs::FeatherEntity { _current_scene.raw_id(), _world.c_ptr() };
+	}
 
 	[[nodiscard]]
 	Entity create_scene(std::string name) const;

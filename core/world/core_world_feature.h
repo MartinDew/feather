@@ -13,7 +13,8 @@ class CoreWorldFeature : public EcsFeature {
 
 public:
 	CoreWorldFeature() = default;
-	CoreWorldFeature(World world);
+
+	static void on_import(ecs::FeatherWorld world, ecs::FeatherEntity scene);
 };
 
 } //namespace feather

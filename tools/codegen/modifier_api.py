@@ -47,8 +47,18 @@ class EmitContext:
     same mechanism generate_gen_header() uses for a #ifdef-guarded property
     accessor (a raw #if can't be spliced into a backslash-continued macro
     body). Calling it outside that context raises ModifierError.
+
+    include_base is what relative_include() below resolves a header path
+    against -- core/ for a core subfolder, the module/project dir itself
+    otherwise (mirrors process_source_dir's own include_base parameter).
+    Classes get this for free (generate_register_cpp includes every class's
+    own header automatically); a modifier whose emit_dir() output references
+    a symbol declared OUTSIDE any class (e.g. EcsSystemModifier's
+    [[system(...)]] free functions, found by scan_source rather than the
+    class pipeline) needs to add its own #include via relative_include().
     """
     dir_name: str
+    include_base: "Path | None" = None
     _hoist: object = None
 
     def hoist(self, code_lines: list, condition: str) -> str:
@@ -61,6 +71,19 @@ class EmitContext:
 
     def error(self, msg: str) -> ModifierError:
         return ModifierError(msg)
+
+    def relative_include(self, header: Path) -> str:
+        """header's path as a quoted #include, relative to include_base --
+        same computation generate_register_cpp() already does for every
+        reflected class's own header (see generate_reflection.py's
+        _relative_include, which this mirrors so a modifier doesn't need
+        access to that private helper)."""
+        if self.include_base is None:
+            return header.name
+        try:
+            return header.resolve().relative_to(self.include_base.resolve()).as_posix()
+        except ValueError:
+            return header.name
 
 
 @dataclass
@@ -111,6 +134,21 @@ class Modifier:
         """Raise ModifierError for anything not already covered by `targets`/
         `value_type` (e.g. Component rejecting a class that also carries some
         other incompatible modifier)."""
+
+    def scan_source(self, text: str, header: Path, ctx: EmitContext):
+        """Called once per header, with the SAME comment/string-blanked text
+        find_class_bodies() scans, for anything a modifier wants to find
+        OUTSIDE a class body -- e.g. EcsSystemModifier's [[system(Phase)]]
+        free functions (which aren't class members at all, so nothing else
+        here ever sees them). Most modifiers never override this.
+
+        There is no return value: a modifier that needs this accumulates
+        findings on itself (self.something.append(...)) and reads them back
+        in its own emit_dir(). Safe to do -- build_registry() creates a fresh
+        Modifier instance per directory pass (see _load_module_from_path's
+        exec_module, which re-executes the extension file from scratch every
+        time), so state never leaks between directories or between two runs
+        of the same directory."""
 
     def gen_header_includes(self, cls, ctx: EmitContext) -> list:
         """Extra #include lines (quoted, core-relative, e.g.

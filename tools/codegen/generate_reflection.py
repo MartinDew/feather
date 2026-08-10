@@ -49,8 +49,18 @@ ACCESS_KEYWORDS = {"public", "protected", "private"}
 ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Protected", "private": "AccessLevel::Private"}
 
 # FCLASS(...)/FSTRUCT(...) invocation: macro name + modifier list. \b at both
-# ends avoids matching a longer identifier like FCLASS_ANYTHING(.
-_FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(([^)]*)\)")
+# ends avoids matching a longer identifier like FCLASS_ANYTHING(. The arg-list
+# group supports exactly ONE level of nested parens -- (?:[^()]|\([^()]*\))*
+# -- so a takes_args=True modifier's own argument, e.g.
+# FCLASS(EcsSystem(PreStore)) or FCLASS(singleton, System(A, B)), is captured
+# whole rather than truncated at the modifier's own closing paren. A bare
+# [^)]*, which this replaces, stops at the FIRST ')' anywhere in the list,
+# silently mangling any token with its own parens -- confirmed nothing in this
+# codebase actually exercised takes_args before EcsSystemModifier; the
+# `System(OnUpdate, Position)` example in Modifier.takes_args's own docstring
+# was aspirational, never tested end-to-end. Two levels of nesting would need
+# another alternation branch; not needed by anything today.
+_FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(((?:[^()]|\([^()]*\))*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
 # `class Name ... {` / `struct Name ... {`, optionally preceded by a SHOUTY_CASE
@@ -258,12 +268,12 @@ def _find_matching_brace(text: str, open_pos: int) -> int:
 
 
 def find_class_bodies(text: str):
-    """Yields (name, parent, tag, export_macro, body_start, body_end, decl_line)
-    for every class/struct *definition* at file or namespace scope. A nested
-    class isn't yielded separately -- scanning resumes right after a match's
-    closing brace (mirrors the old clang backend, which never recursed into a
-    found record). export_macro is the FEATHER_API/FEATHER_INTERNAL token
-    preceding the name, or None."""
+    """Yields (name, parent, tag, export_macro, body_start, body_end,
+    decl_line) for every class/struct *definition* at file or namespace
+    scope. A nested class isn't yielded separately -- scanning resumes right
+    after a match's closing brace (mirrors the old clang backend, which never
+    recursed into a found record). export_macro is the
+    FEATHER_API/FEATHER_INTERNAL token preceding the name, or None."""
     pos, n = 0, len(text)
     while pos < n:
         m = _CLASS_DEF_RE.search(text, pos)
@@ -1169,7 +1179,7 @@ def scan_fclass_occurrences(text: str) -> list:
 
 
 def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str,
-                   require_export_macro: "str | None" = None) -> list:
+                   require_export_macro: "str | None" = None, ctx: "EmitContext | None" = None) -> list:
     # newline="" disables universal-newline translation: on a CRLF checkout,
     # Path.read_text()'s "\r\n" -> "\n" translation would silently collapse
     # one byte per line, making offsets increasingly diverge from on-disk
@@ -1179,6 +1189,24 @@ def process_header(header: Path, project_root: Path, registry: Registry, dir_nam
     # works on all Python 3 versions, unlike Path.read_text()'s (3.13+ only).
     raw = header.open(encoding="utf-8", errors="replace", newline="").read()
     text = blank_comments_and_literals(raw)
+
+    # Before the FCLASS/FSTRUCT early-return below: scan_source() looks for
+    # things OUTSIDE class bodies (e.g. EcsSystemModifier's [[system(Phase)]]
+    # free functions), so a header with no reflected classes at all must
+    # still be offered to every modifier.
+    if ctx is not None:
+        for modifier in registry.modifiers():
+            try:
+                modifier.scan_source(text, header, ctx)
+            except ModifierError as exc:
+                # Re-raised as ParseError (not left as ModifierError) because
+                # that's the type process_source_dir's caller already catches
+                # cleanly around this whole call; scan_source has no "current
+                # class" to hang a perr()-style wrapper off of the way
+                # build_class does, so the modifier embeds header:line in its
+                # own message instead.
+                raise ParseError(str(exc)) from None
+
     occ = scan_fclass_occurrences(text)
     if not occ:
         return []
@@ -1236,9 +1264,17 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
     registry = build_registry(dir_path, extra_extensions)
     classes_by_header: dict = {}
     all_classes: list = []
+    # Created before the header loop (not after, as a lone post-loop context
+    # used to be) so process_header() can hand it to scan_source() -- a
+    # modifier that accumulates cross-header findings (see EcsSystemModifier)
+    # needs the SAME ctx instance passed to both scan_source() and its own
+    # later emit_dir() call, even though this framework's actual state lives
+    # on the modifier instance itself, not on ctx (see Modifier.scan_source's
+    # docstring).
+    dir_ctx = EmitContext(dir_name=name, include_base=include_base)
     for header in find_headers(dir_path):
         try:
-            classes = process_header(header, project_root, registry, name, require_export_macro)
+            classes = process_header(header, project_root, registry, name, require_export_macro, dir_ctx)
         except ParseError as exc:  # an annotated declaration we couldn't parse -- fatal
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1252,7 +1288,6 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    dir_ctx = EmitContext(dir_name=name)
     dir_emissions = []
     for modifier in registry.modifiers():
         try:
