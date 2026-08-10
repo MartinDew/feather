@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, plugin-abi-rework ]
   pull_request:
     branches: [ master ]
   workflow_dispatch:
@@ -150,6 +150,56 @@ jobs:
       # ── Build ──────────────────────────────────────────────────────────────
       - name: Build
         run: xmake build -v
+
+      # ── Plugin ABI coverage (see the plugin-abi-rework plan's Stage 4) ──────
+      # Linux only for now: a project DLL can't load on Windows until Stage 5
+      # (dllexport -> feather.lib, no tools/feather.def committed yet) lands --
+      # see xmake/engine.lua's is_plat("windows") block. Extend to Windows once
+      # that's in.
+      - name: Checkout feather-example-project
+        if: runner.os == 'Linux'
+        uses: actions/checkout@v4
+        with:
+          repository: MartinDew/feather-example-project
+          ref: project-sdk-integration
+          path: feather-example-project
+
+      - name: Build feather-example-project
+        if: runner.os == 'Linux'
+        working-directory: feather-example-project
+        env:
+          # Sidesteps the sibling-checkout convention feather-example-project's
+          # own xmake.lua otherwise relies on (see its "FeatherEngine
+          # discovery" block) -- actions/checkout's `path:` above puts it
+          # under the FeatherEngine workspace, not next to it.
+          FEATHER_ROOT: ${{ github.workspace }}
+        run: |
+          xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
+          xmake build -v
+
+      # Verifies the ACTUAL failure mode Stage 2/3 targeted -- the project DLL
+      # loading and running against the engine's declared export surface --
+      # not a clean process exit. A SIGTERM-triggered shutdown with a project
+      # loaded hits a separate, already-tracked pre-existing crash (see the
+      # comment on Main's member list in core/main/feather_main.cpp); that's
+      # not what this step checks, so it doesn't gate on the process's exit
+      # status, only on what actually happened before the timeout fired.
+      - name: Run plugin smoke test
+        if: runner.os == 'Linux'
+        run: |
+          set +e
+          timeout 10 ./build/bin/feather feather-example-project --window-mode headless > smoke.log 2>&1
+          set -e
+          cat smoke.log
+          if grep -qiE "undefined symbol|failed to load|failed loading" smoke.log; then
+            echo "::error::project DLL failed to load -- plugin ABI is broken"
+            exit 1
+          fi
+          if ! grep -q "importing module ExampleModule" smoke.log; then
+            echo "::error::ExampleModule was never imported -- the plugin never loaded/ran"
+            exit 1
+          fi
+          echo "Plugin loaded and ran correctly."
 
       # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload binaries
