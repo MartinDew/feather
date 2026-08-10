@@ -1,6 +1,6 @@
--- Reflection-codegen helpers shared between the top-level xmake.lua
--- (run_codegen, attached to feather.editor/standalone) and module xmake.lua
--- files (e.g. modules/vex_renderer/xmake.lua's own before_build hook).
+-- Reflection-codegen helpers shared between xmake/engine.lua (run_codegen,
+-- attached to the feather target) and module xmake.lua files (e.g.
+-- modules/vex_renderer/xmake.lua's own before_build hook).
 --
 -- This has to be a proper import()-able module rather than a plain global
 -- function in xmake.lua: on_load/before_build/etc scripts run inside a sandbox
@@ -110,7 +110,7 @@ end
 
 -- Runs generate_reflection.py for core/ plus, when given, one or more module
 -- dirs (vex_renderer today) -- the "refresh everything" entry point, attached
--- to feather.editor/standalone's before_build. module_dirs may be nil/empty.
+-- to the feather target's before_build. module_dirs may be nil/empty.
 -- opts.extensions: see _resolve_extensions above.
 -- opts.feather_root: see common_argv above.
 function run_core_codegen(module_dirs, opts)
@@ -132,17 +132,22 @@ function run_core_codegen(module_dirs, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py")
-    os.vrunv("python3", argv, {curdir = os.projectdir()})
+    -- opts.feather_root (not a bare os.projectdir()) when given: this function
+    -- may run from a before_build includes()'d cross-repo, where
+    -- os.projectdir() resolves to the CONSUMER, not the engine. Falls back to
+    -- os.projectdir() for a caller (e.g. modules/vex_renderer/xmake.lua today)
+    -- that hasn't been made cross-repo-safe yet -- same default common_argv uses.
+    os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
 -- Runs generate_reflection.py for core/ AND a single module directory.
 -- Intended for a *module's own* before_build (see modules/vex_renderer/xmake.lua),
--- not the executable's: a module target like vex_renderer_standalone is a
--- dependency of feather.standalone, and xmake builds dependencies -- including
--- compiling their files -- before the depending target's own before_build runs.
--- So by the time run_core_codegen (attached to feather.standalone) would
--- generate core/*/*.gen.h and register_vex_renderer_types.gen.cpp, xmake may
--- already be trying to compile the module's files -- which now transitively
+-- not the executable's: a module target like vex_renderer is a dependency of
+-- feather, and xmake builds dependencies -- including compiling their files --
+-- before the depending target's own before_build runs. So by the time
+-- run_core_codegen (attached to the feather target) would generate core's
+-- .gen.h files and register_vex_renderer_types.gen.cpp, xmake may already be
+-- trying to compile the module's files -- which now transitively
 -- #include core headers that themselves need their own generated .gen.h (e.g.
 -- vex_renderer.h -> rendering/render_scene.h -> resources/material.h). This
 -- MUST include core (no --skip-core): a module-only pass leaves core's .gen.h
@@ -165,7 +170,8 @@ function run_module_codegen(module_dir, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
-    os.vrunv("python3", argv, {curdir = os.projectdir()})
+    -- See the matching comment in run_core_codegen above.
+    os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
 -- Runs generate_reflection.py for a DOWNSTREAM project ("project DLL") repo:

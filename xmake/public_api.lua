@@ -46,10 +46,10 @@ target_end()
 --
 -- Leaving the links out makes those symbols undefined in the DLL, so the loader
 -- binds them to the already-loaded host executable, which exports them via
--- add_ldflags("-rdynamic") in the root xmake.lua. Nothing engine-side regresses:
+-- add_ldflags("-rdynamic") in xmake/engine.lua. Nothing engine-side regresses:
 -- module targets are static libs (ar collects objects, it links nothing), and
--- feather.editor/feather.standalone still pull the real archives through their
--- own add_packages("flecs", "assimp", "sdl3", "taywee_args").
+-- the feather target itself still pulls the real archives through its own
+-- add_packages("flecs", "assimp", "sdl3", "taywee_args").
 --
 -- {links = {}}, NOT {links = false}: xmake only honours a per-target package
 -- override when the value is truthy (core/project/target.lua, the

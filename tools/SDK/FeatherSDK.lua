@@ -1,12 +1,12 @@
 -- FeatherSDK.lua: replaces tools/generate_export.cmake.
 --
--- External consumers ("project DLL" repos loaded at runtime by
--- feather.editor/feather.standalone via _load_extension()) locate a
--- FeatherEngine checkout themselves (see tools/templates/consumer_xmake_template.lua
--- for the standard discovery block), then:
+-- External consumers ("project DLL" repos loaded at runtime by the feather
+-- executable via _load_extension()) locate a FeatherEngine checkout
+-- themselves (see tools/templates/consumer_xmake_template.lua for the
+-- standard discovery block), then:
 --
 --   includes("/path/to/feather/tools/SDK/FeatherSDK.lua")
---   feather_sdk_setup("mygame_plugin", "standalone", {          -- or "editor"
+--   feather_sdk_setup("mygame_plugin", {
 --       codegen_dirs = { {dir = "src", name = "mygame"} },
 --   })
 --
@@ -17,7 +17,7 @@
 --                                                         -- must come after, not nested
 --                                                         -- inside it (mirrors how
 --                                                         -- modules/vex_renderer/xmake.lua
---                                                         -- reopens vex_renderer_editor
+--                                                         -- reopens vex_renderer
 --                                                         -- after feather_module_target()).
 --
 -- Public API surface (include dirs + thirdparty packages) comes entirely
@@ -38,10 +38,7 @@ includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
--- feather_sdk_setup(target_name, variant, opts)
---
--- variant: "editor" or "standalone" -- must match which engine binary this DLL
---          will be loaded into (it selects EDITOR_BUILD and which exe is linked).
+-- feather_sdk_setup(target_name, opts)
 --
 -- opts (all optional):
 --   codegen_dirs        : source dirs to run reflection codegen over, relative
@@ -56,29 +53,36 @@ includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 --                         see tools/codegen/modifier_api.py. Scoped to
 --                         codegen_dirs; a project extension can never affect
 --                         what core/ generates.
---   engine_bin_dir      : where feather.<variant> was built. Defaults to
+--   engine_bin_dir      : where feather was built. Defaults to
 --                         <engine>/build/bin, matching root xmake.lua's
 --                         set_targetdir("$(builddir)/bin"); override if the
 --                         engine was configured with a custom build dir.
-function feather_sdk_setup(target_name, variant, opts)
-    opts = opts or {}
-    variant = variant or "standalone"
-    if variant ~= "editor" and variant ~= "standalone" then
-        -- assert()/error() are unavailable at description scope (only usable
-        -- inside callbacks), so this can't hard-fail cleanly here -- warn and
-        -- fall back to "standalone" instead of silently miscompiling.
-        print("[feather] feather_sdk_setup: variant must be 'editor' or 'standalone', got: " .. tostring(variant) .. " -- defaulting to 'standalone'")
-        variant = "standalone"
+--
+-- Back-compat: a caller still passing the old (target_name, variant, opts)
+-- form -- "editor"/"standalone" used to select EDITOR_BUILD and which of two
+-- engine binaries to link against; there is now only one feather binary and
+-- editor mode is a runtime flag (--editor), so the argument does nothing --
+-- is accepted for one release with a deprecation notice rather than a hard
+-- break. Detected by argument shape: the new form's 2nd argument is a table
+-- (or omitted), the old form's was always the "editor"/"standalone" string.
+function feather_sdk_setup(target_name, variant_or_opts, maybe_opts)
+    local opts
+    if type(variant_or_opts) == "string" then
+        print("[feather] feather_sdk_setup: the (name, variant, opts) form is deprecated -- " ..
+              "there is only one feather binary now and editor mode is the --editor runtime " ..
+              "flag (see Engine::is_editor()). Call feather_sdk_setup(name, opts) instead.")
+        opts = maybe_opts or {}
+    else
+        opts = variant_or_opts or {}
     end
 
     local bin_dir = opts.engine_bin_dir or path.join(FEATHER_ROOT, "build", "bin")
-    local engine_bin = path.join(bin_dir, "feather." .. variant)
+    local engine_bin = path.join(bin_dir, "feather")
 
     local codegen_dirs = opts.codegen_dirs or {"src"}
     local codegen_extensions = opts.codegen_extensions
 
     target(target_name)
-        add_defines("EDITOR_BUILD=" .. (variant == "editor" and "1" or "0"))
         add_deps("feather_public_api")
 
         -- Closures passed to before_build/on_load run in a sandbox that can't
@@ -170,23 +174,23 @@ function feather_sdk_setup(target_name, variant, opts)
         end)
 
         if is_plat("windows") then
-            -- Companion .lib produced by feather.<variant>'s Phase-1 /DEF:
-            -- ldflags in root xmake.lua (see xmake.lua's is_plat("windows") block).
+            -- Companion .lib produced by feather's Phase-1 /DEF: ldflags in
+            -- root xmake.lua (see xmake.lua's is_plat("windows") block).
             add_linkdirs(bin_dir)
-            add_links("feather." .. variant)
+            add_links("feather")
         else
             -- Nothing to link against on ELF/Mach-O, deliberately: the DLL is
             -- left with undefined engine and flecs/SDL symbols, and the loader
             -- binds them to the already-running host executable at dlopen()
-            -- time. That's what add_ldflags("-rdynamic") on
-            -- feather.<variant> (root xmake.lua) exists for, and what
-            -- xmake/public_api.lua's {links = {}} sets up.
+            -- time. That's what add_ldflags("-rdynamic") on feather (root
+            -- xmake.lua) exists for, and what xmake/public_api.lua's
+            -- {links = {}} sets up.
             --
             -- Do NOT "fix" this by linking engine_bin via add_shflags: ld will
             -- happily consume the PIE executable as a library input and stamp a
             -- DT_NEEDED for it into the DLL, at which point dlopen() goes
-            -- hunting for a *file* called feather.editor on the library search
-            -- path instead of reusing the process's own image. (The previous
+            -- hunting for a *file* called feather on the library search path
+            -- instead of reusing the process's own image. (The previous
             -- add_ldflags(engine_bin) here never had any effect either way:
             -- languages/c++/xmake.lua maps target kinds to flag names as
             -- {binary = "ldflags", static = "arflags", shared = "shflags"}, so

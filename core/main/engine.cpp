@@ -182,10 +182,7 @@ double Engine::get_current_delta_time() const {
 }
 
 bool Engine::is_editor() {
-	if constexpr (!EDITOR_BUILD)
-		return false;
-	else
-		return LaunchSettings::get().editor_mode.Get();
+	return LaunchSettings::get().editor_mode.Get();
 }
 
 bool Engine::is_headless() {

@@ -1,6 +1,6 @@
 -- Template xmake.lua for a downstream "project DLL" repo (a shared library
--- loaded at runtime by feather.editor/feather.standalone via
--- _load_extension() -- see core/resources/extension.h).
+-- loaded at runtime by the feather executable via _load_extension() -- see
+-- core/resources/extension.h).
 --
 -- Copy this file to your project root as xmake.lua and fill in the two
 -- <project_name> placeholders below plus your own add_files() list. This
@@ -67,13 +67,12 @@ local FEATHER_ROOT = resolve_feather_root()
 if FEATHER_ROOT then
     includes(path.join(FEATHER_ROOT, "tools", "SDK", "FeatherSDK.lua"))
 
-    -- "editor" or "standalone" -- must match which engine binary this DLL
-    -- will be loaded into. codegen_dirs runs the engine's reflection generator
-    -- over your sources, so FCLASS/FSTRUCT work here exactly as they do in the
-    -- engine; `name` is what the generated entry points are called
-    -- (register_<name>_types() / register_<name>_components()), defaulting to
-    -- the dir's basename -- override it, or a "src" dir gives register_src_types.
-    feather_sdk_setup("<project_name>", "editor", { -- TODO: rename + pick variant
+    -- codegen_dirs runs the engine's reflection generator over your sources,
+    -- so FCLASS/FSTRUCT work here exactly as they do in the engine; `name` is
+    -- what the generated entry points are called (register_<name>_types() /
+    -- register_<name>_components()), defaulting to the dir's basename --
+    -- override it, or a "src" dir gives register_src_types.
+    feather_sdk_setup("<project_name>", { -- TODO: rename
         codegen_dirs = { {dir = "src", name = "<project_name>"} }, -- TODO: rename
     })
 

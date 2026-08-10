@@ -28,15 +28,15 @@ public:
 														   "The path to the project directory",
 														   std::filesystem::current_path().c_str() };
 
-#ifdef EDITOR_BUILD
-	// Editor mode?
+	// Editor mode? Unconditional (there is only one engine binary; a
+	// standalone/shipping build is just this same binary run without
+	// --editor) -- see Engine::is_editor().
 	args::ImplicitValueFlag<bool> editor_mode { _parser,		   "editor", "Should run in editor mode",
 												{ 'e', "editor" }, true,	 false };
 
 	args::ImplicitValueFlag<bool> demo_mode {
 		_parser, "demo", "Should run in demo mode (skips loading project but prevents saving)", { "demo" }, true, false
 	};
-#endif
 
 	// will be more complex eventually but for now just a flag for windowed vs dummy
 	args::ValueFlag<std::string> windowed { _parser,
@@ -52,11 +52,9 @@ public:
 		_parser, "single thread", "Force single threaded rendering", { "single-thread" }, true, false
 	};
 
-#ifdef EDITOR_BUILD
 	args::ImplicitValueFlag<bool> dump_db {
 		_parser, "dump db", "dumps the class database", { "dump-db" }, true, false
 	};
-#endif
 
 	static LaunchSettings& get();
 
