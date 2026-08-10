@@ -1,5 +1,9 @@
 #include "engine.h"
 #include "launch_settings.h"
+#include "world/components/light.h"
+#include "world/components/scene.h"
+#include "world/ecs_defs.h"
+#include "world/rendering_world_feature.h"
 
 #include <framework/assert.h>
 #include <resources/resource_loader.h>
@@ -8,6 +12,7 @@
 #include <csignal>
 
 #include <rendering/rendering_server.h>
+#include <resources/mesh.h>
 
 namespace feather {
 
@@ -38,6 +43,89 @@ Engine::~Engine() {
 	// unregister_modules();
 }
 
+// --demo-mode lets the engine run with no project loaded at all (see
+// feather_main.cpp) -- this is what proves that path still works end to end.
+// Entity/component setup goes through the same opaque ecs::WorldHandle/
+// EntityHandle API a project DLL is limited to (see core/world/ecs_api.h),
+// so this exercises exactly what a plugin can do. The system registration
+// and debug query at the bottom stay flecs-native via ecs_defs.h's unwrap():
+// this file is engine-internal, never compiled into a plugin, so it isn't
+// bound by the plugin ABI firewall ecs_api.h exists for.
+#if BETA
+inline void _setup_demo_scene(WorldSim& world_sim) {
+	ecs::WorldHandle world = world_sim.ecs_world();
+	ecs::EntityHandle scene = world_sim.current_scene_handle();
+
+	auto material = std::make_shared<PBRMaterial>();
+	material->set_base_color_factor({ .7f, .7f, .0f });
+
+	struct Move {};
+
+	auto box1 = ecs::create_child_entity(world, scene, "Box1");
+	ecs::entity_emplace<Transform>(world, box1, Vector3 { 0, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one);
+	ecs::entity_emplace<MeshInstance>(world, box1, std::make_shared<BoxMesh>());
+	ecs::entity_emplace<MaterialInstance>(world, box1, material);
+	unwrap(box1).add<Move>();
+
+	auto box2 = ecs::create_child_entity(world, scene, "Box2");
+	ecs::entity_emplace<Transform>(world, box2, Vector3 { -2, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one);
+	ecs::entity_emplace<MeshInstance>(world, box2, std::make_shared<BoxMesh>());
+	ecs::entity_emplace<MaterialInstance>(world, box2, material);
+	unwrap(box2).add<Move>();
+
+	auto box3 = ecs::create_child_entity(world, scene, "Box3");
+	ecs::entity_emplace<Transform>(world, box3, Vector3 { 2, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one);
+	ecs::entity_emplace<MeshInstance>(world, box3, std::make_shared<BoxMesh>());
+	ecs::entity_emplace<MaterialInstance>(world, box3, material);
+	unwrap(box3).add<Move>();
+
+	// Parented to Box2 rather than the scene -- exercises hierarchy
+	// independent of scene membership.
+	auto box_child = ecs::create_entity(world, "BoxChild");
+	ecs::entity_emplace<Transform>(world, box_child, Vector3 { 0, 2, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one);
+	ecs::entity_emplace<MeshInstance>(world, box_child, std::make_shared<BoxMesh>());
+	ecs::entity_child_of(box_child, box2);
+
+	auto floor = ecs::create_child_entity(world, scene, "Floor");
+	ecs::entity_emplace<Transform>(
+			world, floor,
+			Vector3 { 0, -2, 0 },
+			Quaternion::create_from_yaw_pitch_roll({ 0, 0, 0 }),
+			Vector3 { 200, 0.1f, 200 }
+	);
+	ecs::entity_emplace<MeshInstance>(world, floor, std::make_shared<BoxMesh>());
+
+	Light l { .type = LightType::Directional,
+			  .position = Vector3::zero,
+			  .direction = Vector3 { -0.5f, -1.0f, -1.f },
+			  .color = Color(1.0f, 1.0f, 1.0f, 1.0f),
+			  .intensity = 10.0f,
+			  .cast_shadows = true };
+	auto sun = ecs::create_child_entity(world, scene, "Directional");
+	ecs::entity_emplace<Light>(world, sun, std::move(l));
+
+	flecs::world w = unwrap(world);
+
+	w.system<const MeshInstance, Transform>("Spin")
+			.with<Move>()
+			.kind(flecs::OnUpdate)
+			.write<Transform>()
+			.each([](flecs::iter& it, size_t, const MeshInstance& mi, Transform& t) {
+				t.rotation = t.rotation *
+						Quaternion::create_from_yaw_pitch_roll(Vector3 { 0, static_cast<real_t>(it.delta_time()), 0 });
+			});
+
+	auto q = w.query_builder<Transform, MeshInstance, MaterialInstance*>("Test")
+					 .with<ActiveScene>()
+					 .optional()
+					 .parent()
+					 .cascade()
+					 .build();
+
+	q.each([](Entity e, Transform& t, MeshInstance mi, MaterialInstance* mat) { std::cout << e.name() << std::endl; });
+}
+#endif
+
 bool Engine::run() {
 	auto current_time = start_time;
 
@@ -57,6 +145,12 @@ bool Engine::run() {
 	}
 
 	_world_sim.init();
+
+#if BETA
+	if (LaunchSettings::get().demo_mode.Get()) {
+		_setup_demo_scene(_world_sim);
+	}
+#endif
 
 	// Installed in every mode, not just headless: Ctrl+C on a terminal-launched
 	// windowed session should shut down through the normal teardown too.
