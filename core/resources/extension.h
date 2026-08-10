@@ -10,7 +10,7 @@ namespace feather {
 class SharedLibrary;
 class ExtensionFormatLoader;
 
-class Extension final : public Resource {
+class FEATHER_API Extension final : public Resource {
 	FCLASS();
 
 	friend class ExtensionFormatLoader;

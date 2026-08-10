@@ -10,7 +10,7 @@
 
 namespace feather {
 
-struct Scene {
+struct FEATHER_API Scene {
 	FSTRUCT(Component);
 
 	[[get, set]] int64_t _scene_id = -1;
@@ -26,11 +26,11 @@ struct Scene {
 };
 
 // Relationship Tag
-struct ActiveScene {
+struct FEATHER_API ActiveScene {
 	FSTRUCT(Component);
 };
 
-struct InScene {
+struct FEATHER_API InScene {
 	FSTRUCT(Component);
 };
 

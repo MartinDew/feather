@@ -25,7 +25,7 @@ enum class TextureFormat : uint8_t {
 	RGBA32_FLOAT,
 };
 
-class Texture : public Resource {
+class FEATHER_API Texture : public Resource {
 	FCLASS();
 
 protected:

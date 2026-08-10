@@ -13,7 +13,7 @@ class RenderingServer;
 class Shader;
 class Texture;
 
-class Material : public Resource {
+class FEATHER_API Material : public Resource {
 	FCLASS();
 	friend RenderingServer;
 
@@ -26,21 +26,21 @@ public:
 	std::shared_ptr<Shader> get_shader() const { return _shader; }
 };
 
-class PlaceholderMaterial : public Material {
+class FEATHER_API PlaceholderMaterial : public Material {
 	FCLASS();
 
 public:
 	PlaceholderMaterial();
 };
 
-class ShaderMaterial : public Material {
+class FEATHER_API ShaderMaterial : public Material {
 	FCLASS();
 
 public:
 	void set_shader(std::shared_ptr<Shader> shader) { _shader = std::move(shader); }
 };
 
-class PBRMaterial : public Material {
+class FEATHER_API PBRMaterial : public Material {
 	FCLASS();
 
 protected:

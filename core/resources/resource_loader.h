@@ -15,7 +15,7 @@
 
 namespace feather {
 
-class ResourceLoader : public Reflected {
+class FEATHER_API ResourceLoader : public Reflected {
 	FCLASS(singleton);
 
 	std::atomic<size_t> m_counter { 1 };

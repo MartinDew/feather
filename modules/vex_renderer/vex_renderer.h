@@ -20,7 +20,10 @@ namespace feather {
 class Texture;
 class MeshData;
 
-class VexRenderer : public Renderer {
+// Never named directly by a project DLL -- selected internally via ClassDB
+// (like NullRenderer) rather than something plugin code constructs or
+// references by type. FEATHER_INTERNAL, not FEATHER_API.
+class FEATHER_INTERNAL VexRenderer : public Renderer {
 	FCLASS();
 
 	// Core rendering resources

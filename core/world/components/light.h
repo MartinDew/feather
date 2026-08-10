@@ -19,7 +19,7 @@ enum class LightType : uint8_t {
 	Spot
 };
 
-struct Light {
+struct FEATHER_API Light {
 	FSTRUCT(Component);
 
 	[[get, set]] LightType type = LightType::Directional;

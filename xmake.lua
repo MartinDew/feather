@@ -17,31 +17,44 @@ includes("xmake/helper.lua")
 -- release    -> CMake Release     (-O3, NDEBUG)
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
--- Release mode only: xmake's mode.release rule does
---     if not target:get("symbols") and target:kind() ~= "shared" then
---         target:set("symbols", "hidden")
---     end
--- (rules/mode/xmake.lua), i.e. -fvisibility=hidden -fvisibility-inlines-hidden
--- on every binary and static target. That silently defeats the -rdynamic on
--- feather.<variant>: a hidden symbol never reaches .dynsym, so nothing the
--- engine defines is visible to a dlopen'd project DLL, and loading one fails
--- outright with e.g. "undefined symbol: _ZN7feather7ClassDB9_instanceE".
--- It has to be set here rather than on the executables, because the objects
--- linked into them are compiled under their own targets (feather_module_target
--- static libs, simplemath) and each needs the same visibility.
+-- FEATHER_API/FEATHER_INTERNAL (core/framework/feather_api.h) is the declared
+-- plugin ABI surface now (see the plugin-abi-rework plan's Stage 3) --
+-- -fvisibility=hidden hides everything else by default, and -rdynamic
+-- (xmake/engine.lua) re-exports exactly the annotated surface from .dynsym.
 --
--- The old CMake build had no visibility preset and set ENABLE_EXPORTS ON, so
--- this restores parity rather than inventing a policy. Guarded on release
--- because setting symbols at all would otherwise pre-empt mode.debug /
--- mode.releasedbg's symbols = "debug" and cost us -g. "none" maps to no flag
--- in gcc.lua's nf_symbol, which is exactly what's wanted -- mode.release's
--- strip = "all" still runs and .dynsym survives it.
+-- Applied as raw cxflags, not set_symbols("hidden"): that setter holds a
+-- single value that mode.debug/mode.releasedbg already use for "debug" (the
+-- -g flag), so calling it here would silently cost us debug symbols in every
+-- non-release mode. cxflags is a separate axis from symbols, so all three
+-- modes share one ABI without disturbing -g.
 --
--- TEMPORARY: this whole export-everything model is being replaced by a
--- declared FEATHER_API surface (see the plugin-abi-rework plan) -- this block
--- goes away once that lands.
-if is_mode("release") then
-    set_symbols("none")
+-- Global (every binary and static target) via description-scope add_cxflags,
+-- same reasoning the old set_symbols("none")-on-release-only block here used
+-- to give: the objects linked into feather.<variant> are compiled under
+-- their OWN targets (feather_module_target static libs, simplemath), so each
+-- needs the same visibility or a hidden symbol in one archive silently
+-- reappears default the moment a differently-configured object defining the
+-- same symbol links ahead of it. A downstream project DLL is a SEPARATE
+-- xmake project, though (its own xmake.lua, never includes() this file), so
+-- it doesn't inherit this -- xmake/modules/feather_flags.lua's apply()
+-- carries the same flag to FeatherSDK.lua's consumer target too.
+--
+-- GCC/Clang-only syntax, guarded off real MSVC (cl.exe): MSVC's model is the
+-- opposite default (nothing exported unless __declspec(dllexport), which
+-- feather_api.h already provides) rather than something -fvisibility tunes,
+-- and passing it to cl.exe would just be an unrecognized-flag warning at
+-- best. "windows" excludes mingw deliberately -- is_plat() gives mingw its
+-- own value, and mingw's GCC-based toolchain wants this flag same as Linux.
+if not is_plat("windows") then
+    add_cxflags("-fvisibility=hidden", "-fvisibility-inlines-hidden", {force = true})
+end
+
+if is_plat("windows") then
+    -- MSVC warns C4251/C4275 on every STL-by-value member or base of an
+    -- exported class (e.g. ClassDB::_class_infos, ResourceLoader::_cache) --
+    -- the exact hazard the engine/plugin shared-CRT requirement (this file's
+    -- static_cpp block) already resolves, so silence rather than fight it.
+    add_cxflags("/wd4251", "/wd4275", {force = true})
 end
 
 -- Keep compile_commands.json up to date for clangd / clang-tidy

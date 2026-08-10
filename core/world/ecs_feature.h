@@ -11,7 +11,7 @@ namespace feather {
 
 class WorldSim;
 
-class EcsFeature : public Reflected {
+class FEATHER_API EcsFeature : public Reflected {
 	FCLASS();
 
 protected:

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "framework/assert.h"
+#include "framework/feather_api.h"
 #include "framework/static_string.hpp"
 
 #include <args.hxx>
@@ -10,7 +11,7 @@
 
 namespace feather {
 
-class LaunchSettings {
+class FEATHER_API LaunchSettings {
 	args::ArgumentParser _parser { "Feather Engine" };
 
 	static LaunchSettings* _instance;

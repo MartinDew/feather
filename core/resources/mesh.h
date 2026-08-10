@@ -15,7 +15,7 @@
 
 namespace feather {
 
-class Mesh : public Resource {
+class FEATHER_API Mesh : public Resource {
 	FCLASS();
 
 protected:
@@ -33,7 +33,7 @@ public:
 };
 
 // Mesh using raw vertices and indices data
-class ComplexMesh : public Mesh {
+class FEATHER_API ComplexMesh : public Mesh {
 	FCLASS();
 
 public:
@@ -52,7 +52,7 @@ public:
 	void set_mesh_data(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
 };
 
-class BoxMesh : public Mesh {
+class FEATHER_API BoxMesh : public Mesh {
 	FCLASS();
 
 public:

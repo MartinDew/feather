@@ -17,7 +17,7 @@ class Material;
 
 struct Light;
 
-class RenderScene : public Reflected {
+class FEATHER_API RenderScene : public Reflected {
 	FCLASS();
 
 public:

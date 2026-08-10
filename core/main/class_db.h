@@ -2,6 +2,7 @@
 
 #include <framework/callable.h>
 #include <framework/class_info.h>
+#include <framework/feather_api.h>
 #include <framework/reflection_utils.h>
 #include <framework/singleton_helpers.h>
 #include <framework/variant.h>
@@ -17,7 +18,7 @@
 
 namespace feather {
 
-class ClassDB {
+class FEATHER_API ClassDB {
 	friend Variant;
 	friend struct Main;
 	FDECLARE_SINGLETON(ClassDB);

@@ -10,7 +10,7 @@
 
 namespace feather {
 
-class ProjectSettings final : public Reflected {
+class FEATHER_API ProjectSettings final : public Reflected {
 	FCLASS(singleton);
 
 	friend class Engine;

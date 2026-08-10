@@ -16,19 +16,19 @@ namespace feather {
 class Mesh;
 class Material;
 
-struct MeshInstance {
+struct FEATHER_API MeshInstance {
 	FSTRUCT(Component);
 
 	std::shared_ptr<Mesh> mesh;
 };
 
-struct MaterialInstance {
+struct FEATHER_API MaterialInstance {
 	FSTRUCT(Component);
 
 	std::shared_ptr<Material> material; // todo: multiple materials
 };
 
-class RenderingWorldFeature : public EcsFeature {
+class FEATHER_API RenderingWorldFeature : public EcsFeature {
 	FCLASS(EcsModule);
 
 public:

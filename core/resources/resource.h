@@ -10,7 +10,7 @@
 
 namespace feather {
 
-class Resource : public Reflected {
+class FEATHER_API Resource : public Reflected {
 	FCLASS();
 	friend class ResourceLoader;
 

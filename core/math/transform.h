@@ -9,7 +9,7 @@
 
 namespace feather {
 
-struct Transform {
+struct FEATHER_API Transform {
 	FSTRUCT(Component);
 
 	// Feather uses right-handed coordinates

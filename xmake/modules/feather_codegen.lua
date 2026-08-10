@@ -118,7 +118,7 @@ function run_core_codegen(module_dirs, opts)
     module_dirs = module_dirs or {}
     local extensions = _resolve_extensions(opts.extensions)
 
-    local extra = {}
+    local extra = {"--require-export-macro", "FEATHER_API"}
     for _, dir in ipairs(module_dirs) do
         table.insert(extra, "--module-path")
         table.insert(extra, dir)
@@ -161,7 +161,7 @@ function run_module_codegen(module_dir, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)
 
-    local extra = {"--module-path", module_dir}
+    local extra = {"--require-export-macro", "FEATHER_API", "--module-path", module_dir}
     -- Scope defaults to module_dir only, never core -- same reasoning as
     -- run_core_codegen above.
     for _, a in ipairs(_extension_argv(extensions, {module_dir})) do

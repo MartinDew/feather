@@ -18,7 +18,7 @@ namespace feather {
 class Shader;
 class Window;
 
-class Renderer : public Reflected {
+class FEATHER_API Renderer : public Reflected {
 	FCLASS();
 	friend class RenderingServer;
 

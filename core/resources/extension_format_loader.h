@@ -8,7 +8,7 @@
 
 namespace feather {
 
-class ExtensionFormatLoader : public ResourceFormatLoader {
+class FEATHER_API ExtensionFormatLoader : public ResourceFormatLoader {
 	FCLASS();
 
 protected:

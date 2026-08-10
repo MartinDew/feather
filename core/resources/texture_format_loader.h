@@ -8,7 +8,7 @@
 
 namespace feather {
 
-class TextureFormatLoader : public ResourceFormatLoader {
+class FEATHER_API TextureFormatLoader : public ResourceFormatLoader {
 	FCLASS();
 
 protected:

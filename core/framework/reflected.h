@@ -1,11 +1,12 @@
 #pragma once
 
+#include "feather_api.h"
 #include "reflection_utils.h"
 #include "static_string.hpp"
 
 namespace feather {
 // base class for reflected objects
-class Reflected {
+class FEATHER_API Reflected {
 	friend class ClassDB;
 	struct _class_type {};
 

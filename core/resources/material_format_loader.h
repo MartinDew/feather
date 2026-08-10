@@ -8,7 +8,7 @@
 
 namespace feather {
 
-class MaterialFormatLoader : public ResourceFormatLoader {
+class FEATHER_API MaterialFormatLoader : public ResourceFormatLoader {
 	FCLASS();
 
 protected:

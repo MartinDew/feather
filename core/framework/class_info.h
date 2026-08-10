@@ -18,7 +18,7 @@ enum class AccessLevel : uint8_t {
 	Private,
 };
 
-struct ClassInfo {
+struct FEATHER_API ClassInfo {
 	StaticString name = ""_ss;
 	StaticString parent = ""_ss;
 	std::vector<const ClassInfo*> children;

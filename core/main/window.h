@@ -1,13 +1,14 @@
 #pragma once
 
 #include "framework/delegate.h"
+#include "framework/feather_api.h"
 #include "notification.h"
 
 struct SDL_Window;
 
 namespace feather {
 
-class Window {
+class FEATHER_API Window {
 	friend class Renderer;
 
 public:

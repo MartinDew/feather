@@ -13,7 +13,7 @@
 
 namespace feather {
 
-class WorldSim final : public Simulation {
+class FEATHER_API WorldSim final : public Simulation {
 	FCLASS(singleton);
 
 	// The live flecs world, active-scene bookkeeping, etc. live behind this

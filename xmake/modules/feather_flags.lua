@@ -35,12 +35,25 @@ function apply(target)
         target:add("ldflags", "-fsanitize=address,undefined", {force = true})
     end
 
+    -- FEATHER_API/FEATHER_INTERNAL (core/framework/feather_api.h) is the
+    -- declared plugin ABI surface -- see root xmake.lua's matching
+    -- description-scope add_cxflags() for the engine's own targets, which
+    -- this duplicates for a consumer project DLL: a SEPARATE xmake project
+    -- (its own xmake.lua) never includes() that file, so it needs the same
+    -- flag applied here instead, on its own target, via FeatherSDK.lua's
+    -- on_config -> feather_flags.apply(target) call. GCC/Clang-only syntax --
+    -- see root xmake.lua's matching comment for why real MSVC (cl.exe, which
+    -- is_msvc() also covers) is excluded; clang_cl accepts it fine.
+    if not is_msvc() or is_clang_cl() then
+        target:add("cxflags", "-fvisibility=hidden", "-fvisibility-inlines-hidden", {force = true})
+    end
+
     -- Reflection uses bare [[get]]/[[set(...)]]/[[ignore]]/[[method]] attributes
     -- that the generator reads textually; compilers only need to ignore them.
     -- This is why a consumer needs these flags too, not just the engine: those
     -- attributes appear in the project's own FCLASS/FSTRUCT headers.
     if is_msvc() then
-        target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
+        target:add("cxflags", "/W4", "/wd4100", "/wd5030", "/wd4251", "/wd4275", {force = true})
         if is_clang_cl() then
             -- clang-cl matches is_msvc() above (it accepts /-style flags), but it
             -- emits its own Clang diagnostics for our bare attributes rather than

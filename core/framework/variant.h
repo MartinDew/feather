@@ -2,6 +2,7 @@
 
 #include "assert.h"
 #include "container_utils.h"
+#include "feather_api.h"
 #include "path.h"
 #include "variant_array.h"
 
@@ -96,7 +97,7 @@ concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
 
 struct ClassInfo;
 
-class Variant {
+class FEATHER_API Variant {
 	using InternalVariant = std::variant<std::monostate,
 										 bool,
 										 int,

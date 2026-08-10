@@ -17,6 +17,8 @@
 // core/world/rendering_world_feature.cpp does today. The firewall is only at
 // the plugin boundary; this is the boundary.
 
+#include <framework/feather_api.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -74,13 +76,13 @@ struct ComponentDesc {
 // so no RTTI/type-name parsing happens at all: `name` is the single source
 // of component identity, matching what generate_reflection.py already knows
 // statically.
-ComponentId register_component(WorldHandle world, const ComponentDesc& desc);
+FEATHER_API ComponentId register_component(WorldHandle world, const ComponentDesc& desc);
 
 // Resolves a component already registered under `name` (by this project, the
 // engine, or another loaded plugin) without re-registering it. Used by a
 // system that references a component it didn't itself register -- e.g. a
 // plugin's OnUpdate system touching the engine's own Transform.
-ComponentId lookup_component(WorldHandle world, const char* name);
+FEATHER_API ComponentId lookup_component(WorldHandle world, const char* name);
 
 // ---------------------------------------------------------------------------
 // Systems and iteration.
@@ -131,52 +133,52 @@ struct SystemDesc {
 // will see in TableIter::columns -- the codegen that emits both a
 // SystemDesc and its trampoline is responsible for keeping them in sync (see
 // tools/codegen/extensions/ecs.py's EcsSystemModifier).
-void register_system(WorldHandle world, const SystemDesc& desc);
+FEATHER_API void register_system(WorldHandle world, const SystemDesc& desc);
 
 // ---------------------------------------------------------------------------
 // Entities, relationships, prefabs.
 // ---------------------------------------------------------------------------
 
 // Creates a named entity with no parent.
-EntityHandle create_entity(WorldHandle world, const char* name);
+FEATHER_API EntityHandle create_entity(WorldHandle world, const char* name);
 
 // Creates a named entity as a child of `parent` (a ChildOf relationship, the
 // same one WorldSim::create_entity(parent, name) already uses internally).
-EntityHandle create_child_entity(WorldHandle world, EntityHandle parent, const char* name);
+FEATHER_API EntityHandle create_child_entity(WorldHandle world, EntityHandle parent, const char* name);
 
 // Marks an already-created entity as a prefab template (EcsPrefab), so
 // instantiate_prefab() can later spawn instances of it via an IsA relationship.
-void mark_as_prefab(EntityHandle e);
+FEATHER_API void mark_as_prefab(EntityHandle e);
 
 // Creates a named entity as an instance of `prefab` (an IsA relationship).
-EntityHandle instantiate_prefab(WorldHandle world, EntityHandle prefab, const char* name);
+FEATHER_API EntityHandle instantiate_prefab(WorldHandle world, EntityHandle prefab, const char* name);
 
-[[nodiscard]] bool entity_is_valid(EntityHandle e);
-void destroy_entity(EntityHandle e);
+[[nodiscard]] FEATHER_API bool entity_is_valid(EntityHandle e);
+FEATHER_API void destroy_entity(EntityHandle e);
 
 // Parents `child` under `parent` via ChildOf, independent of creation --
 // mirrors flecs's entity.child_of(parent).
-void entity_child_of(EntityHandle child, EntityHandle parent);
+FEATHER_API void entity_child_of(EntityHandle child, EntityHandle parent);
 // Returns the ChildOf target, or an invalid EntityHandle if `e` has none.
-[[nodiscard]] EntityHandle entity_parent(EntityHandle e);
+[[nodiscard]] FEATHER_API EntityHandle entity_parent(EntityHandle e);
 
 // Tag add/remove/has -- no component payload, e.g. WorldSim's ActiveScene marker.
-void entity_add(EntityHandle e, ComponentId comp);
-void entity_remove(EntityHandle e, ComponentId comp);
-[[nodiscard]] bool entity_has(EntityHandle e, ComponentId comp);
+FEATHER_API void entity_add(EntityHandle e, ComponentId comp);
+FEATHER_API void entity_remove(EntityHandle e, ComponentId comp);
+[[nodiscard]] FEATHER_API bool entity_has(EntityHandle e, ComponentId comp);
 
 // Raw byte-level get/set/emplace, matching flecs's own ecs_get_id/ecs_set_id/
 // ecs_emplace_id. The typed template wrappers below are what generated and
 // plugin code actually calls; these exist so ecs_api.cpp is the only place
 // that needs a component's runtime size.
-[[nodiscard]] const void* entity_get_raw(EntityHandle e, ComponentId comp);
-[[nodiscard]] void* entity_get_mut_raw(EntityHandle e, ComponentId comp);
-void entity_set_raw(EntityHandle e, ComponentId comp, const void* data, size_t size);
+[[nodiscard]] FEATHER_API const void* entity_get_raw(EntityHandle e, ComponentId comp);
+[[nodiscard]] FEATHER_API void* entity_get_mut_raw(EntityHandle e, ComponentId comp);
+FEATHER_API void entity_set_raw(EntityHandle e, ComponentId comp, const void* data, size_t size);
 // is_new tells the caller whether ecs_emplace_id ran a real ctor for this
 // call (see entity_emplace<T>() below, which relies on it always being true
 // -- calling emplace on a component the entity already has is a caller bug,
 // exactly as it is with flecs's own .emplace<T>()).
-[[nodiscard]] void* entity_emplace_raw(EntityHandle e, ComponentId comp, size_t size, bool* is_new);
+[[nodiscard]] FEATHER_API void* entity_emplace_raw(EntityHandle e, ComponentId comp, size_t size, bool* is_new);
 
 // ---------------------------------------------------------------------------
 // Header-only hook trampolines and the ComponentDesc builder. Pure C++
