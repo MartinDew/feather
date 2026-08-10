@@ -5,7 +5,7 @@
 
 namespace feather {
 
-void MathWorldFeature::on_import(ecs::FeatherWorld world, ecs::FeatherEntity scene) {
+void MathWorldFeature::on_import(ecs::WorldHandle world, ecs::EntityHandle scene) {
 	// Transform is registered up front (with everyone else's Component types)
 	// by register_math_components(), called before any feature import -- see
 	// register_core_features.cpp. Vector3/Matrix/Color are DirectX::SimpleMath

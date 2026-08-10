@@ -10,7 +10,7 @@ namespace feather {
 // names) by register_world_components(), called once up front in
 // register_core_ecs_features() -- before any EcsFeature module import, this
 // one included -- so there's nothing left to do here.
-void CoreWorldFeature::on_import(ecs::FeatherWorld world, ecs::FeatherEntity scene) {
+void CoreWorldFeature::on_import(ecs::WorldHandle world, ecs::EntityHandle scene) {
 }
 
 } //namespace feather

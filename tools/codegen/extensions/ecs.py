@@ -26,7 +26,7 @@ class EcsModuleModifier(Modifier):
     feature (see the old RenderingWorldFeature::_load_module).
 
     _import_module() forwards straight into a hand-written
-    `static void {Class}::on_import(ecs::FeatherWorld, ecs::FeatherEntity)` --
+    `static void {Class}::on_import(ecs::WorldHandle, ecs::EntityHandle)` --
     the class's actual module-setup logic -- rather than going through
     flecs's own world.import<T>()/T(flecs::world) constructor convention.
     That flecs C++ convention is what used to pull ~20 ecs_cpp_*/ecs_fini/
@@ -39,7 +39,7 @@ class EcsModuleModifier(Modifier):
     so flecs's own "already imported" bookkeeping (the actual job
     world.import<T>() does) is redundant here. Engine-internal on_import()
     bodies that still want flecs's builder API (system<>().with<>().up()...)
-    get it back in one line via ecs_defs.h's unwrap(FeatherWorld) -- see
+    get it back in one line via ecs_defs.h's unwrap(WorldHandle) -- see
     rendering_world_feature.cpp."""
     name = "EcsModule"
     targets = frozenset({"class"})
@@ -73,7 +73,7 @@ class ComponentModifier(Modifier):
     all -- registration needs a live world, which neither the per-class
     .gen.h macro nor _bind_members()/ClassDB ever has access to. Instead,
     registration is aggregated per source directory into one
-    register_<dir>_components(FeatherWorld) via emit_dir(), which the engine
+    register_<dir>_components(WorldHandle) via emit_dir(), which the engine
     calls once it actually has a world (see register_core_ecs_features).
 
     Goes through feather::ecs::register_component() (core/world/ecs_api.h)
@@ -96,13 +96,13 @@ class ComponentModifier(Modifier):
     def emit_dir(self, classes, ctx):
         members = [c for c in classes if any(m.name == self.name for m, _ in c.resolved_modifiers)]
         func = f"register_{ctx.dir_name}_components"
-        cpp_lines = [f"void {func}(ecs::FeatherWorld world) {{"]
+        cpp_lines = [f"void {func}(ecs::WorldHandle world) {{"]
         cpp_lines += [f'\tecs::register_component(world, ecs::make_component_desc<{c.name}>("{c.name}"));'
                       for c in members]
         cpp_lines += ["}", ""]
         return DirEmission(
             header_includes=["world/ecs_api.h"],
-            header_decls=[f"void {func}(ecs::FeatherWorld world);", ""],
+            header_decls=[f"void {func}(ecs::WorldHandle world);", ""],
             cpp_includes=["world/ecs_api.h"],
             cpp_lines=cpp_lines,
         )
@@ -123,7 +123,7 @@ _SYSTEM_FUNC_RE = re.compile(
 )
 # "Type& name" or "const Type& name" -- a component this system reads/writes.
 _REF_PARAM_RE = re.compile(r"^(?:const\s+)?(\w+)\s*&\s*\w*$")
-# The required trailing parameter, bound to FeatherIter::delta_time.
+# The required trailing parameter, bound to TableIter::delta_time.
 _DT_PARAM_RE = re.compile(r"^float\s+\w+$")
 
 
@@ -146,16 +146,16 @@ class EcsSystemModifier(Modifier):
     from a base class or template argument the way an earlier design here
     tried: every parameter but the last must be "(const) Type&" (a
     component this system reads or writes, in the exact order the generated
-    trampoline will unpack FeatherIter::columns); the last must be
+    trampoline will unpack TableIter::columns); the last must be
     "float <name>", bound to the per-table delta time
-    (FeatherIter::delta_time). This is the one place in this generator that
+    (TableIter::delta_time). This is the one place in this generator that
     extracts a full parameter list rather than just a name -- see
     generate_reflection.py's MethodPlan, which still only ever records
     name/access/is_static for a class method.
 
     Registration is aggregated per directory into one
-    register_<dir>_systems(FeatherWorld) via emit_dir(), exactly like
-    ComponentModifier -- see core/world/ecs_api.h's FeatherIter for what the
+    register_<dir>_systems(WorldHandle) via emit_dir(), exactly like
+    ComponentModifier -- see core/world/ecs_api.h's TableIter for what the
     generated per-table trampoline does with each parameter. Unlike
     ComponentModifier, emit_dir() returns None (no DirEmission at all) when a
     directory has no [[system]] functions -- nothing calls
@@ -232,7 +232,7 @@ class EcsSystemModifier(Modifier):
         # bottom); nothing here requires forward declarations since both
         # halves land in the same .cpp.
         for _phase, name, comps, _header in self._systems:
-            cpp_lines.append(f"static void _{name}_trampoline(ecs::FeatherIter* it) {{")
+            cpp_lines.append(f"static void _{name}_trampoline(ecs::TableIter* it) {{")
             for i, comp in enumerate(comps):
                 cpp_lines.append(f"\tauto* _col{i} = static_cast<{comp}*>(it->columns[{i}]);")
             cpp_lines.append("\tfor (int32_t _row = 0; _row < it->count; ++_row) {")
@@ -242,7 +242,7 @@ class EcsSystemModifier(Modifier):
             cpp_lines.append("}")
             cpp_lines.append("")
 
-        cpp_lines.append(f"void {func}(ecs::FeatherWorld world) {{")
+        cpp_lines.append(f"void {func}(ecs::WorldHandle world) {{")
         for phase, name, comps, _header in self._systems:
             cpp_lines.append("\t{")
             cpp_lines.append("\t\tecs::ComponentId terms[] = {")
@@ -260,7 +260,7 @@ class EcsSystemModifier(Modifier):
 
         return DirEmission(
             header_includes=["world/ecs_api.h"],
-            header_decls=[f"void {func}(ecs::FeatherWorld world);", ""],
+            header_decls=[f"void {func}(ecs::WorldHandle world);", ""],
             cpp_includes=cpp_includes,
             cpp_lines=cpp_lines,
         )

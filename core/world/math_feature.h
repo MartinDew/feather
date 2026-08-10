@@ -14,7 +14,7 @@ class MathWorldFeature final : public EcsFeature {
 public:
 	MathWorldFeature() = default;
 
-	static void on_import(ecs::FeatherWorld world, ecs::FeatherEntity scene);
+	static void on_import(ecs::WorldHandle world, ecs::EntityHandle scene);
 };
 
 } //namespace feather

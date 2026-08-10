@@ -5,7 +5,7 @@
 
 namespace feather {
 
-void register_core_components(ecs::FeatherWorld world) {
+void register_core_components(ecs::WorldHandle world) {
 	register_world_components(world);
 	register_math_components(world);
 }

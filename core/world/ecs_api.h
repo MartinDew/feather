@@ -29,7 +29,7 @@ namespace ecs {
 // by plugin code -- only ecs_api.cpp (which links flecs) knows what's really
 // behind the pointer. WorldSim hands one to every EcsFeature's
 // _import_module(WorldSim*) via WorldSim::ecs_world().
-struct FeatherWorld {
+struct WorldHandle {
 	void* _handle = nullptr;
 };
 
@@ -39,7 +39,7 @@ struct FeatherWorld {
 // functions directly from the CALLING translation unit, which is exactly
 // what would pull flecs into a plugin's undefined-symbol table. Trivially
 // cheap to construct/copy: two machine words, no allocation, no vtable.
-struct FeatherEntity {
+struct EntityHandle {
 	uint64_t id = 0;
 	void* world = nullptr;
 
@@ -74,20 +74,20 @@ struct ComponentDesc {
 // so no RTTI/type-name parsing happens at all: `name` is the single source
 // of component identity, matching what generate_reflection.py already knows
 // statically.
-ComponentId register_component(FeatherWorld world, const ComponentDesc& desc);
+ComponentId register_component(WorldHandle world, const ComponentDesc& desc);
 
 // Resolves a component already registered under `name` (by this project, the
 // engine, or another loaded plugin) without re-registering it. Used by a
 // system that references a component it didn't itself register -- e.g. a
 // plugin's OnUpdate system touching the engine's own Transform.
-ComponentId lookup_component(FeatherWorld world, const char* name);
+ComponentId lookup_component(WorldHandle world, const char* name);
 
 // ---------------------------------------------------------------------------
 // Systems and iteration.
 //
 // flecs's ecs_field_w_size() returns a base pointer to a whole TABLE's worth
 // of one component -- not a single entity -- so a system callback runs once
-// per matching table, not once per entity. FeatherIter preserves that shape
+// per matching table, not once per entity. TableIter preserves that shape
 // exactly: the engine fills one on its OWN STACK per table and calls the
 // plugin's trampoline once, and the plugin's generated per-entity loop reads
 // straight out of `columns[i]`, identical to what flecs's own each() compiles
@@ -95,7 +95,7 @@ ComponentId lookup_component(FeatherWorld world, const char* name);
 // plugin-abi-rework plan's zero-overhead-iteration requirement.
 // ---------------------------------------------------------------------------
 
-struct FeatherIter {
+struct TableIter {
 	void* const* columns; // one base pointer per term, term_count entries
 	const uint64_t* entities; // entity ids for this table, `count` entries
 	int32_t count; // entities in THIS table
@@ -104,7 +104,7 @@ struct FeatherIter {
 	void* _impl; // engine-side ecs_iter_t*; plugin never dereferences this
 };
 
-using FeatherSystemFn = void (*)(FeatherIter*);
+using SystemFn = void (*)(TableIter*);
 
 // Pipeline phases a system can run in. Deliberately a small, fixed set --
 // the ones the engine's own default pipeline defines -- rather than exposing
@@ -123,60 +123,60 @@ struct SystemDesc {
 	SystemPhase phase;
 	const ComponentId* terms; // ids this system's columns are matched in order
 	int32_t term_count;
-	FeatherSystemFn callback;
+	SystemFn callback;
 };
 
 // Registers a system that runs `desc.callback` once per matching table, in
 // `desc.phase`. `desc.terms` order is exactly the column order the callback
-// will see in FeatherIter::columns -- the codegen that emits both a
+// will see in TableIter::columns -- the codegen that emits both a
 // SystemDesc and its trampoline is responsible for keeping them in sync (see
 // tools/codegen/extensions/ecs.py's EcsSystemModifier).
-void register_system(FeatherWorld world, const SystemDesc& desc);
+void register_system(WorldHandle world, const SystemDesc& desc);
 
 // ---------------------------------------------------------------------------
 // Entities, relationships, prefabs.
 // ---------------------------------------------------------------------------
 
 // Creates a named entity with no parent.
-FeatherEntity create_entity(FeatherWorld world, const char* name);
+EntityHandle create_entity(WorldHandle world, const char* name);
 
 // Creates a named entity as a child of `parent` (a ChildOf relationship, the
 // same one WorldSim::create_entity(parent, name) already uses internally).
-FeatherEntity create_child_entity(FeatherWorld world, FeatherEntity parent, const char* name);
+EntityHandle create_child_entity(WorldHandle world, EntityHandle parent, const char* name);
 
 // Marks an already-created entity as a prefab template (EcsPrefab), so
 // instantiate_prefab() can later spawn instances of it via an IsA relationship.
-void mark_as_prefab(FeatherEntity e);
+void mark_as_prefab(EntityHandle e);
 
 // Creates a named entity as an instance of `prefab` (an IsA relationship).
-FeatherEntity instantiate_prefab(FeatherWorld world, FeatherEntity prefab, const char* name);
+EntityHandle instantiate_prefab(WorldHandle world, EntityHandle prefab, const char* name);
 
-[[nodiscard]] bool entity_is_valid(FeatherEntity e);
-void destroy_entity(FeatherEntity e);
+[[nodiscard]] bool entity_is_valid(EntityHandle e);
+void destroy_entity(EntityHandle e);
 
 // Parents `child` under `parent` via ChildOf, independent of creation --
 // mirrors flecs's entity.child_of(parent).
-void entity_child_of(FeatherEntity child, FeatherEntity parent);
-// Returns the ChildOf target, or an invalid FeatherEntity if `e` has none.
-[[nodiscard]] FeatherEntity entity_parent(FeatherEntity e);
+void entity_child_of(EntityHandle child, EntityHandle parent);
+// Returns the ChildOf target, or an invalid EntityHandle if `e` has none.
+[[nodiscard]] EntityHandle entity_parent(EntityHandle e);
 
 // Tag add/remove/has -- no component payload, e.g. WorldSim's ActiveScene marker.
-void entity_add(FeatherEntity e, ComponentId comp);
-void entity_remove(FeatherEntity e, ComponentId comp);
-[[nodiscard]] bool entity_has(FeatherEntity e, ComponentId comp);
+void entity_add(EntityHandle e, ComponentId comp);
+void entity_remove(EntityHandle e, ComponentId comp);
+[[nodiscard]] bool entity_has(EntityHandle e, ComponentId comp);
 
 // Raw byte-level get/set/emplace, matching flecs's own ecs_get_id/ecs_set_id/
 // ecs_emplace_id. The typed template wrappers below are what generated and
 // plugin code actually calls; these exist so ecs_api.cpp is the only place
 // that needs a component's runtime size.
-[[nodiscard]] const void* entity_get_raw(FeatherEntity e, ComponentId comp);
-[[nodiscard]] void* entity_get_mut_raw(FeatherEntity e, ComponentId comp);
-void entity_set_raw(FeatherEntity e, ComponentId comp, const void* data, size_t size);
+[[nodiscard]] const void* entity_get_raw(EntityHandle e, ComponentId comp);
+[[nodiscard]] void* entity_get_mut_raw(EntityHandle e, ComponentId comp);
+void entity_set_raw(EntityHandle e, ComponentId comp, const void* data, size_t size);
 // is_new tells the caller whether ecs_emplace_id ran a real ctor for this
 // call (see entity_emplace<T>() below, which relies on it always being true
 // -- calling emplace on a component the entity already has is a caller bug,
 // exactly as it is with flecs's own .emplace<T>()).
-[[nodiscard]] void* entity_emplace_raw(FeatherEntity e, ComponentId comp, size_t size, bool* is_new);
+[[nodiscard]] void* entity_emplace_raw(EntityHandle e, ComponentId comp, size_t size, bool* is_new);
 
 // ---------------------------------------------------------------------------
 // Header-only hook trampolines and the ComponentDesc builder. Pure C++
@@ -234,7 +234,7 @@ template <typename T>
 // under a function-local static, one indirect call the first time per (T,
 // world) and a load thereafter, same cost flecs's own id cache pays.
 template <typename T>
-[[nodiscard]] ComponentId component_id(FeatherWorld world) {
+[[nodiscard]] ComponentId component_id(WorldHandle world) {
 	static const ComponentId id = lookup_component(world, T::get_class_static().data());
 	return id;
 }
@@ -245,19 +245,19 @@ template <typename T>
 // symbol is ever referenced from the calling translation unit.
 
 template <typename T>
-[[nodiscard]] const T* entity_get(FeatherEntity e, ComponentId comp) {
+[[nodiscard]] const T* entity_get(EntityHandle e, ComponentId comp) {
 	return static_cast<const T*>(entity_get_raw(e, comp));
 }
 
 template <typename T>
-[[nodiscard]] T* entity_get_mut(FeatherEntity e, ComponentId comp) {
+[[nodiscard]] T* entity_get_mut(EntityHandle e, ComponentId comp) {
 	return static_cast<T*>(entity_get_mut_raw(e, comp));
 }
 
 // Equivalent to flecs's ensure()+modified(): adds T if absent (via the ctor
 // hook registered in register_component()) then copy-assigns `value` in.
 template <typename T>
-FeatherEntity entity_set(FeatherEntity e, ComponentId comp, const T& value) {
+EntityHandle entity_set(EntityHandle e, ComponentId comp, const T& value) {
 	entity_set_raw(e, comp, &value, sizeof(T));
 	return e;
 }
@@ -267,7 +267,7 @@ FeatherEntity entity_set(FeatherEntity e, ComponentId comp, const T& value) {
 // .emplace<T>(); calling this twice for the same (entity, component) is a
 // caller bug, not something this function guards against.
 template <typename T, typename... Args>
-FeatherEntity entity_emplace(FeatherEntity e, ComponentId comp, Args&&... args) {
+EntityHandle entity_emplace(EntityHandle e, ComponentId comp, Args&&... args) {
 	bool is_new = false;
 	void* ptr = entity_emplace_raw(e, comp, sizeof(T), &is_new);
 	std::construct_at(static_cast<T*>(ptr), std::forward<Args>(args)...);
@@ -280,12 +280,12 @@ FeatherEntity entity_emplace(FeatherEntity e, ComponentId comp, Args&&... args) 
 // entity (see feather-example-project's _spawn_demo_scene).
 
 template <typename T>
-FeatherEntity entity_set(FeatherWorld world, FeatherEntity e, const T& value) {
+EntityHandle entity_set(WorldHandle world, EntityHandle e, const T& value) {
 	return entity_set<T>(e, component_id<T>(world), value);
 }
 
 template <typename T, typename... Args>
-FeatherEntity entity_emplace(FeatherWorld world, FeatherEntity e, Args&&... args) {
+EntityHandle entity_emplace(WorldHandle world, EntityHandle e, Args&&... args) {
 	return entity_emplace<T>(e, component_id<T>(world), std::forward<Args>(args)...);
 }
 

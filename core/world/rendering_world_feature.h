@@ -34,7 +34,7 @@ class RenderingWorldFeature : public EcsFeature {
 public:
 	RenderingWorldFeature() = default;
 
-	static void on_import(ecs::FeatherWorld world, ecs::FeatherEntity scene);
+	static void on_import(ecs::WorldHandle world, ecs::EntityHandle scene);
 };
 
 } //namespace feather

@@ -60,12 +60,12 @@ void WorldSim::_create_initial_scene() {
 	_impl->current_scene = scene;
 }
 
-ecs::FeatherWorld WorldSim::ecs_world() const {
-	return ecs::FeatherWorld { _impl->world.c_ptr() };
+ecs::WorldHandle WorldSim::ecs_world() const {
+	return ecs::WorldHandle { _impl->world.c_ptr() };
 }
 
-ecs::FeatherEntity WorldSim::current_scene_handle() const {
-	return ecs::FeatherEntity { _impl->current_scene.raw_id(), _impl->world.c_ptr() };
+ecs::EntityHandle WorldSim::current_scene_handle() const {
+	return ecs::EntityHandle { _impl->current_scene.raw_id(), _impl->world.c_ptr() };
 }
 
 } //namespace feather

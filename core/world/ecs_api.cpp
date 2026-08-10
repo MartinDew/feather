@@ -40,15 +40,15 @@ void free_hook_context(void* ctx) {
 	delete static_cast<HookContext*>(ctx);
 }
 
-ecs_world_t* raw_world(FeatherWorld world) {
+ecs_world_t* raw_world(WorldHandle world) {
 	return static_cast<ecs_world_t*>(world._handle);
 }
 
-ecs_entity_t raw_entity(FeatherEntity e) {
+ecs_entity_t raw_entity(EntityHandle e) {
 	return static_cast<ecs_entity_t>(e.id);
 }
 
-ecs_world_t* entity_world(FeatherEntity e) {
+ecs_world_t* entity_world(EntityHandle e) {
 	return static_cast<ecs_world_t*>(e.world);
 }
 
@@ -75,13 +75,13 @@ struct RootScopeGuard {
 // Owned by the system via ecs_system_desc_t::ctx/ctx_free -- the system
 // trampoline below reads it out of ecs_iter_t::ctx on every call.
 struct SystemContext {
-	FeatherSystemFn callback;
+	SystemFn callback;
 	int32_t term_count;
 };
 
 // FLECS_TERM_COUNT_MAX is flecs's own cap on terms per query (32 as of
 // 4.1.5); mirrored here as a small fixed-size stack buffer for the column
-// pointer array so building a FeatherIter never allocates.
+// pointer array so building a TableIter never allocates.
 constexpr int32_t kMaxSystemTerms = FLECS_TERM_COUNT_MAX;
 
 void system_trampoline(ecs_iter_t* it) {
@@ -91,7 +91,7 @@ void system_trampoline(ecs_iter_t* it) {
 	for (int32_t i = 0; i < n; ++i) {
 		columns[i] = ecs_field_w_size(it, static_cast<size_t>(it->sizes[i]), static_cast<int8_t>(i));
 	}
-	FeatherIter fit {
+	TableIter fit {
 		columns, it->entities, it->count, ctx->term_count,
 		static_cast<float>(it->delta_time), it,
 	};
@@ -113,13 +113,13 @@ ecs_entity_t phase_entity(SystemPhase phase) {
 	return EcsOnUpdate;
 }
 
-FeatherEntity wrap(ecs_world_t* w, ecs_entity_t e) {
-	return FeatherEntity { e, w };
+EntityHandle wrap(ecs_world_t* w, ecs_entity_t e) {
+	return EntityHandle { e, w };
 }
 
 } // namespace
 
-ComponentId register_component(FeatherWorld world, const ComponentDesc& desc) {
+ComponentId register_component(WorldHandle world, const ComponentDesc& desc) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 
@@ -153,13 +153,13 @@ ComponentId register_component(FeatherWorld world, const ComponentDesc& desc) {
 	return static_cast<ComponentId>(ecs_component_init(w, &comp_desc));
 }
 
-ComponentId lookup_component(FeatherWorld world, const char* name) {
+ComponentId lookup_component(WorldHandle world, const char* name) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 	return static_cast<ComponentId>(ecs_lookup(w, name));
 }
 
-void register_system(FeatherWorld world, const SystemDesc& desc) {
+void register_system(WorldHandle world, const SystemDesc& desc) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 
@@ -186,7 +186,7 @@ void register_system(FeatherWorld world, const SystemDesc& desc) {
 	ecs_system_init(w, &sys_desc);
 }
 
-FeatherEntity create_entity(FeatherWorld world, const char* name) {
+EntityHandle create_entity(WorldHandle world, const char* name) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 	ecs_entity_desc_t desc {};
@@ -194,7 +194,7 @@ FeatherEntity create_entity(FeatherWorld world, const char* name) {
 	return wrap(w, ecs_entity_init(w, &desc));
 }
 
-FeatherEntity create_child_entity(FeatherWorld world, FeatherEntity parent, const char* name) {
+EntityHandle create_child_entity(WorldHandle world, EntityHandle parent, const char* name) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 	ecs_entity_desc_t desc {};
@@ -203,11 +203,11 @@ FeatherEntity create_child_entity(FeatherWorld world, FeatherEntity parent, cons
 	return wrap(w, ecs_entity_init(w, &desc));
 }
 
-void mark_as_prefab(FeatherEntity e) {
+void mark_as_prefab(EntityHandle e) {
 	ecs_add_id(entity_world(e), raw_entity(e), EcsPrefab);
 }
 
-FeatherEntity instantiate_prefab(FeatherWorld world, FeatherEntity prefab, const char* name) {
+EntityHandle instantiate_prefab(WorldHandle world, EntityHandle prefab, const char* name) {
 	ecs_world_t* w = raw_world(world);
 	RootScopeGuard _guard(w);
 	ecs_entity_desc_t desc {};
@@ -217,52 +217,52 @@ FeatherEntity instantiate_prefab(FeatherWorld world, FeatherEntity prefab, const
 	return wrap(w, inst);
 }
 
-bool entity_is_valid(FeatherEntity e) {
+bool entity_is_valid(EntityHandle e) {
 	return e.is_valid() && ecs_is_alive(entity_world(e), raw_entity(e));
 }
 
-void destroy_entity(FeatherEntity e) {
+void destroy_entity(EntityHandle e) {
 	ecs_delete(entity_world(e), raw_entity(e));
 }
 
-void entity_child_of(FeatherEntity child, FeatherEntity parent) {
+void entity_child_of(EntityHandle child, EntityHandle parent) {
 	ecs_add_id(entity_world(child), raw_entity(child), ecs_pair(EcsChildOf, raw_entity(parent)));
 }
 
-FeatherEntity entity_parent(FeatherEntity e) {
+EntityHandle entity_parent(EntityHandle e) {
 	ecs_world_t* w = entity_world(e);
 	ecs_entity_t target = ecs_get_target(w, raw_entity(e), EcsChildOf, 0);
 	// target == 0 when there is none; wrap() still round-trips it correctly
-	// since FeatherEntity{0, w}.is_valid() is false, same contract as a
-	// default-constructed FeatherEntity.
+	// since EntityHandle{0, w}.is_valid() is false, same contract as a
+	// default-constructed EntityHandle.
 	return wrap(w, target);
 }
 
-void entity_add(FeatherEntity e, ComponentId comp) {
+void entity_add(EntityHandle e, ComponentId comp) {
 	ecs_add_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp));
 }
 
-void entity_remove(FeatherEntity e, ComponentId comp) {
+void entity_remove(EntityHandle e, ComponentId comp) {
 	ecs_remove_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp));
 }
 
-bool entity_has(FeatherEntity e, ComponentId comp) {
+bool entity_has(EntityHandle e, ComponentId comp) {
 	return ecs_has_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp));
 }
 
-const void* entity_get_raw(FeatherEntity e, ComponentId comp) {
+const void* entity_get_raw(EntityHandle e, ComponentId comp) {
 	return ecs_get_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp));
 }
 
-void* entity_get_mut_raw(FeatherEntity e, ComponentId comp) {
+void* entity_get_mut_raw(EntityHandle e, ComponentId comp) {
 	return ecs_get_mut_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp));
 }
 
-void entity_set_raw(FeatherEntity e, ComponentId comp, const void* data, size_t size) {
+void entity_set_raw(EntityHandle e, ComponentId comp, const void* data, size_t size) {
 	ecs_set_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp), size, data);
 }
 
-void* entity_emplace_raw(FeatherEntity e, ComponentId comp, size_t size, bool* is_new) {
+void* entity_emplace_raw(EntityHandle e, ComponentId comp, size_t size, bool* is_new) {
 	return ecs_emplace_id(entity_world(e), raw_entity(e), static_cast<ecs_id_t>(comp), size, is_new);
 }
 

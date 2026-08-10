@@ -48,10 +48,10 @@ public:
 	// Plugin-safe handles: opaque, carrying no flecs type, so calling code
 	// (project_main.cpp, generated register_<name>_components/systems, an
 	// EcsModule's on_import()) never needs <world/ecs_defs.h> or <flecs.h>.
-	// Trivial to construct -- see ecs::FeatherWorld/FeatherEntity's own
+	// Trivial to construct -- see ecs::WorldHandle/EntityHandle's own
 	// comments in ecs_api.h.
-	[[nodiscard]] ecs::FeatherWorld ecs_world() const;
-	[[nodiscard]] ecs::FeatherEntity current_scene_handle() const;
+	[[nodiscard]] ecs::WorldHandle ecs_world() const;
+	[[nodiscard]] ecs::EntityHandle current_scene_handle() const;
 };
 
 } //namespace feather

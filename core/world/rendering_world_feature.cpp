@@ -21,7 +21,7 @@ inline void _update_meshes(Entity e, Transform transform, MeshInstance& mesh, Ma
 	RenderingServer::get()->add_entity({ transform, mesh.mesh->get_mesh_data(), mat ? mat->material : nullptr });
 }
 
-void RenderingWorldFeature::on_import(ecs::FeatherWorld feather_world, ecs::FeatherEntity scene) {
+void RenderingWorldFeature::on_import(ecs::WorldHandle feather_world, ecs::EntityHandle scene) {
 	std::println("importing module {} ", get_class_static());
 	World world = unwrap(feather_world);
 
