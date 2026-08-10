@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feather_api.h"
 #include "main/class_db.inl"
 #include "static_string.hpp"
 
