@@ -12,7 +12,8 @@ bool ExtensionFormatLoader::recognize_extension(const std::string& extension) co
 std::shared_ptr<Resource> ExtensionFormatLoader::instantiate(const Path& path) {
 	auto lib = std::make_shared<SharedLibrary>();
 	if (!lib->load(path.string())) {
-		std::cerr << "ExtensionFormatLoader: Failed to load library: " << path << std::endl;
+		std::cerr << "ExtensionFormatLoader: Failed to load library: " << path << ": "
+				  << SharedLibrary::get_last_error() << std::endl;
 		return nullptr;
 	}
 

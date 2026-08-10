@@ -9,7 +9,12 @@ if is_mode("debug") then
     add_requireconfs("*", {debug = true})
 end
 
-add_requires("flecs 4.1.5", {
+-- Local package (packages/flecs.lua) builds flecs with default rather than
+-- hidden symbol visibility, so the -rdynamic engine executable can re-export
+-- ecs_* for project DLLs to bind against at dlopen() time. See that file, and
+-- xmake/public_api.lua, for the full story -- the stock xrepo package hides 637
+-- of its 665 ecs_* definitions and makes project DLLs crash on startup.
+add_requires("flecs_feather 4.1.5", {
     system = false,
     alias  = "flecs",
     configs = {shared = not has_config("static_deps")},

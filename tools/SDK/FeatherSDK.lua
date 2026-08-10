@@ -175,11 +175,27 @@ function feather_sdk_setup(target_name, variant, opts)
             add_linkdirs(bin_dir)
             add_links("feather." .. variant)
         else
-            -- add_links() can't resolve a bare "feather.editor" ELF exe here:
-            -- gcc/clang only treat a link name as an exact filename when it
-            -- ends in .a/.so, otherwise it becomes "-lfeather.editor", which
-            -- searches for libfeather.editor.so. Link by exact raw path instead.
-            add_ldflags(engine_bin, {force = true})
+            -- Nothing to link against on ELF/Mach-O, deliberately: the DLL is
+            -- left with undefined engine and flecs/SDL symbols, and the loader
+            -- binds them to the already-running host executable at dlopen()
+            -- time. That's what add_ldflags("-rdynamic") on
+            -- feather.<variant> (root xmake.lua) exists for, and what
+            -- xmake/public_api.lua's {links = {}} sets up.
+            --
+            -- Do NOT "fix" this by linking engine_bin via add_shflags: ld will
+            -- happily consume the PIE executable as a library input and stamp a
+            -- DT_NEEDED for it into the DLL, at which point dlopen() goes
+            -- hunting for a *file* called feather.editor on the library search
+            -- path instead of reusing the process's own image. (The previous
+            -- add_ldflags(engine_bin) here never had any effect either way:
+            -- languages/c++/xmake.lua maps target kinds to flag names as
+            -- {binary = "ldflags", static = "arflags", shared = "shflags"}, so
+            -- a shared target reads shflags and ignores ldflags entirely.)
+            if is_plat("macosx") then
+                -- Mach-O, unlike ELF, rejects undefined symbols in a dylib by
+                -- default. Untested -- no macOS engine build has been run.
+                add_shflags("-undefined", "dynamic_lookup", {force = true})
+            end
         end
     target_end()
 end
