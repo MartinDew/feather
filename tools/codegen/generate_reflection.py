@@ -53,11 +53,18 @@ ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Prote
 _FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
-# `class Name ... {` / `struct Name ... {`, optionally `final`, optionally a
+# `class Name ... {` / `struct Name ... {`, optionally preceded by a SHOUTY_CASE
+# export macro (FEATHER_API / FEATHER_INTERNAL), optionally `final`, optionally a
 # base-clause. Requires the opening `{` right after, so a forward declaration
 # ("class Foo;") never matches.
+#
+# The export-macro group is deliberately restricted to [A-Z][A-Z0-9_]* rather
+# than a general identifier: a lowercase-containing name can never be mistaken
+# for a macro, so `class Foo final {` needs no disambiguation at all. An
+# ALL-CAPS *class* name still can (`class RID final {` parses as macro=RID,
+# name=final), which find_class_bodies() untangles -- see the swap there.
 _CLASS_DEF_RE = re.compile(
-    r"\b(class|struct)\s+(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
+    r"\b(class|struct)\s+(?:([A-Z][A-Z0-9_]*)\s+)?(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
 )
 
 _ACCESS_SPEC_RE = re.compile(r"\s*(public|protected|private)\s*:")
@@ -105,6 +112,11 @@ class ClassDesc:
     header: Path
     fclass_line: int
     tag: str = "class"      # "class" or "struct", as the type was declared
+    # FEATHER_API / FEATHER_INTERNAL token preceding the class name, or None.
+    # Every header under core/ is on a plugin's include path wholesale, so
+    # --require-export-macro uses this to reject a reflected type that declares
+    # neither -- i.e. one whose ABI status was never decided. See build_class.
+    export_macro: "str | None" = None
     modifiers: set = dc_field(default_factory=set)   # raw tokens, e.g. {"singleton", "System(A, B)"}
     # list[(Modifier, arg_text_or_None)], resolved against the dir's Registry
     # by build_class -- see modifier_api.Registry.resolve. singleton/abstract
@@ -246,19 +258,28 @@ def _find_matching_brace(text: str, open_pos: int) -> int:
 
 
 def find_class_bodies(text: str):
-    """Yields (name, parent, tag, body_start, body_end, decl_line) for every
-    class/struct *definition* at file or namespace scope. A nested class isn't
-    yielded separately -- scanning resumes right after a match's closing brace
-    (mirrors the old clang backend, which never recursed into a found record)."""
+    """Yields (name, parent, tag, export_macro, body_start, body_end, decl_line)
+    for every class/struct *definition* at file or namespace scope. A nested
+    class isn't yielded separately -- scanning resumes right after a match's
+    closing brace (mirrors the old clang backend, which never recursed into a
+    found record). export_macro is the FEATHER_API/FEATHER_INTERNAL token
+    preceding the name, or None."""
     pos, n = 0, len(text)
     while pos < n:
         m = _CLASS_DEF_RE.search(text, pos)
         if not m:
             return
-        tag, name, base_clause = m.group(1), m.group(2), m.group(3)
+        tag, export_macro, name, base_clause = m.group(1), m.group(2), m.group(3), m.group(4)
+        # `class RID final {`: an ALL-CAPS class name is indistinguishable from
+        # an export macro until the token after it turns out to be `final`,
+        # which is never a legal class name. Undo the misparse rather than
+        # complicate the pattern.
+        if name == "final":
+            name, export_macro = export_macro, None
         open_pos = m.end() - 1
         close_pos = _find_matching_brace(text, open_pos)
-        yield name, _parse_base(base_clause or ""), tag, open_pos + 1, close_pos, _line_of(text, m.start())
+        yield (name, _parse_base(base_clause or ""), tag, export_macro,
+               open_pos + 1, close_pos, _line_of(text, m.start()))
         pos = close_pos + 1
 
 
@@ -553,8 +574,9 @@ def classify_chunk(chunk: str):
 # Building the class descriptor from a parsed body + raw source
 # --------------------------------------------------------------------------- #
 
-def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclass_index: list,
-                 body_start: int, body_end: int, registry: Registry, dir_name: str) -> "ClassDesc | None":
+def build_class(name: str, parent: str, tag: str, export_macro, body: str, header: Path, fclass_index: list,
+                 body_start: int, body_end: int, registry: Registry, dir_name: str,
+                 require_export_macro: "str | None" = None) -> "ClassDesc | None":
     """Returns None if no FCLASS(...)/FSTRUCT(...) occurrence falls inside
     [body_start, body_end) -- find_class_bodies() finds every class/struct
     definition, reflected or not, so this is what stops a plain helper struct
@@ -574,12 +596,24 @@ def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclas
 
     cls = ClassDesc(
         name=name, parent=parent, header=header, fclass_line=fclass_line,
-        tag=tag, modifiers=modifiers,
+        tag=tag, export_macro=export_macro, modifiers=modifiers,
         is_value_type=(macro == "FSTRUCT" or "novtable" in modifiers),
     )
 
     def perr(msg: str) -> ParseError:
         return ParseError(f"{header}:{fclass_line}: class {name}: {msg}")
+
+    # Only ever passed for the engine's own dirs (run_core_codegen /
+    # run_module_codegen), never for a consumer's -- a project's types must not
+    # be forced to carry the engine's export macro. Same split as --skip-core.
+    if require_export_macro and export_macro not in (require_export_macro, "FEATHER_INTERNAL"):
+        raise perr(
+            f"reflected type is reachable from plugins but declares no ABI status.\n"
+            f"  Add `{require_export_macro}` after the {tag} keyword:\n"
+            f"      {tag} {require_export_macro} {name}"
+            + (f" : public {parent}" if parent else "") + " {\n"
+            f"  ...or mark it FEATHER_INTERNAL to keep it engine-private."
+        )
 
     try:
         resolved = registry.resolve(modifiers)
@@ -1134,7 +1168,8 @@ def scan_fclass_occurrences(text: str) -> list:
     return out
 
 
-def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str) -> list:
+def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str,
+                   require_export_macro: "str | None" = None) -> list:
     # newline="" disables universal-newline translation: on a CRLF checkout,
     # Path.read_text()'s "\r\n" -> "\n" translation would silently collapse
     # one byte per line, making offsets increasingly diverge from on-disk
@@ -1149,9 +1184,10 @@ def process_header(header: Path, project_root: Path, registry: Registry, dir_nam
         return []
 
     classes = []
-    for name, parent, tag, body_start, body_end, _decl_line in find_class_bodies(text):
+    for name, parent, tag, export_macro, body_start, body_end, _decl_line in find_class_bodies(text):
         body = text[body_start:body_end]
-        cls = build_class(name, parent, tag, body, header, occ, body_start, body_end, registry, dir_name)
+        cls = build_class(name, parent, tag, export_macro, body, header, occ,
+                          body_start, body_end, registry, dir_name, require_export_macro)
         if cls is not None:
             classes.append(cls)
     return classes
@@ -1188,7 +1224,7 @@ def build_registry(dir_path: Path, extra_extensions: list) -> Registry:
 
 
 def process_source_dir(dir_path: Path, name: str, include_base: Path, project_root: Path,
-                        extra_extensions: list) -> int:
+                        extra_extensions: list, require_export_macro: "str | None" = None) -> int:
     """Scan dir_path recursively for FCLASS headers, emit each header's .gen.h,
     and emit dir_path/register_<name>_types.gen.{h,cpp}. Shared by the core-
     subfolder loop and the --module-path loop in main() -- a module dir is
@@ -1202,7 +1238,7 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
     all_classes: list = []
     for header in find_headers(dir_path):
         try:
-            classes = process_header(header, project_root, registry, name)
+            classes = process_header(header, project_root, registry, name, require_export_macro)
         except ParseError as exc:  # an annotated declaration we couldn't parse -- fatal
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1303,11 +1339,21 @@ def main():
                          "(a .py file or a directory of them) only when processing scope or a "
                          "directory beneath it. Repeatable. See xmake/modules/feather_codegen.lua's "
                          "add_extension() for how a project's own xmake.lua wires this in.")
+    ap.add_argument("--require-export-macro", default=None, metavar="MACRO",
+                    help="Fail if a reflected type declares neither MACRO (e.g. FEATHER_API) "
+                         "nor FEATHER_INTERNAL before its name. Every header under core/ is on "
+                         "a plugin's include path wholesale, so this forces each reflected type "
+                         "to state whether it is part of the plugin ABI. Passed only for the "
+                         "engine's own dirs -- never for a consumer's, whose types must not be "
+                         "made to carry the engine's macro. Note this covers reflected types "
+                         "ONLY: Variant, Callable, StaticString etc. are equally part of the ABI "
+                         "and invisible here, so the nm(1) gate in CI remains the real check.")
     args = ap.parse_args()
 
     core_path = args.core_path.resolve()
     project_root = args.project_root.resolve()
     extra_extensions = [_parse_extension_arg(raw) for raw in args.extensions]
+    require_export_macro = args.require_export_macro
 
     total_changed = 0
 
@@ -1318,7 +1364,8 @@ def main():
         subfolders = [e.name for e in sorted(core_path.iterdir()) if e.is_dir()]
         for sub in subfolders:
             folder = core_path / sub
-            total_changed += process_source_dir(folder, sub, core_path, project_root, extra_extensions)
+            total_changed += process_source_dir(folder, sub, core_path, project_root, extra_extensions,
+                                                require_export_macro)
 
     for mp in args.module_paths:
         mod_path, mod_name = _parse_module_path_arg(mp)
@@ -1330,7 +1377,8 @@ def main():
         # module's own xmake.lua adds that cpp to its file list, same idea as
         # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp. A
         # NAME=DIR argument overrides that basename (see _parse_module_path_arg).
-        total_changed += process_source_dir(mod_path, mod_name, mod_path, project_root, extra_extensions)
+        total_changed += process_source_dir(mod_path, mod_name, mod_path, project_root, extra_extensions,
+                                            require_export_macro)
 
     print(f"Done ({total_changed} file(s) updated).")
 
