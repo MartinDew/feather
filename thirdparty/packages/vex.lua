@@ -49,8 +49,22 @@ package("vex")
         -- Collect runtime artifacts out of cmake's _deps for on_fetch()/deploy steps
         local deps = path.join(builddir, "_deps")
 
-        local slang_src = path.join(deps, "slang-src")
-        if os.isdir(slang_src) then
+        -- Vex's cmake/VexSlang.cmake FetchContent_Declare()s slang under a name
+        -- that has changed at least once upstream -- plain "slang" until Vex
+        -- commit 00fbe3a ("Updated cmake slang to latest version and added
+        -- variable for the version", 2026-02-25), "slang_${SLANG_VERSION}"
+        -- (e.g. "slang_2026.7") since. CMake's FetchContent names the _deps
+        -- subdirectory after the declared target, so the on-disk directory
+        -- moved with it -- from _deps/slang-src to _deps/slang_2026.7-src.
+        -- Glob instead of hardcoding one name, so the NEXT such rename doesn't
+        -- silently skip this whole block again: an unmatched hardcoded path
+        -- doesn't error, it just leaves cmake's own bare install output (headers
+        -- nested one level deeper, at include/slang/include/*.h instead of
+        -- include/slang/*.h) as whatever ends up installed, which is exactly
+        -- what broke modules/vex_renderer's #include <slang-com-ptr.h>.
+        local slang_src_dirs = os.dirs(path.join(deps, "slang*-src"))
+        local slang_src = slang_src_dirs[1]
+        if slang_src and os.isdir(slang_src) then
             for _, dll in ipairs(os.files(path.join(slang_src, "**.dll"))) do
                 os.cp(dll, package:installdir("runtime"))
             end
@@ -78,8 +92,12 @@ package("vex")
             end
         end
 
-        local dxc_src = path.join(deps, "dxc-src")
-        if os.isdir(dxc_src) then
+        -- Same FetchContent-name-includes-the-version pattern as slang above
+        -- (cmake/VexDXC.cmake's DXC_NAME is "dxc_${DXC_VERSION}"), so this is
+        -- glob-matched for the same reason.
+        local dxc_src_dirs = os.dirs(path.join(deps, "dxc*-src"))
+        local dxc_src = dxc_src_dirs[1]
+        if dxc_src and os.isdir(dxc_src) then
             local arch = package:arch()
             local dxc_lib_dir = path.join(dxc_src, "lib", arch)
             local dxc_bin_dir = path.join(dxc_src, "bin", arch)
@@ -110,17 +128,21 @@ package("vex")
             local libdir = package:installdir("lib")
             local runtimedir = package:installdir("runtime")
             os.mkdir(runtimedir)
-            for _, so in ipairs(os.files(path.join(deps, "slang-src", "lib", "libslang*.so*"))) do
-                os.cp(so, libdir)
-                os.cp(so, runtimedir)
+            if slang_src then
+                for _, so in ipairs(os.files(path.join(slang_src, "lib", "libslang*.so*"))) do
+                    os.cp(so, libdir)
+                    os.cp(so, runtimedir)
+                end
             end
-            for _, so in ipairs(os.files(path.join(deps, "dxc-src", "lib", "libdxcompiler.so*"))) do
-                os.cp(so, libdir)
-                os.cp(so, runtimedir)
-            end
-            -- libdxil.so is a runtime dep of dxcompiler, not linked directly
-            for _, so in ipairs(os.files(path.join(deps, "dxc-src", "lib", "libdxil.so*"))) do
-                os.cp(so, runtimedir)
+            if dxc_src then
+                for _, so in ipairs(os.files(path.join(dxc_src, "lib", "libdxcompiler.so*"))) do
+                    os.cp(so, libdir)
+                    os.cp(so, runtimedir)
+                end
+                -- libdxil.so is a runtime dep of dxcompiler, not linked directly
+                for _, so in ipairs(os.files(path.join(dxc_src, "lib", "libdxil.so*"))) do
+                    os.cp(so, runtimedir)
+                end
             end
         end
 
