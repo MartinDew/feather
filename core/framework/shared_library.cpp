@@ -52,4 +52,16 @@ bool SharedLibrary::is_loaded() const {
 	return _handle != nullptr;
 }
 
+void* SharedLibrary::_raw_symbol(const std::string& name) const {
+	if (!_handle) {
+		return nullptr;
+	}
+
+	// SDL_LoadFunction returns SDL_FunctionPointer (void(*)()), not void* --
+	// same function-pointer/object-pointer conversion get_symbol() below
+	// already relies on (POSIX guarantees dlsym-style round-tripping works;
+	// this codebase assumes POSIX-like platforms elsewhere too).
+	return reinterpret_cast<void*>(SDL_LoadFunction(_handle, name.c_str()));
+}
+
 } // namespace feather

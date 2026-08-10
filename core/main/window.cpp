@@ -31,7 +31,7 @@ constexpr Notification to_notification(const SDL_Event& event) {
 
 } //namespace
 
-Window::Window() : _internal_event(), _fullscreen_mode() {
+Window::Window() : _fullscreen_mode() {
 	if (Engine::is_headless()) {
 		// SDL's null video driver. It registers a fake 1024x768 display and
 		// creates windows that never touch a display server, so the same binary
@@ -124,14 +124,19 @@ void Window::register_notification(Notification notification, const std::functio
 }
 
 bool Window::update() {
-	while (SDL_PollEvent(&_internal_event)) {
-		switch (_internal_event.type) {
+	// Scratch storage for one event at a time -- SDL_PollEvent() overwrites it
+	// on each iteration, and nothing survives past the switch/notification
+	// below, so this no longer needs to be a persistent member (it was the
+	// only reason window.h had to include <SDL3/SDL_events.h> at all).
+	SDL_Event event;
+	while (SDL_PollEvent(&event)) {
+		switch (event.type) {
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
 			SDL_LogDebug(0, "Close window requested");
 			return false;
 		case SDL_EVENT_KEY_DOWN: {
 			// Hard code alt + enter for fullscreen toggle
-			if (_internal_event.key.key == SDLK_F11) {
+			if (event.key.key == SDLK_F11) {
 				_fullscreen_mode = (_fullscreen_mode == FullscreenMode::WINDOWED) ? FullscreenMode::FULLSCREEN
 																				  : FullscreenMode::WINDOWED;
 				set_fullscreen_mode(_fullscreen_mode);
@@ -140,7 +145,7 @@ bool Window::update() {
 		}
 		}
 
-		auto notification = to_notification(_internal_event);
+		auto notification = to_notification(event);
 		_notification_listeners[std::to_underlying(notification)].execute();
 	}
 

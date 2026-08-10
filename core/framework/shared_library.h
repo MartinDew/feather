@@ -2,9 +2,14 @@
 
 #include "callable.h"
 
-#include <SDL3/SDL_loadso.h>
 #include <memory>
 #include <string>
+
+// Forward-declared rather than including <SDL3/SDL_loadso.h>: this header is
+// on every plugin's include path via feather_public_api, and SDL should not
+// be part of the plugin ABI (see get_typed_symbol below for how the template
+// avoids needing the complete type).
+struct SDL_SharedObject;
 
 namespace feather {
 
@@ -27,12 +32,16 @@ public:
 	[[nodiscard]] Callable get_symbol(const std::string& name) const;
 	[[nodiscard]] bool is_loaded() const;
 
+private:
+	// Out-of-line so this TU (and every TU that includes this header, i.e.
+	// every plugin) never needs <SDL3/SDL_loadso.h>. Defined in the .cpp,
+	// where SDL_LoadFunction is actually called.
+	[[nodiscard]] void* _raw_symbol(const std::string& name) const;
+
+public:
 	template <typename Fn>
 	[[nodiscard]] Fn get_typed_symbol(const std::string& name) const {
-		if (!_handle)
-			return nullptr;
-		auto sym = SDL_LoadFunction(_handle, name.c_str());
-		return reinterpret_cast<Fn>(sym);
+		return reinterpret_cast<Fn>(_raw_symbol(name));
 	}
 };
 

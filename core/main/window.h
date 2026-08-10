@@ -3,8 +3,6 @@
 #include "framework/delegate.h"
 #include "notification.h"
 
-#include <SDL3/SDL_events.h>
-
 struct SDL_Window;
 
 namespace feather {
@@ -28,7 +26,6 @@ public:
 
 private:
 	SDL_Window* _internal_window = nullptr;
-	SDL_Event _internal_event;
 
 	WindowProperties _properties;
 	FullscreenMode _fullscreen_mode;
