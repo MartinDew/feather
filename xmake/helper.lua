@@ -67,6 +67,11 @@ function feather_module_target(name, module_dir, files, opts)
             add_files(path.join(module_dir, f), {always_added = true})
         end
         add_defines(name .. "_ENABLED", {public = true})
+        -- Same reasoning as the feather target in xmake/engine.lua: a module
+        -- static lib is linked directly into the engine executable, so it
+        -- also DEFINES (not just consumes) the FEATHER_API surface wherever
+        -- it touches core's static data members.
+        add_defines("FEATHER_BUILDING_CORE")
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end

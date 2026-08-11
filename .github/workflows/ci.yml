@@ -134,6 +134,20 @@ jobs:
         if: runner.os == 'Windows'
         run: chcp 65001
 
+      # ── CMake (Linux) ─────────────────────────────────────────────────────
+      # The runner image's preinstalled cmake wins over apt's (both land ahead
+      # of it in PATH), but it's still too old for the "vex" package's
+      # CMakeLists.txt (cmake_minimum_required 4.2.2) -- xmake's package
+      # install step for vex fails outright, which is what was showing up as
+      # an unexplained "Configure" exit 255 with no useful log text (see the
+      # plugin-abi-rework branch history). pip's cmake package tracks upstream
+      # releases closely, so grab that instead and put it first in PATH.
+      - name: Install newer CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install --upgrade cmake
+          echo "$(python3 -c 'import sysconfig; print(sysconfig.get_path("scripts"))')" >> "$GITHUB_PATH"
+
       # ── Configure ─────────────────────────────────────────────────────────
       - name: Configure
         run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y

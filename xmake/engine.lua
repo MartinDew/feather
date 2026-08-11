@@ -156,6 +156,16 @@ target("feather")
     add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
     add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
 
+    -- See core/framework/feather_api.h: without this, FEATHER_API resolves to
+    -- dllimport even here, in the translation units that DEFINE the surface.
+    -- On MSVC/clang-cl that's a hard error the moment it hits a static data
+    -- member definition (e.g. class_db.cpp's FSINGLETON_INSTANCE(ClassDB) --
+    -- "definition of dllimport static field not allowed"); for plain function
+    -- definitions the compiler silently promotes dllimport to dllexport with
+    -- just a warning, which is how this went unnoticed until a static field
+    -- actually hit it. GCC/Clang's visibility("default") branch doesn't care.
+    add_defines("FEATHER_BUILDING_CORE")
+
     -- BETA in debug + releasedbg (CMake Development), absent in release
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
