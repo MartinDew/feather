@@ -189,8 +189,20 @@ jobs:
           # under the FeatherEngine workspace, not next to it.
           FEATHER_ROOT: ${{ github.workspace }}
         run: |
-          xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
-          xmake build -v
+          # -P .: without it, xmake's project-root autodetection walks UP
+          # from cwd and finds FeatherEngine's own already-configured .xmake
+          # state (this directory is nested INSIDE the engine's checkout,
+          # per the path: above) and silently treats THAT as the project --
+          # "xmake f"/"xmake build" then reconfigure/no-op the ENGINE build
+          # ("build ok, spent 0.6s", nothing to do) instead of touching
+          # feather-example-project's own "example" target at all. No
+          # error, no .so, just silence -- which is exactly what showed up
+          # as the smoke test's mystery "ExampleModule was never imported"
+          # failure with zero trace of the extension ever loading. xmake's
+          # own warning ("You are working in the project directory(...)")
+          # names this exact fix.
+          xmake f -P . -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
+          xmake build -P . -v
           # The smoke test below has been failing with NO trace of this DLL
           # ever being found by ResourceLoader::index_project() -- not even
           # the "Failed to load library" line that a broken/missing .so would
