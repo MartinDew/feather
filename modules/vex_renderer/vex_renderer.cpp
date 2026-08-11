@@ -13,6 +13,18 @@
 #include <framework/assert.h>
 #include <framework/bytes.h>
 
+// SDL_Window is otherwise only ever forward-declared (core/main/window.h
+// deliberately never includes real SDL3 headers) -- _create_vex_window()
+// below is the one place in this module that needs SDL3's actual window
+// property API (SDL_GetWindowProperties/SDL_HasProperty/SDL_Get*Property,
+// SDL_PROP_WINDOW_*), to hand the platform's native window handle to Vex.
+// This used to compile only because something else in the include graph
+// happened to drag in <SDL3/SDL_video.h> first; that stopped being true and
+// broke the build, so include it directly instead of depending on it again
+// accidentally. SDL_video.h itself #includes SDL3/SDL_properties.h, so this
+// is the only SDL3 include this file needs.
+#include <SDL3/SDL_video.h>
+
 #include <raw_resources/shaders/depth_prepass.slang.gen.h>
 #include <raw_resources/shaders/pbr_forward.slang.gen.h>
 #include <raw_resources/shaders/shadow_depth.slang.gen.h>
