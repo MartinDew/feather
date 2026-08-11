@@ -199,7 +199,18 @@ jobs:
           # failure with zero trace of the extension ever loading. xmake's
           # own warning ("You are working in the project directory(...)")
           # names this exact fix.
-          xmake f -P . -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
+          # -p windows: xmake's platform autodetection sees the invoking
+          # shell, not the OS -- run under Git Bash (needed here so this
+          # script is portable across Linux/Windows) and it detects "mingw"
+          # instead of "windows", so it can't find --toolchain=clang-cl at
+          # all ("toolchain(clang-cl): not found!"). The main engine build
+          # doesn't need this because that step runs under pwsh, where
+          # autodetection lands on "windows" correctly.
+          XMAKE_PLAT_FLAG=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            XMAKE_PLAT_FLAG="-p windows"
+          fi
+          xmake f -P . $XMAKE_PLAT_FLAG -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
           xmake build -P . -v
           # The smoke test below has been failing with NO trace of this DLL
           # ever being found by ResourceLoader::index_project() -- not even
