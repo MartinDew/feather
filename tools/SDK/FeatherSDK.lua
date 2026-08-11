@@ -174,8 +174,10 @@ function feather_sdk_setup(target_name, variant_or_opts, maybe_opts)
         end)
 
         if is_plat("windows") then
-            -- Companion .lib produced by feather's Phase-1 /DEF: ldflags in
-            -- root xmake.lua (see xmake.lua's is_plat("windows") block).
+            -- feather.lib is produced automatically by MSVC/clang-cl as a
+            -- side effect of feather.exe exporting its declared FEATHER_API
+            -- surface (see core/framework/feather_api.h and
+            -- xmake/engine.lua's feather target) -- no .def file needed.
             add_linkdirs(bin_dir)
             add_links("feather")
         else

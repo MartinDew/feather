@@ -191,19 +191,16 @@ target("feather")
     end
 
     -- Windows analog of the above: MSVC only emits a companion import .lib
-    -- for an EXE if it's told to export symbols. xmake has no equivalent of
-    -- CMake's WINDOWS_EXPORT_ALL_SYMBOLS for kind="binary" targets, so
-    -- mirror XMAKE_MIGRATION.md's documented Phase 1 plan: commit a .def
-    -- file (extracted via `dumpbin /EXPORTS build/bin/feather.exe`) and apply
-    -- it here. NOT YET COMMITTED -- requires a Windows build to generate;
-    -- until tools/feather.def exists, this is a no-op guarded by os.isfile()
-    -- rather than a hard failure on other platforms.
-    if is_plat("windows") then
-        local def_file = path.join(FEATHER_ROOT, "tools", "feather.def")
-        if os.isfile(def_file) then
-            add_ldflags("/DEF:" .. def_file, {force = true})
-        end
-    end
+    -- for an EXE if it's told to export symbols. The old plan here was a
+    -- committed .def file (dumpbin /EXPORTS'd from an already-built exe --
+    -- chicken-and-egg, never actually landed). That's unnecessary now: the
+    -- declared FEATHER_API surface (feather_api.h) already puts
+    -- __declspec(dllexport) on every exported class/function when
+    -- FEATHER_BUILDING_CORE is set (this target), which is sufficient on its
+    -- own for MSVC/clang-cl to emit build/bin/feather.lib alongside
+    -- feather.exe -- no .def, no ldflags, no Windows-only block needed here
+    -- at all. See tools/SDK/FeatherSDK.lua, which links against exactly that
+    -- generated .lib.
 
     before_build(run_codegen)
 

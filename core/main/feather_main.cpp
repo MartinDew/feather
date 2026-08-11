@@ -3,6 +3,8 @@
 #include "project_settings.h"
 #include "resources/resource_loader.h"
 
+#include <cstdio>
+
 #include <framework/register_framework_types.gen.h>
 #include <main/register_main_types.gen.h>
 #include <math/register_math_types.gen.h>
@@ -77,5 +79,15 @@ void Main::setup_db() {
 } //namespace feather
 
 int main(int argc, char* argv[]) {
+	// stdout is fully buffered the moment it isn't a tty (piped to a file, as
+	// CI's smoke test does) -- an abrupt termination (a crash, or a CI
+	// timeout's kill) discards whatever hadn't been flushed, silently eating
+	// diagnostic std::cout output. Force line buffering unconditionally so
+	// stdout behaves the same piped as it does on a terminal, on every
+	// platform -- see framework/assert.h's comment for why fassert() itself
+	// goes to the (always-unbuffered) cerr instead, which this doesn't
+	// replace, only generalizes.
+	std::setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
+
 	feather::Main fmain(std::move(argc), std::move(argv));
 }

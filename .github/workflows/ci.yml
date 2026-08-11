@@ -166,13 +166,11 @@ jobs:
       - name: Build
         run: xmake build -v
 
-      # ── Plugin ABI coverage (see the plugin-abi-rework plan's Stage 4) ──────
-      # Linux only for now: a project DLL can't load on Windows until Stage 5
-      # (dllexport -> feather.lib, no tools/feather.def committed yet) lands --
-      # see xmake/engine.lua's is_plat("windows") block. Extend to Windows once
-      # that's in.
+      # ── Plugin ABI coverage (see the plugin-abi-rework plan's Stage 4/5) ────
+      # Both platforms now: Stage 5 (dllexport -> feather.lib, see
+      # feather_api.h + FeatherSDK.lua) makes the project DLL loadable on
+      # Windows too, not just Linux's dlopen/-rdynamic path.
       - name: Checkout feather-example-project
-        if: runner.os == 'Linux'
         uses: actions/checkout@v4
         with:
           repository: MartinDew/feather-example-project
@@ -180,8 +178,8 @@ jobs:
           path: feather-example-project
 
       - name: Build feather-example-project
-        if: runner.os == 'Linux'
         working-directory: feather-example-project
+        shell: bash
         env:
           # Sidesteps the sibling-checkout convention feather-example-project's
           # own xmake.lua otherwise relies on (see its "FeatherEngine
@@ -196,8 +194,8 @@ jobs:
           # "xmake f"/"xmake build" then reconfigure/no-op the ENGINE build
           # ("build ok, spent 0.6s", nothing to do) instead of touching
           # feather-example-project's own "example" target at all. No
-          # error, no .so, just silence -- which is exactly what showed up
-          # as the smoke test's mystery "ExampleModule was never imported"
+          # error, no .so/.dll, just silence -- which is exactly what showed
+          # up as the smoke test's mystery "ExampleModule was never imported"
           # failure with zero trace of the extension ever loading. xmake's
           # own warning ("You are working in the project directory(...)")
           # names this exact fix.
@@ -205,33 +203,48 @@ jobs:
           xmake build -P . -v
           # The smoke test below has been failing with NO trace of this DLL
           # ever being found by ResourceLoader::index_project() -- not even
-          # the "Failed to load library" line that a broken/missing .so would
-          # print. That silence is consistent with FEATHER_ROOT discovery
-          # (xmake.lua's resolve_feather_root()) failing quietly and leaving
-          # target("example") undefined, in which case `xmake build -v`
-          # above has nothing to build for it and exits 0 without producing
-          # bin/libexample.so at all. Fail loudly here instead of falling
-          # through to a confusing failure two steps later.
+          # the "Failed to load library" line that a broken/missing .so/.dll
+          # would print. That silence is consistent with FEATHER_ROOT
+          # discovery (xmake.lua's resolve_feather_root()) failing quietly
+          # and leaving target("example") undefined, in which case
+          # `xmake build -v` above has nothing to build for it and exits 0
+          # without producing the plugin binary at all. Fail loudly here
+          # instead of falling through to a confusing failure two steps later.
           ls -la bin/ || true
-          test -f bin/libexample.so || (echo "::error::bin/libexample.so was not produced -- see comment above" && exit 1)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            test -f bin/example.dll || (echo "::error::bin/example.dll was not produced -- see comment above" && exit 1)
+          else
+            test -f bin/libexample.so || (echo "::error::bin/libexample.so was not produced -- see comment above" && exit 1)
+          fi
 
-      # Verifies the ACTUAL failure mode Stage 2/3 targeted -- the project DLL
-      # loading and running against the engine's declared export surface --
-      # not a clean process exit. A SIGTERM-triggered shutdown with a project
-      # loaded hits a separate, already-tracked pre-existing crash (see the
-      # comment on Main's member list in core/main/feather_main.cpp); that's
-      # not what this step checks, so it doesn't gate on the process's exit
-      # status, only on what actually happened before the timeout fired.
+      # Verifies the ACTUAL failure mode Stage 2/3/5 targeted -- the project
+      # DLL loading and running against the engine's declared export surface
+      # -- not a clean process exit. A SIGTERM-triggered shutdown with a
+      # project loaded hits a separate, already-tracked pre-existing crash
+      # (see the comment on Main's member list in core/main/feather_main.cpp);
+      # that's not what this step checks, so it doesn't gate on the process's
+      # exit status, only on what actually happened before it was killed.
+      #
+      # Killed via a plain background job + sleep + kill rather than the
+      # `timeout` coreutil: portable across Linux and Windows (Git Bash on
+      # windows-latest doesn't reliably ship a GNU-compatible `timeout`).
+      # No stdbuf wrapper needed either -- feather_main.cpp now forces
+      # line-buffered stdout itself (see its comment), so an abrupt kill on
+      # either platform no longer discards unflushed diagnostic output.
       - name: Run plugin smoke test
-        if: runner.os == 'Linux'
+        shell: bash
         run: |
           set +e
-          # stdbuf: without it, feather's own stdout is fully buffered (not a
-          # tty) and a crash discards whatever hadn't been flushed yet -- see
-          # framework/assert.h's comment on why fassert() itself goes to
-          # cerr instead. This is why a prior failure here showed nothing
-          # but the crashing library's own (unbuffered) fatal line.
-          timeout 10 stdbuf -oL -eL ./build/bin/feather feather-example-project --window-mode headless > smoke.log 2>&1
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            FEATHER_BIN=./build/bin/feather.exe
+          else
+            FEATHER_BIN=./build/bin/feather
+          fi
+          "$FEATHER_BIN" feather-example-project --window-mode headless > smoke.log 2>&1 &
+          PID=$!
+          sleep 10
+          kill "$PID" 2>/dev/null
+          wait "$PID" 2>/dev/null
           set -e
           cat smoke.log
           if grep -qiE "undefined symbol|failed to load|failed loading" smoke.log; then
