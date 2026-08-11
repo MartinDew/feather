@@ -253,7 +253,7 @@ jobs:
           fi
           "$FEATHER_BIN" feather-example-project --window-mode headless > smoke.log 2>&1 &
           PID=$!
-          sleep 10
+          sleep 20
           kill "$PID" 2>/dev/null
           wait "$PID" 2>/dev/null
           set -e

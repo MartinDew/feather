@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <unordered_set>
 
 namespace feather {
 
@@ -98,7 +99,24 @@ void ResourceLoader::index_project() {
 	auto& self = *get();
 	size_t count = 0;
 
-	for (const auto& entry : std::filesystem::recursive_directory_iterator(project_path)) {
+	// xmake's own build tree (compiler intermediates, .pdb/.ilk debug info) and
+	// VCS/package-manager metadata dirs live inside project_path but are never
+	// game resources -- walking them is pure waste everywhere, and on Windows
+	// CI (slower, Defender-scanned disk I/O) walking feather-example-project's
+	// own just-built build/ tree was slow enough to blow past the smoke test's
+	// timeout with zero progress, looking like a hang rather than what it was.
+	static const std::unordered_set<std::string> skip_dirs = { "build", ".git", ".xmake" };
+
+	for (auto it = std::filesystem::recursive_directory_iterator(project_path);
+		 it != std::filesystem::recursive_directory_iterator(); ++it) {
+		const auto& entry = *it;
+
+		if (entry.is_directory()) {
+			if (skip_dirs.contains(entry.path().filename().string()))
+				it.disable_recursion_pending();
+			continue;
+		}
+
 		if (!entry.is_regular_file())
 			continue;
 
