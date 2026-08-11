@@ -71,6 +71,12 @@ void RenderingServer::init() {
 			? std::string_view { NullRenderer::get_class_static() }
 			: std::string_view { LaunchSettings::get().renderer.Get() };
 
+	// cerr, not cout: see framework/assert.h's comment -- cout is fully
+	// buffered off a tty and a crash right after this (e.g. a renderer ctor
+	// that needs hardware CI doesn't have) discards it, silently hiding the
+	// one fact that actually explains the crash.
+	std::println(std::cerr, "[RenderingServer] headless={} renderer={}", Engine::is_headless(), renderer_name);
+
 	_renderer = ClassDB::create_object<Renderer>(renderer_name);
 	fassert(_renderer.get(), std::format("Failed to create renderer of type {}", renderer_name));
 

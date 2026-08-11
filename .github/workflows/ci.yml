@@ -202,7 +202,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set +e
-          timeout 10 ./build/bin/feather feather-example-project --window-mode headless > smoke.log 2>&1
+          # stdbuf: without it, feather's own stdout is fully buffered (not a
+          # tty) and a crash discards whatever hadn't been flushed yet -- see
+          # framework/assert.h's comment on why fassert() itself goes to
+          # cerr instead. This is why a prior failure here showed nothing
+          # but the crashing library's own (unbuffered) fatal line.
+          timeout 10 stdbuf -oL -eL ./build/bin/feather feather-example-project --window-mode headless > smoke.log 2>&1
           set -e
           cat smoke.log
           if grep -qiE "undefined symbol|failed to load|failed loading" smoke.log; then
