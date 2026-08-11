@@ -191,6 +191,17 @@ jobs:
         run: |
           xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
           xmake build -v
+          # The smoke test below has been failing with NO trace of this DLL
+          # ever being found by ResourceLoader::index_project() -- not even
+          # the "Failed to load library" line that a broken/missing .so would
+          # print. That silence is consistent with FEATHER_ROOT discovery
+          # (xmake.lua's resolve_feather_root()) failing quietly and leaving
+          # target("example") undefined, in which case `xmake build -v`
+          # above has nothing to build for it and exits 0 without producing
+          # bin/libexample.so at all. Fail loudly here instead of falling
+          # through to a confusing failure two steps later.
+          ls -la bin/ || true
+          test -f bin/libexample.so || (echo "::error::bin/libexample.so was not produced -- see comment above" && exit 1)
 
       # Verifies the ACTUAL failure mode Stage 2/3 targeted -- the project DLL
       # loading and running against the engine's declared export surface --
