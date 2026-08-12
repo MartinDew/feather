@@ -293,6 +293,25 @@ function feather_game_target(target_name, opts)
 
     target(target_name)
         set_kind("binary")
+
+        -- Set directly on THIS target rather than relying on the file-top
+        -- set_runtimes() block above to still be in effect by the time this
+        -- runs: confirmed in CI that it isn't. simplemath (thirdparty/xmake.lua,
+        -- includes()'d right after that block, before feather_game_target()
+        -- is ever called) correctly picked up MTd, but this target's own
+        -- CORE_SOURCES compiled MDd instead -- the same "global default
+        -- doesn't reliably reach every later target() regardless of Lua
+        -- source order" class of bug already hit twice earlier in this
+        -- branch's history (see the file-top block's own comment), just via
+        -- a different target this time. A per-target set_runtimes() call
+        -- applies unambiguously to only this target, sidestepping whatever
+        -- ordering rule actually governs the global default. Unconditional,
+        -- not gated on feather_plugins == "static": feather_game_target() is
+        -- never called for anything else.
+        if is_plat("windows") then
+            set_runtimes(is_mode("debug") and "MTd" or "MT")
+        end
+
         add_files(CORE_SOURCES)
         add_files(GENERATED_SOURCE, {always_added = true})
         -- register_modules()/unregister_modules() (called from
