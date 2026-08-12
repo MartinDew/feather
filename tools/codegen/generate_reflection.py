@@ -1265,10 +1265,8 @@ def _parse_extension_arg(raw: str) -> tuple:
 
 def _parse_module_path_arg(raw: str) -> tuple:
     """--module-path DIR, or --module-path NAME=DIR to override the generated
-    name. Without an override the name is the directory's own basename, which
-    is right for modules/vex_renderer (-> register_vex_renderer_types) but not
-    for a downstream project whose sources live in a generically-named dir --
-    src/ would give register_src_types. Returns (dir, name)."""
+    name (defaults to the dir's basename, which is wrong for a generically
+    named dir like a project's src/). Returns (dir, name)."""
     name, sep, dir_part = raw.partition("=")
     if not sep:
         mod_path = Path(raw).resolve()
@@ -1325,11 +1323,9 @@ def main():
         if not mod_path.is_dir():
             print(f"[WARN] module path not found: {mod_path}", file=sys.stderr)
             continue
-        # Named after the directory itself (e.g. "vex_renderer"), producing
-        # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp} -- the
-        # module's own xmake.lua adds that cpp to its file list, same idea as
-        # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp. A
-        # NAME=DIR argument overrides that basename (see _parse_module_path_arg).
+        # Named after the directory itself by default, e.g.
+        # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp};
+        # NAME=DIR overrides that (see _parse_module_path_arg).
         total_changed += process_source_dir(mod_path, mod_name, mod_path, project_root, extra_extensions)
 
     print(f"Done ({total_changed} file(s) updated).")

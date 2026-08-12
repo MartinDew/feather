@@ -1,14 +1,10 @@
 -- feather_public_api: single source of truth for the engine's public API
 -- surface (public include dirs + PUBLIC thirdparty packages), consumed one
 -- hop away via add_deps("feather_public_api"). Used internally by root
--- xmake.lua (modules, executables) AND externally by tools/SDK/FeatherSDK.lua
--- for downstream "project DLL" consumers.
+-- xmake.lua and externally by tools/SDK/FeatherSDK.lua for consumers.
 --
--- Deliberately uses os.scriptdir() instead of $(projectdir)/os.projectdir():
--- those resolve to whichever project is the top-level build, which is the
--- CONSUMER's repo when this file is includes()'d cross-repo from
--- FeatherSDK.lua. os.scriptdir() is always this file's own physical
--- location, so FEATHER_ROOT is correct regardless of who includes() it.
+-- os.scriptdir(), not os.projectdir(): the latter resolves to the CONSUMER's
+-- repo when this file is includes()'d cross-repo from FeatherSDK.lua.
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 target("feather_public_api")
@@ -20,9 +16,7 @@ target("feather_public_api")
     add_includedirs(path.join(FEATHER_ROOT, "thirdparty", "SimpleMath"), {public = true})
     add_packages("directxmath", {public = true})
     add_deps("simplemath", {public = true})
-    -- flecs and sdl3 are exported HEADERS ONLY off Windows -- see the block
-    -- below the target for why. taywee_args and directxmath are headeronly
-    -- packages anyway, so they need no special handling.
+    -- flecs/sdl3 export headers only off Windows -- see below.
     if is_plat("windows") then
         add_packages("flecs", {public = true})
         add_packages("sdl3", {public = true})
@@ -33,31 +27,23 @@ target("feather_public_api")
     add_packages("taywee_args", {public = true})
 target_end()
 
--- Why flecs/sdl3 are exported without their archives (non-Windows):
+-- Why flecs/sdl3 are exported without their archives (non-Windows): both own
+-- process-global mutable state (flecs's ecs_os_api and component-id globals,
+-- SDL's subsystem refcounts/event queue) that the engine executable
+-- initializes and every dlopen'd project DLL must share. A DLL linking its
+-- own static copy gets a second, never-initialized ecs_os_api and segfaults
+-- on a NULL function pointer on first ECS module import (this was an actual
+-- crash: nm -D on libexample.so showed 625 defined, 0 undefined ecs_ symbols
+-- -- nothing for the loader to unify). Leaving the links out makes the
+-- symbols undefined in the DLL, so the loader binds them to the host exe,
+-- which exports them via -rdynamic (root xmake.lua). Module targets are
+-- static libs so this doesn't affect them; feather.editor/standalone still
+-- pull the real archives via their own add_packages().
 --
--- Both own process-global mutable state -- flecs's ecs_os_api and its builtin
--- component-id globals, SDL's subsystem refcounts and event queue -- that the
--- engine EXECUTABLE initializes and every dlopen'd project DLL must share. If a
--- DLL links its own static copy it gets a second, never-initialized ecs_os_api
--- and segfaults on a NULL function pointer the first time it imports an ECS
--- module (flecs::_::import<T> -> WorldSim::init -> Engine::run). That was the
--- actual crash: nm -D on libexample.so showed 625 DEFINED and 0 undefined ecs_
--- symbols, i.e. nothing for the loader to unify.
+-- {links = {}}, not {links = false}: xmake only honours a per-target package
+-- override when truthy, and false is falsy in Lua -- it'd silently fall
+-- through to the package's own links.
 --
--- Leaving the links out makes those symbols undefined in the DLL, so the loader
--- binds them to the already-loaded host executable, which exports them via
--- add_ldflags("-rdynamic") in the root xmake.lua. Nothing engine-side regresses:
--- module targets are static libs (ar collects objects, it links nothing), and
--- feather.editor/feather.standalone still pull the real archives through their
--- own add_packages("flecs", "assimp", "sdl3", "taywee_args").
---
--- {links = {}}, NOT {links = false}: xmake only honours a per-target package
--- override when the value is truthy (core/project/target.lua, the
--- `elseif configinfo and configinfo[name]` branch), and false is falsy in Lua,
--- so it silently falls through to the package's own links. An empty table is
--- truthy and yields no links.
---
--- Windows keeps the static copies: a DLL there cannot have unresolved imports,
--- and the import library it would need comes from tools/feather.<variant>.def,
--- which is not committed yet (see the root xmake.lua's is_plat("windows")
--- block). So the Windows consumer path carries this same latent bug for now.
+-- Windows keeps the static copies (a DLL there can't have unresolved
+-- imports, and the import lib would need tools/feather.<variant>.def, not
+-- yet committed), so the Windows consumer path still carries this bug.

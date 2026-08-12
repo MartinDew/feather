@@ -1,15 +1,8 @@
 -- Toolchain-conditional compile/link flags, shared between the engine's own
--- targets (root xmake.lua's on_config) and downstream "project DLL" consumers
--- (tools/SDK/FeatherSDK.lua's on_config).
---
--- Same reason feather_codegen.lua is a module rather than a plain function in
--- xmake.lua: on_config/on_load/before_build scripts run in a sandbox with its
--- own _ENV that doesn't see description-scope Lua globals, so import() is the
--- only way to share this across xmake.lua files -- and cross-repo, the
--- consumer's xmake.lua can't see the engine's locals at all.
---
--- Must be applied from on_config, not on_load: the checks below query the
--- resolved toolchain, which isn't known at load time.
+-- targets and downstream "project DLL" consumers (tools/SDK/FeatherSDK.lua).
+-- Module rather than a plain xmake.lua function for the same sandboxing
+-- reason as feather_codegen.lua. Must be applied from on_config, not
+-- on_load: the checks below query the resolved toolchain.
 
 function apply(target)
     local want_lto     = has_config("production") or has_config("use_lto")
@@ -36,19 +29,14 @@ function apply(target)
     end
 
     -- Reflection uses bare [[get]]/[[set(...)]]/[[ignore]]/[[method]] attributes
-    -- that the generator reads textually; compilers only need to ignore them.
-    -- This is why a consumer needs these flags too, not just the engine: those
-    -- attributes appear in the project's own FCLASS/FSTRUCT headers.
+    -- read textually by the generator; compilers just need to ignore them.
+    -- Consumers need these flags too since the attributes appear in their
+    -- own FCLASS/FSTRUCT headers.
     if is_msvc() then
         target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
         if is_clang_cl() then
-            -- clang-cl matches is_msvc() above (it accepts /-style flags), but it
-            -- emits its own Clang diagnostics for our bare attributes rather than
-            -- MSVC's C5030 -- e.g. "unknown attribute 'method' ignored
-            -- [-Wunknown-attributes]" -- so /wd5030 alone doesn't silence it.
-            -- clang-cl also accepts Clang's -W/-Wno- flags directly (no /clang:
-            -- prefix needed), so pass the same ones the plain-Clang branch below
-            -- uses.
+            -- clang-cl matches is_msvc() above but emits Clang diagnostics for
+            -- the bare attributes, not MSVC's C5030, so /wd5030 alone misses it.
             target:add("cxflags", "-Wno-attributes", "-Wno-unknown-attributes", {force = true})
         end
         if is_mode("debug") then
@@ -64,8 +52,7 @@ function apply(target)
             "-Wno-attributes",
             {force = true})
         if is_clang() then
-            -- GCC only recognizes -Wno-attributes for this; -Wno-unknown-attributes
-            -- is Clang's spelling and GCC rejects it as an unrecognized option.
+            -- GCC rejects -Wno-unknown-attributes as unrecognized; Clang needs it.
             target:add("cxflags", "-Wno-unknown-attributes", {force = true})
         end
         if is_mode("debug") then

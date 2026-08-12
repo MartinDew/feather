@@ -18,8 +18,9 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 
 WorldSim::~WorldSim() = default;
 
-// Todo : The world_sim should probably use classDB registration delegates rather than late loading EcsModules
 void WorldSim::init() {
+	// Every reflected Component registers before any EcsFeature imports, so a
+	// component's Flecs name never depends on import order.
 	register_core_components(_world);
 
 	_scene_prefab = _world.prefab("Scene");
@@ -27,7 +28,8 @@ void WorldSim::init() {
 	fassert(scene.is_valid());
 	set_active_scene(scene);
 
-	// Picks up EcsFeature subclasses from core, from built-in modules, and initially loaded dlls.
+	// Picks up EcsFeature subclasses from core, from built-in modules, and --
+	// because this runs after index_project() -- from loaded project DLLs.
 	auto children = ClassDB::get_children_names("EcsFeature");
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);

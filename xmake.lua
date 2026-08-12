@@ -17,25 +17,12 @@ includes("xmake/helper.lua")
 -- release    -> CMake Release     (-O3, NDEBUG)
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
--- Release mode only: xmake's mode.release rule does
---     if not target:get("symbols") and target:kind() ~= "shared" then
---         target:set("symbols", "hidden")
---     end
--- (rules/mode/xmake.lua), i.e. -fvisibility=hidden -fvisibility-inlines-hidden
--- on every binary and static target. That silently defeats the -rdynamic on
--- feather.<variant>: a hidden symbol never reaches .dynsym, so nothing the
--- engine defines is visible to a dlopen'd project DLL, and loading one fails
--- outright with e.g. "undefined symbol: _ZN7feather7ClassDB9_instanceE".
--- It has to be set here rather than on the executables, because the objects
--- linked into them are compiled under their own targets (feather_module_target
--- static libs, simplemath) and each needs the same visibility.
---
--- The old CMake build had no visibility preset and set ENABLE_EXPORTS ON, so
--- this restores parity rather than inventing a policy. Guarded on release
--- because setting symbols at all would otherwise pre-empt mode.debug /
--- mode.releasedbg's symbols = "debug" and cost us -g. "none" maps to no flag
--- in gcc.lua's nf_symbol, which is exactly what's wanted -- mode.release's
--- strip = "all" still runs and .dynsym survives it.
+-- mode.release hides symbols by default (-fvisibility=hidden), which defeats
+-- -rdynamic on feather.<variant> and breaks dlopen'd project DLLs ("undefined
+-- symbol: ..."). Set globally, not per-executable, since the linked-in
+-- static lib targets need the same visibility. Guarded on release only, so
+-- debug/releasedbg keep their own symbols="debug"; "none" here still leaves
+-- mode.release's strip="all" to run, and .dynsym survives it.
 if is_mode("release") then
     set_symbols("none")
 end
