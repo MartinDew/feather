@@ -259,21 +259,36 @@ jobs:
           # care about. index_project() eagerly imports every recognized
           # resource it walks, including feather-example-project's sponza/
           # scene (75 textures + a multi-MB glTF mesh, via Assimp) -- fast
-          # under release/releasedbg's optimizer, but a genuinely slow (not
-          # hung) multi-tens-of-seconds cost under an unoptimized -Od Windows
-          # debug build, confirmed by comparing CI timing across build modes.
-          # Polling and breaking early keeps the already-fast jobs
-          # (everything but Windows debug) exiting in a couple seconds same
-          # as before, while giving the slow one up to 90s instead of a flat
-          # per-job budget that either wastes time everywhere or starves the
-          # one job that needs it.
-          for i in $(seq 1 90); do
+          # under release/releasedbg's optimizer, but apparently still not
+          # done within 90s under an unoptimized -Od Windows debug build (a
+          # prior version of this loop capped at 90s and still timed out).
+          # Whether that's "just needs more time" or a genuine stall couldn't
+          # be told apart from a single `cat smoke.log` at the end: GitHub
+          # Actions stamps every line of one batched dump with the dump's own
+          # timestamp, not the time the process actually wrote it -- already
+          # seen once before in this same CI (the build/-tree-walk
+          # investigation). Streaming new smoke.log content out to this
+          # step's own stdout on every poll tick, instead of dumping once at
+          # the end, gives each chunk a real per-write CI timestamp -- turning
+          # this from an opaque "did it hang or was it slow" guess into
+          # directly readable timing data, and doubles as the fix if 90s
+          # really was just short of enough.
+          SEEN=0
+          for i in $(seq 1 240); do
+            if [ -f smoke.log ]; then
+              NOW=$(wc -c < smoke.log | tr -d ' ')
+              if [ "$NOW" -gt "$SEEN" ]; then
+                tail -c +"$((SEEN + 1))" smoke.log
+                SEEN=$NOW
+              fi
+            fi
             grep -q "importing module ExampleModule" smoke.log 2>/dev/null && break
             sleep 1
           done
           kill "$PID" 2>/dev/null
           wait "$PID" 2>/dev/null
           set -e
+          echo "--- full smoke.log ---"
           cat smoke.log
           if grep -qiE "undefined symbol|failed to load|failed loading" smoke.log; then
             echo "::error::project DLL failed to load -- plugin ABI is broken"
