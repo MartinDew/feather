@@ -16,13 +16,13 @@ namespace feather {
 
 namespace {
 
-// Headless has no window, so SDL never delivers SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+// Headless has no window which in turn can't deliver quit events.
 // this is the only exit condition. sig_atomic_t is the only type a signal
 // handler may portably touch.
-volatile std::sig_atomic_t g_quit_requested = 0;
+volatile std::sig_atomic_t quit_requested = 0;
 
 void _on_terminate_signal(int) {
-	g_quit_requested = 1;
+	quit_requested = 1;
 }
 
 } //namespace
@@ -122,12 +122,12 @@ bool Engine::run() {
 	// initialization
 	ResourceLoader::get()->index_project();
 
-	// Debug stuff. Must come after index_project(): that's what dlopens a
-	// project's extension DLL and registers its reflected types with ClassDB.
+#if BETA
 	if (LaunchSettings::get().dump_db.Get()) {
 		ClassDB::get()->print_db();
 		return true;
 	}
+#endif
 
 	_world_sim.init();
 
@@ -144,7 +144,7 @@ bool Engine::run() {
 
 	// update
 	double accumulator = 0.0;
-	while (keep_running && !g_quit_requested) {
+	while (keep_running && !quit_requested) {
 		keep_running = _main_window.update();
 
 		auto new_time = Clock::now();
@@ -166,8 +166,6 @@ bool Engine::run() {
 		_rendering_server.update(frame_time);
 	}
 
-	// Join the render thread while other Engine members are still alive --
-	// their destruction order (engine.h) would otherwise run first.
 	_rendering_server.stop();
 
 	return true;
@@ -185,19 +183,16 @@ bool Engine::is_editor() {
 }
 
 bool Engine::is_headless() {
-	// Cached (unlike is_editor()): queried from Window's constructor and the
-	// render path, and the flag is a string. Safe pre-Engine::_instance --
-	// only touches LaunchSettings, which Main constructs first.
 	static const bool headless = [] {
 		const std::string& mode = LaunchSettings::get().windowed.Get();
 		if (mode == "headless")
 			return true;
 
-		fassert(mode == "windowed",
-				std::format("Unknown window mode '{}' (expected 'windowed' or 'headless')", mode));
+		fassert(mode == "windowed", std::format("Unknown window mode '{}' (expected 'windowed' or 'headless')", mode));
 		return false;
 	}();
 
 	return headless;
 }
+
 } //namespace feather

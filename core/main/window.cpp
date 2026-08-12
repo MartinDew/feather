@@ -33,9 +33,6 @@ constexpr Notification to_notification(const SDL_Event& event) {
 
 Window::Window() : _internal_event(), _fullscreen_mode() {
 	if (Engine::is_headless()) {
-		// SDL's null video driver: fake 1024x768 display, no real display
-		// server. Exposes no SDL_PROP_WINDOW_* native handle, which is why
-		// headless also selects NullRenderer (see RenderingServer::init).
 		SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
 	}
 
@@ -71,7 +68,8 @@ Window::Window() : _internal_event(), _fullscreen_mode() {
 				}
 				return false;
 			},
-			this);
+			this
+	);
 }
 
 void Window::_on_resize() {

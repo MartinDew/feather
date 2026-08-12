@@ -18,7 +18,6 @@ public:
 	bool load(const std::string& path);
 	void unload();
 
-	// Reason the last load()/get_symbol() failed (wraps dlerror/GetLastError).
 	[[nodiscard]] static std::string get_last_error();
 
 	[[nodiscard]] Callable get_symbol(const std::string& name) const;

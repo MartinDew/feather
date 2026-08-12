@@ -19,8 +19,7 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 WorldSim::~WorldSim() = default;
 
 void WorldSim::init() {
-	// Every reflected Component registers before any EcsFeature imports, so a
-	// component's Flecs name never depends on import order.
+	// Every reflected Component registers before any EcsFeature imports
 	register_core_components(_world);
 
 	_scene_prefab = _world.prefab("Scene");
