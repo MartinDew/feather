@@ -1,28 +1,14 @@
 -- Template xmake.lua for a downstream "project DLL" repo (a shared library
--- loaded at runtime by feather.editor/feather.standalone via
--- _load_extension() -- see core/resources/extension.h).
---
--- Copy to your project root as xmake.lua, fill in the two <project_name>
--- placeholders and your own add_files() list. The discovery block is
--- intentionally copy-paste (can't be an includes()-able helper -- you need
--- the engine path before you can includes() anything it owns). Everything
--- past "end discovery block" is engine-owned and automatic.
---
--- Prerequisite: the FeatherEngine checkout must already be built -- you link
--- against its executable and codegen runs with --skip-core, so core's
--- generated headers must already exist. feather_sdk_setup() checks this and
--- fails with a readable message rather than a linker error.
+-- loaded at runtime via _load_extension()). Copy to your project root, fill
+-- in the two <project_name> placeholders and your own add_files() list.
+-- Requires the FeatherEngine checkout to already be built.
 set_xmakever("2.9.0")
 set_project("<project_name>") -- TODO: rename
 set_languages("cxx23")
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
 -- --- FeatherEngine discovery (copy-paste block; do not modify) -----------
--- Resolution order:
---   1. xmake config option:  xmake f --feather_sdk_path=/path/to/FeatherEngine
---      (persisted in this project's xmake config -- set it once)
---   2. FEATHER_ROOT environment variable
---   3. a sibling FeatherEngine checkout next to this project
+-- Resolution order: --feather_sdk_path option, FEATHER_ROOT env, sibling checkout.
 option("feather_sdk_path")
     set_default(nil)
     set_showmenu(true)

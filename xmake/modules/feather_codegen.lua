@@ -1,41 +1,26 @@
 -- Reflection-codegen helpers shared between the top-level xmake.lua
--- (run_core_codegen) and module xmake.lua files (e.g. modules/vex_renderer).
---
--- Proper import()-able module rather than plain xmake.lua globals: on_load/
--- before_build/etc scripts run in a sandbox that can't see description-scope
--- globals, only xmake's own APIs and import()ed modules.
---
--- generate_reflection.py parses headers syntactically (stdlib only), so
--- unlike the old clang-backed generator it needs no compiler/include-dir
--- resolution -- just the script path and the dirs to scan.
+-- (run_core_codegen) and module xmake.lua files. Must be an import()-able
+-- module, not plain xmake.lua globals: on_load/before_build sandboxes can't
+-- see description-scope globals.
 
--- Extensions registered via add_extension() in THIS import() instance --
--- each import() site gets its own fresh module table, so add_extension()
--- and the matching run_*_codegen() call must happen in the same script
--- closure. A caller that can't guarantee that should pass an explicit
--- {extensions = {...}} table to run_*_codegen instead.
+-- Per-import()-instance list; add_extension() and its matching
+-- run_*_codegen() call must happen in the same script closure. Pass an
+-- explicit {extensions = {...}} to run_*_codegen otherwise.
 local _pending_extensions = {}
 
 local function _resolve_extension(ext)
-    -- Relative paths resolve against the CALLING project's root
-    -- (os.projectdir()): os.scriptdir() inside an imported module resolves
-    -- to the module's own file, not the caller's xmake.lua.
+    -- Relative paths resolve against the caller's root: os.scriptdir()
+    -- inside an imported module resolves to this file, not the caller's.
     if type(ext) == "string" then
         return {path = path.absolute(ext, os.projectdir())}
     end
     return {path = path.absolute(ext.path, os.projectdir()), scope = ext.scope}
 end
 
--- Registers a modifier extension (a .py file or dir of them -- see
--- tools/codegen/modifier_api.py) passed to generate_reflection.py as
--- --extension on every subsequent run_*_codegen call from THIS import()
--- instance. Scope defaults to whatever non-core dir(s) that call processes;
--- core is never a default scope, so a project extension can't affect core's
--- output. Pass opts.scope to target a specific dir instead.
---
--- Usage: don't call directly -- pass codegen_extensions to feather_sdk_setup(),
--- which forwards it as run_project_codegen's opts.extensions (keeping
--- registration and the run_*_codegen call in the same closure, as required above).
+-- Registers a modifier extension (see tools/codegen/modifier_api.py), scoped
+-- to whatever non-core dir(s) the next run_*_codegen call processes (core is
+-- never a default scope). Don't call directly -- pass codegen_extensions to
+-- feather_sdk_setup() instead, to keep this in the same closure as required above.
 function add_extension(ext_path, opts)
     opts = opts or {}
     table.insert(_pending_extensions, _resolve_extension({path = ext_path, scope = opts.scope}))
@@ -69,10 +54,8 @@ local function _resolve_extensions(extensions_opt)
     return out
 end
 
--- feather_root: defaults to os.projectdir(), correct for the engine's own
--- build but not a downstream project (FeatherSDK.lua passes an explicit root).
--- project_root: tree that generated file ids are computed relative to --
--- the consumer's own root for a consumer build.
+-- feather_root defaults to os.projectdir(); FeatherSDK.lua passes an
+-- explicit one for a downstream project.
 local function common_argv(extra, feather_root, project_root)
     feather_root = feather_root or os.projectdir()
     project_root = project_root or feather_root
@@ -107,14 +90,10 @@ function run_core_codegen(module_dirs, opts)
     os.vrunv("python3", argv, {curdir = os.projectdir()})
 end
 
--- Runs generate_reflection.py for core/ AND a single module dir. For a
--- *module's own* before_build (see modules/vex_renderer/xmake.lua), not the
--- executable's: a module target is a dependency built before its depender's
--- before_build runs, so by the time run_core_codegen would generate core's
--- .gen.h files, the module's files may already be compiling and transitively
--- including headers that need them. Must include core (no --skip-core);
--- write_if_changed makes the redundant pass with run_core_codegen's later
--- pass cheap (0 files changed).
+-- Runs generate_reflection.py for core/ AND a single module dir -- for a
+-- *module's own* before_build, since it builds before the depending exe's
+-- before_build (run_core_codegen) would otherwise generate core's .gen.h
+-- first. write_if_changed makes the redundant later pass cheap.
 function run_module_codegen(module_dir, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)
@@ -129,17 +108,12 @@ function run_module_codegen(module_dir, opts)
     os.vrunv("python3", argv, {curdir = os.projectdir()})
 end
 
--- Runs generate_reflection.py for a downstream "project DLL" repo: only that
--- project's own source dirs, never core. Called from FeatherSDK.lua's
--- before_build. --skip-core is the point of a separate entry point: a
--- consumer must never write into the engine checkout (may be read-only,
--- shared, or on a different commit), so the engine must already be built
--- first -- feather_sdk_setup's on_load check enforces that readably.
+-- Runs generate_reflection.py for a downstream "project DLL" repo: only its
+-- own source dirs, never core (--skip-core) -- a consumer must never write
+-- into the engine checkout, so the engine must already be built first.
 --
--- dirs: list of source dirs, each a plain path string, "name=dir" string, or
--- {dir=..., name=...}; name overrides the generated register_<name>_types
--- symbol. The "name=dir" string form exists because set_values() only stores
--- flat scalars. Relative dirs resolve against project_root.
+-- dirs: plain path strings, "name=dir" strings, or {dir=..., name=...};
+-- name overrides the generated register_<name>_types symbol.
 function run_project_codegen(feather_root, project_root, dirs, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)

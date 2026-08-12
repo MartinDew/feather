@@ -17,12 +17,8 @@ includes("xmake/helper.lua")
 -- release    -> CMake Release     (-O3, NDEBUG)
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
--- mode.release hides symbols by default (-fvisibility=hidden), which defeats
--- -rdynamic on feather.<variant> and breaks dlopen'd project DLLs ("undefined
--- symbol: ..."). Set globally, not per-executable, since the linked-in
--- static lib targets need the same visibility. Guarded on release only, so
--- debug/releasedbg keep their own symbols="debug"; "none" here still leaves
--- mode.release's strip="all" to run, and .dynsym survives it.
+-- mode.release hides symbols by default, which defeats -rdynamic and breaks
+-- dlopen'd project DLLs. Set globally so linked-in static libs match too.
 if is_mode("release") then
     set_symbols("none")
 end
@@ -115,27 +111,16 @@ local GENERATED_SOURCE = {
 }
 
 -- Runs both codegen scripts before any source file compiles; both use
--- write_if_changed() internally, so repeated runs are cheap. The actual
--- generate_reflection.py invocation lives in xmake/modules/feather_codegen.lua,
--- imported below, rather than as a plain function in this file: on_load/before_build/etc
--- scripts run inside a sandbox with its own _ENV that doesn't see ordinary Lua
--- globals defined at xmake.lua description scope, only xmake's own APIs and
--- import()ed modules -- and modules/vex_renderer/xmake.lua's own before_build
--- hook needs this same logic (see feather_codegen.run_module_codegen and the
--- comment there for why).
+-- write_if_changed() internally, so repeated runs are cheap. Logic lives in
+-- xmake/modules/feather_codegen.lua since modules/vex_renderer/xmake.lua's
+-- own before_build hook needs it too.
 local function run_codegen(target)
     import("feather_codegen")
     local proj = os.projectdir()
 
-    -- Modules using FCLASS live outside core/ and need their own --module-path so
-    -- the generator scans them too (see process_source_dir() in
-    -- generate_reflection.py). This pass is redundant with vex_renderer's own
-    -- before_build hook (feather_codegen.run_module_codegen) -- that one exists
-    -- for build-ordering correctness, this one keeps `xmake` alone (without a full
-    -- rebuild) sufficient to refresh everything. vex_renderer is skipped entirely
-    -- on macOS (see modules/vex_renderer/xmake.lua) and gated by enable_vex_renderer
-    -- elsewhere, so mirror both checks here rather than feeding the generator a
-    -- directory whose FCLASS headers aren't actually being compiled into this build.
+    -- Redundant with vex_renderer's own before_build codegen pass (that one's
+    -- for build-ordering; this one keeps a bare `xmake` sufficient to refresh
+    -- everything). Mirrors vex_renderer's macOS/enable_vex_renderer gating.
     local module_dirs = {}
     if not is_plat("macosx") and has_config("enable_vex_renderer") then
         local vex_dir = path.join(proj, "modules", "vex_renderer")
@@ -151,10 +136,8 @@ local function run_codegen(target)
     }, {curdir = proj})
 end
 
--- Body lives in xmake/modules/feather_flags.lua so tools/SDK/FeatherSDK.lua can
--- import() the exact same flags for downstream project DLLs -- notably
--- -Wno-attributes, which reflection's bare [[get]]/[[method]] attributes need
--- wherever an FCLASS header is compiled.
+-- Body lives in xmake/modules/feather_flags.lua so FeatherSDK.lua can
+-- import() the same flags for downstream project DLLs.
 local function apply_compile_flags(target)
     import("feather_flags")
     feather_flags.apply(target)
@@ -193,21 +176,12 @@ for _, variant in ipairs({"editor", "standalone"}) do
 
         if is_plat("linux") then
             add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
-            -- Old CMake set ENABLE_EXPORTS ON (-> -rdynamic) on Editor/Standalone
-            -- so a runtime-loaded project DLL can resolve engine symbols against
-            -- the already-loaded process. Consumer DLLs link against this binary
-            -- directly (see tools/SDK/FeatherSDK.lua) rather than a separate shared lib.
+            -- Lets a dlopen'd project DLL resolve engine symbols at runtime.
             add_ldflags("-rdynamic", {force = true})
         end
 
-        -- Windows analog of the above: MSVC only emits a companion import .lib
-        -- for an EXE if it's told to export symbols. xmake has no equivalent of
-        -- CMake's WINDOWS_EXPORT_ALL_SYMBOLS for kind="binary" targets, so
-        -- mirror XMAKE_MIGRATION.md's documented Phase 1 plan: commit a .def
-        -- file (extracted via `dumpbin /EXPORTS build/bin/feather.<variant>.exe`)
-        -- per variant and apply it here. NOT YET COMMITTED -- requires a Windows
-        -- build to generate; until tools/feather.<variant>.def exists, this is a
-        -- no-op guarded by os.isfile() rather than a hard failure on other platforms.
+        -- Windows analog: needs a per-variant .def file (dumpbin /EXPORTS) to
+        -- get a companion import .lib. Not yet committed -- no-op until it exists.
         if is_plat("windows") then
             local def_file = path.join(os.scriptdir(), "tools", "feather." .. variant .. ".def")
             if os.isfile(def_file) then
@@ -218,9 +192,6 @@ for _, variant in ipairs({"editor", "standalone"}) do
         before_build(run_codegen)
 
         -- Copy raw_resources/shaders next to the executable after every build.
-        -- Rules stack (unlike after_build() closures), so modules can attach
-        -- their own deploy rules without disturbing this one — see
-        -- xmake/helper.lua for feather_module_target()'s exe_rules option.
         add_rules("feather.deploy_shaders")
 
         -- on_config, not on_load: toolchain-conditional flags need the

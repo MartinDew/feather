@@ -1,8 +1,6 @@
 -- Toolchain-conditional compile/link flags, shared between the engine's own
--- targets and downstream "project DLL" consumers (tools/SDK/FeatherSDK.lua).
--- Module rather than a plain xmake.lua function for the same sandboxing
--- reason as feather_codegen.lua. Must be applied from on_config, not
--- on_load: the checks below query the resolved toolchain.
+-- targets and downstream project DLLs (tools/SDK/FeatherSDK.lua). Applied
+-- from on_config, not on_load: queries the resolved toolchain.
 
 function apply(target)
     local want_lto     = has_config("production") or has_config("use_lto")
@@ -28,10 +26,8 @@ function apply(target)
         target:add("ldflags", "-fsanitize=address,undefined", {force = true})
     end
 
-    -- Reflection uses bare [[get]]/[[set(...)]]/[[ignore]]/[[method]] attributes
-    -- read textually by the generator; compilers just need to ignore them.
-    -- Consumers need these flags too since the attributes appear in their
-    -- own FCLASS/FSTRUCT headers.
+    -- Reflection's bare [[get]]/[[set(...)]]/[[method]] attributes just need
+    -- compilers to ignore them; consumers need these flags too (FCLASS/FSTRUCT).
     if is_msvc() then
         target:add("cxflags", "/W4", "/wd4100", "/wd5030", {force = true})
         if is_clang_cl() then

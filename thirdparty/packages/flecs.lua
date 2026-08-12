@@ -1,19 +1,9 @@
--- flecs, built with DEFAULT symbol visibility instead of hidden.
---
--- Project DLLs mustn't link their own copy of flecs (shared process-global
--- state like ecs_os_api -- a private copy segfaults on a NULL fn pointer on
--- first ECS import), so xmake/public_api.lua hands consumers headers only
--- and relies on -rdynamic to re-export the host exe's ecs_* symbols. Stock
--- flecs defeats that: its cmake unconditionally sets a target-level
--- C_VISIBILITY_PRESET hidden, which beats any -DCMAKE_C_VISIBILITY_PRESET
--- override, and for a static build the per-declaration FLECS_API macro
--- (which would normally override it) expands to nothing -- 637 of 665
--- ecs_* symbols come out hidden. This package patches that cmake file
--- instead of switching to a shared flecs build (which would mean shipping
--- libflecs.so next to every binary).
---
--- Otherwise a copy of xmake-repo's packages/f/flecs/xmake.lua; keep in sync
--- when bumping.
+-- flecs, built with DEFAULT symbol visibility instead of hidden: project
+-- DLLs rely on -rdynamic re-exporting the host exe's ecs_* symbols (see
+-- xmake/public_api.lua), but stock flecs's cmake forces
+-- C_VISIBILITY_PRESET hidden at the target level, which no -D override can
+-- beat. This package patches that cmake file. Otherwise a copy of
+-- xmake-repo's packages/f/flecs/xmake.lua; keep in sync when bumping.
 package("flecs_feather")
     set_homepage("https://github.com/SanderMertens/flecs")
     set_description("A fast entity component system (ECS) for C & C++, built with default symbol visibility")

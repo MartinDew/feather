@@ -1,19 +1,7 @@
--- FeatherSDK.lua: replaces tools/generate_export.cmake.
---
--- Consumers locate a FeatherEngine checkout (see
--- tools/templates/consumer_xmake_template.lua), then:
---
---   includes("/path/to/feather/tools/SDK/FeatherSDK.lua")
---   feather_sdk_setup("mygame_plugin", "standalone", {
---       codegen_dirs = { {dir = "src", name = "mygame"} },
---   })
---   target("mygame_plugin")   -- reopened; feather_sdk_setup() opens/closes its own scope
---       set_kind("shared")
---       add_files("src/*.cpp")
---   target_end()
---
--- Public API (include dirs + thirdparty packages) comes entirely from
--- feather_public_api via add_deps(), so a new dependency needs no edits here.
+-- FeatherSDK.lua: replaces tools/generate_export.cmake. Usage: see
+-- tools/templates/consumer_xmake_template.lua. Public API surface comes
+-- entirely from feather_public_api via add_deps(), so a new engine
+-- dependency needs no edits here.
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 
 -- Lets a consumer import() feather_codegen/feather_flags from its own project.
@@ -112,12 +100,8 @@ function feather_sdk_setup(target_name, variant, opts)
             add_linkdirs(bin_dir)
             add_links("feather." .. variant)
         else
-            -- No link target on ELF/Mach-O: the DLL keeps undefined engine/flecs/SDL
-            -- symbols, and the loader binds them to the host exe at dlopen() time
-            -- (see -rdynamic on feather.<variant> and public_api.lua's {links = {}}).
-            -- Do NOT link engine_bin directly: ld would stamp a DT_NEEDED for it,
-            -- and dlopen() would then hunt for a file named feather.editor instead
-            -- of reusing the running process's own image.
+            -- No link target on ELF/Mach-O: undefined engine/flecs/SDL symbols
+            -- bind to the host exe at dlopen() time (-rdynamic, {links = {}}).
             if is_plat("macosx") then
                 -- Mach-O rejects undefined symbols in a dylib by default. Untested.
                 add_shflags("-undefined", "dynamic_lookup", {force = true})

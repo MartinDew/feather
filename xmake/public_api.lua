@@ -27,23 +27,9 @@ target("feather_public_api")
     add_packages("taywee_args", {public = true})
 target_end()
 
--- Why flecs/sdl3 are exported without their archives (non-Windows): both own
--- process-global mutable state (flecs's ecs_os_api and component-id globals,
--- SDL's subsystem refcounts/event queue) that the engine executable
--- initializes and every dlopen'd project DLL must share. A DLL linking its
--- own static copy gets a second, never-initialized ecs_os_api and segfaults
--- on a NULL function pointer on first ECS module import (this was an actual
--- crash: nm -D on libexample.so showed 625 defined, 0 undefined ecs_ symbols
--- -- nothing for the loader to unify). Leaving the links out makes the
--- symbols undefined in the DLL, so the loader binds them to the host exe,
--- which exports them via -rdynamic (root xmake.lua). Module targets are
--- static libs so this doesn't affect them; feather.editor/standalone still
--- pull the real archives via their own add_packages().
---
--- {links = {}}, not {links = false}: xmake only honours a per-target package
--- override when truthy, and false is falsy in Lua -- it'd silently fall
--- through to the package's own links.
---
--- Windows keeps the static copies (a DLL there can't have unresolved
--- imports, and the import lib would need tools/feather.<variant>.def, not
--- yet committed), so the Windows consumer path still carries this bug.
+-- Why flecs/sdl3 export without their archives (non-Windows): both own
+-- process-global state a DLL's own static copy would duplicate uninitialized
+-- and segfault on first use, so the links are left out and -rdynamic binds
+-- them to the host exe instead. {links = {}}, not {links = false} (falsy in
+-- Lua, silently falls through). Windows keeps the static copies and still
+-- carries this bug -- its .def-based import lib isn't committed yet.
