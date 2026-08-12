@@ -91,6 +91,12 @@ void ResourceLoader::remove_resource_format_loader(std::shared_ptr<ResourceForma
 	}
 }
 
+void ResourceLoader::clear_caches() {
+	_cache.clear();
+	_path_cache.clear();
+	_format_loaders.clear();
+}
+
 void ResourceLoader::index_project() {
 	auto project_path = ProjectSettings::get()->get_project_path();
 	if (project_path.empty() || !std::filesystem::exists(project_path))

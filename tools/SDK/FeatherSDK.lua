@@ -124,6 +124,13 @@ function feather_sdk_setup(target_name, variant_or_opts, maybe_opts)
     target(target_name)
         add_deps("feather_public_api")
 
+        -- tools/SDK/include holds plugin-facing SDK headers (currently just
+        -- feather_extension.h) that are meaningless inside the engine
+        -- itself, so they don't belong in feather_public_api's include dirs
+        -- (which core/ and every module also see) -- this is a narrower,
+        -- consumer-only path.
+        add_includedirs(path.join(FEATHER_ROOT, "tools", "SDK", "include"))
+
         -- Closures passed to before_build/on_load run in a sandbox that can't
         -- see this function's locals, and neither os.scriptdir() nor
         -- os.projectdir() point at the engine from inside one (both resolve to

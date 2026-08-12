@@ -1,5 +1,10 @@
 ﻿#pragma once
 
+#include "assert.h"
+
+#include <concepts>
+#include <format>
+
 namespace feather {
 
 template <typename T>

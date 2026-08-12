@@ -6,6 +6,7 @@
 #include "world/rendering_world_feature.h"
 
 #include <framework/assert.h>
+#include <resources/extension_registry.h>
 #include <resources/resource_loader.h>
 
 #include <chrono>
@@ -132,13 +133,27 @@ bool Engine::run() {
 	bool keep_running = true;
 
 	// initialization
+	//
+	// index_project() only DISCOVERS resources -- including dlopen'ing every
+	// project DLL and reading (not yet calling into) its descriptor -- so
+	// that a project's own reflected types (and format loaders, etc.) exist
+	// before any extension's initialize() runs, regardless of which order
+	// the directory walk happened to visit them in. activate_all() is what
+	// actually runs those extensions' initialize() hooks. A second
+	// index_project() pass picks up anything whose loader only just
+	// registered as a result (e.g. a plugin-defined ResourceFormatLoader
+	// subclass, like feather-example-project's GameSettingsFormatLoader,
+	// recognizing project.gamecfg for the first time) -- cheap, since
+	// index_project() already skips any path already in _path_cache.
+	ResourceLoader::get()->index_project();
+	ExtensionRegistry::get()->activate_all();
 	ResourceLoader::get()->index_project();
 
-	// Debug stuff. Must come after index_project(): that's what dlopens a
-	// project's extension DLL and runs its entry point, which is where a
-	// project's own reflected types (and format loaders, etc.) register
-	// themselves with ClassDB. Dumping before it would silently omit every
-	// project-defined type.
+	// Debug stuff. Must come after both index_project() passes above and
+	// activate_all(): together, those are what dlopen a project's extension
+	// DLL and run its entry point, which is where a project's own reflected
+	// types (and format loaders, etc.) register themselves with ClassDB.
+	// Dumping before it would silently omit every project-defined type.
 	if (LaunchSettings::get().dump_db.Get()) {
 		ClassDB::get()->print_db();
 		return true;

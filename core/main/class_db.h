@@ -146,6 +146,26 @@ public:
 	static std::string get_children_names_string(StaticString object_name, bool exclusive = false);
 
 	static bool has_parent(StaticString object_name, StaticString parent_name);
+
+	// All currently-registered class names. Used by ExtensionRegistry to
+	// diff ClassDB's contents before/after an extension's initialize() runs,
+	// so it knows exactly which classes that extension added without
+	// needing per-registration tagging in the (heavily templated, hot at
+	// startup) register_class<T>() path.
+	static std::vector<StaticString> get_all_class_names();
+
+	// Removes a class registered by a since-unloaded (or about-to-unload)
+	// plugin. Must run before the plugin's SharedLibrary handle is dropped:
+	// object_create_func and Method::callable are std::function objects
+	// whose captured closures are code compiled INTO the plugin, and
+	// destroying a std::function after its target's module has been
+	// unloaded calls into unmapped memory -- this is the exact crash
+	// documented on Main's member list in feather_main.cpp. Only removes
+	// this one entry (and its pointer from its parent's children list, if
+	// any); does not recurse into children, since ExtensionRegistry always
+	// unregisters a whole extension's class set together and ordering
+	// between them doesn't matter for correctness (see the .cpp).
+	static void unregister_class(std::string_view name);
 };
 
 } //namespace feather

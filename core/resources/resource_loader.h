@@ -44,6 +44,18 @@ public:
 	void remove_resource_format_loader(std::shared_ptr<ResourceFormatLoader> loader);
 
 	void index_project();
+
+	// Drops every cached Resource and every format loader (engine's own
+	// built-ins included, not just a plugin's). Called once, by
+	// ExtensionRegistry::shutdown_all(), before any plugin's SharedLibrary
+	// handle is dropped: _cache/_path_cache may hold Resource instances
+	// whose vtable lives in a plugin (or the Extension resource itself,
+	// which OWNS that plugin's handle), and _format_loaders may hold
+	// ResourceFormatLoader instances a plugin registered (e.g.
+	// GameSettingsFormatLoader) -- all of it must be gone before the module
+	// backing that code is unmapped. Only meaningful during final shutdown;
+	// nothing after this call is expected to load resources again.
+	void clear_caches();
 };
 
 } //namespace feather

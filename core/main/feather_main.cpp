@@ -1,6 +1,7 @@
 #include "engine.h"
 #include "launch_settings.h"
 #include "project_settings.h"
+#include "resources/extension_registry.h"
 #include "resources/resource_loader.h"
 
 #include <cstdio>
@@ -17,32 +18,35 @@
 namespace feather {
 
 struct Main {
-	// KNOWN ISSUE, not fixed here: _resource_loader owns the loaded project
-	// DLL (via its Extension cache) and unloads it in its own destructor;
-	// _class_db's _class_infos holds std::function closures
-	// (ClassInfo::object_create_func) whose CODE lives in that DLL for every
-	// project-defined type. Declaration order is destruction order,
-	// reversed, so _resource_loader (declared last) unloads the plugin
-	// BEFORE _class_db (declared first) tears down _class_infos -- calling
-	// into already-unmapped memory. Confirmed with coredumpctl: SIGSEGV in
-	// ClassInfo's std::function destructor, unwinding through
-	// ClassDB::~ClassDB(), on a graceful shutdown (SIGTERM caught, engine.run()
-	// returns normally) with a project loaded.
+	// _resource_loader owns the loaded project DLL (via its Extension
+	// cache) and, left to plain member destruction order, would unload it
+	// before _class_db tears down _class_infos -- whose
+	// ClassInfo::object_create_func closures are code compiled INTO that
+	// DLL for every project-defined type. Declaration order is
+	// construction order, reversed for destruction, so _resource_loader
+	// (declared last) would destruct FIRST. Confirmed with coredumpctl
+	// before the fix below existed: SIGSEGV in ClassInfo's std::function
+	// destructor, unwinding through ClassDB::~ClassDB(), on a graceful
+	// shutdown (SIGTERM caught, engine.run() returns normally) with a
+	// project loaded.
 	//
-	// Simply reordering these two members trades that crash for a WORSE one:
-	// LaunchSettings::LaunchSettings() (launch_settings.cpp:17) calls
-	// ClassDB::get_children_names() during its own construction, so _class_db
-	// also has to be constructed FIRST -- and plain member ordering can't
-	// give one member both "constructed first" and "destructed first" at
-	// once (construction is forward, destruction is exactly reverse). The
-	// real fix is an explicit teardown step in Main::~Main()'s body -- clear
-	// _class_db's plugin-resident entries before _resource_loader unloads
-	// anything -- which is Stage 6 (extension ABI / ordered teardown)
-	// territory per the plugin-abi-rework plan, not a one-line reorder here.
+	// Simply reordering these members would trade that crash for a WORSE
+	// one: LaunchSettings::LaunchSettings() (launch_settings.cpp:17) calls
+	// ClassDB::get_children_names() during its own construction, so
+	// _class_db also has to be constructed FIRST -- and plain member
+	// ordering can't give one member both "constructed first" and
+	// "destructed first" at once (construction is forward, destruction is
+	// exactly reverse). The actual fix (plugin-abi-rework plan, Stage 6) is
+	// the explicit ExtensionRegistry::shutdown_all() call in ~Main()'s body
+	// below: it unregisters every extension's ClassDB entries and clears
+	// _resource_loader's caches BEFORE releasing the SharedLibrary handles
+	// that keep each plugin mapped, all before any member's own destructor
+	// runs (member destructors always run after the body finishes).
 	ClassDB _class_db;
 	LaunchSettings _launch_settings;
 	ProjectSettings _project_settings;
 	ResourceLoader _resource_loader;
+	ExtensionRegistry _extension_registry;
 
 	Main(int argc, char* argv[]);
 	~Main();
@@ -62,7 +66,9 @@ Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(arg
 	unregister_modules();
 }
 
-Main::~Main() = default;
+Main::~Main() {
+	ExtensionRegistry::get()->shutdown_all();
+}
 
 void Main::setup_db() {
 	register_framework_types();

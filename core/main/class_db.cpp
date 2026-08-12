@@ -91,6 +91,34 @@ bool ClassDB::has_parent(StaticString object_name, StaticString parent_name) {
 	return false;
 }
 
+std::vector<StaticString> ClassDB::get_all_class_names() {
+	std::vector<StaticString> names;
+	names.reserve(get()->_class_infos.size());
+	for (auto& [name, info] : get()->_class_infos) {
+		names.push_back(name);
+	}
+	return names;
+}
+
+void ClassDB::unregister_class(std::string_view name) {
+	auto& infos = get()->_class_infos;
+	auto it = infos.find(name);
+	if (it == infos.end())
+		return;
+
+	// _class_infos is a std::map: erasing one node never invalidates
+	// pointers/references to OTHER nodes, so the parent's children vector
+	// (holding raw ClassInfo* into this same map) stays valid for every
+	// entry except the one being erased -- only that one pointer needs
+	// removing before the erase below.
+	if (auto* parent_info = _get_class_info_internal(it->second.parent)) {
+		auto& siblings = parent_info->children;
+		std::erase(siblings, &it->second);
+	}
+
+	infos.erase(it);
+}
+
 void ClassDB::print_db() {
 #ifdef BETA
 	std::println("Printing database");
