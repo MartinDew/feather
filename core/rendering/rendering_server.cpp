@@ -65,8 +65,9 @@ RenderingServer::~RenderingServer() {
 }
 
 void RenderingServer::init() {
-	// Both operands are views onto storage that outlives this call: a constexpr
-	// StaticString, or LaunchSettings' own std::string (Get() returns a reference).
+	// Use a null renderer in headless mode, otherwise use the renderer specified in the launch settings.
+	// Eventually, it will be required to look into booting a renderer even if headless to support compute shaders among
+	// other things.
 	const std::string_view renderer_name = Engine::is_headless()
 			? std::string_view { NullRenderer::get_class_static() }
 			: std::string_view { LaunchSettings::get().renderer.Get() };

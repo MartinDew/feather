@@ -35,7 +35,7 @@ class WorldSim final : public Simulation {
 protected:
 	template <std::derived_from<class EcsFeature> T>
 	void _import_feature() {
-		_world.import<T>();
+		_world.import <T>();
 	}
 
 public:
@@ -44,13 +44,6 @@ public:
 	WorldSim();
 	~WorldSim() override;
 
-	// Component registration and EcsFeature discovery deliberately live here
-	// rather than in the constructor: Engine owns a WorldSim by value, so the
-	// constructor runs before Engine::run() calls
-	// ResourceLoader::index_project() -- which is what loads the project's
-	// extension DLL and lets it register its own EcsFeature/Component types.
-	// Running discovery from the constructor made project types permanently
-	// invisible; init() is called after index_project(), so they aren't.
 	void init() override;
 
 	void update(double delta) override;

@@ -12,8 +12,8 @@ namespace feather {
 
 // Renderer used in headless mode. Satisfies RenderingServer's contract without
 // creating a GPU device, so a dedicated server needs neither a display nor a
-// Vulkan/DX12 driver. _compile_shader is left to Renderer's empty default.
-class NullRenderer : public Renderer {
+// graphical driver. _compile_shader is left to Renderer's empty default.
+class NullRenderer final : public Renderer {
 	FCLASS();
 
 protected:

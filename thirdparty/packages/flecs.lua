@@ -36,7 +36,7 @@
 --
 -- Everything below other than the patch and the extra -D flags is a copy of
 -- xmake-repo's packages/f/flecs/xmake.lua; keep it in sync when bumping.
-package("flecs_feather")
+package("flecs")
     set_homepage("https://github.com/SanderMertens/flecs")
     set_description("A fast entity component system (ECS) for C & C++, built with default symbol visibility")
     set_license("MIT")
