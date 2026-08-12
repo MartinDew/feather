@@ -9,6 +9,22 @@ if is_mode("debug") then
     add_requireconfs("*", {debug = true})
 end
 
+-- A package's requireinfo tries to auto-inherit project.get("target.runtimes")
+-- (xmake's own require/impl/package.lua), but that only reflects a
+-- description-scope set_runtimes() call made OUTSIDE any target() block --
+-- a PER-TARGET override, like feather_game_target()'s own
+-- (tools/SDK/FeatherSDK.lua), never reaches it, since it's a different
+-- mechanism from a target's own compile flags entirely. Confirmed directly
+-- in CI: simplemath (a local project target, which DOES follow a
+-- description-scope default) correctly built MTd for a static-CRT build,
+-- but the assimp PACKAGE still linked its previously-cached MDd-built
+-- variant regardless, producing an LNK2038 against the (correctly MTd)
+-- target sources. Pinning it explicitly here, matching the debug config
+-- immediately above, sidesteps relying on that inheritance at all.
+if is_plat("windows") and (has_config("production") or get_config("feather_plugins") == "static") then
+    add_requireconfs("*", {configs = {runtimes = is_mode("debug") and "MTd" or "MT"}})
+end
+
 -- Stock xrepo package. Used to be a local shadow package (packages/flecs.lua)
 -- that patched flecs's CMake to build with default rather than hidden symbol
 -- visibility, so the -rdynamic engine executable could re-export ecs_* for
