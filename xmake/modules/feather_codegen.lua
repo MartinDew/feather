@@ -1,6 +1,8 @@
--- Reflection-codegen helpers shared between xmake/engine.lua (run_codegen,
--- attached to the feather target) and module xmake.lua files (e.g.
--- modules/vex_renderer/xmake.lua's own before_build hook).
+-- Reflection-codegen helpers shared between xmake/core_sources.lua
+-- (run_core_source_codegen, attached to both the feather target and, in a
+-- static shipping build, a consumer's own executable target) and module
+-- xmake.lua files (e.g. modules/vex_renderer/xmake.lua's own before_build
+-- hook).
 --
 -- This has to be a proper import()-able module rather than a plain global
 -- function in xmake.lua: on_load/before_build/etc scripts run inside a sandbox

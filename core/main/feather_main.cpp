@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "feather_main.h"
 #include "launch_settings.h"
 #include "project_settings.h"
 #include "resources/extension_registry.h"
@@ -48,16 +49,25 @@ struct Main {
 	ResourceLoader _resource_loader;
 	ExtensionRegistry _extension_registry;
 
-	Main(int argc, char* argv[]);
+	Main(int argc, char* argv[], const FeatherExtensionFn* statics, size_t statics_count);
 	~Main();
 	static void setup_db();
 };
 
-Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(argc), std::move(argv)) {
+Main::Main(int argc, char* argv[], const FeatherExtensionFn* statics, size_t statics_count)
+		: _class_db(), _launch_settings(std::move(argc), std::move(argv)) {
 	if (!_project_settings.init() && !_launch_settings.demo_mode.Get())
 		return;
 
 	setup_db();
+
+	// Submitted before Engine::run() rather than from inside it: run() calls
+	// ExtensionRegistry::activate_all() right after index_project() (which
+	// discovers and submit()s any DYNAMICALLY loaded extension), and
+	// activate_all() processes everything pending together regardless of
+	// how each entry got there -- so run() itself needs no static-vs-dynamic
+	// branching at all. See ExtensionRegistry::submit_static_extensions.
+	ExtensionRegistry::get()->submit_static_extensions(statics, statics_count);
 
 	Engine engine;
 
@@ -82,9 +92,7 @@ void Main::setup_db() {
 	register_modules();
 }
 
-} //namespace feather
-
-int main(int argc, char* argv[]) {
+int feather_main(int argc, char* argv[], const FeatherExtensionFn* statics, size_t statics_count) {
 	// stdout is fully buffered the moment it isn't a tty (piped to a file, as
 	// CI's smoke test does) -- an abrupt termination (a crash, or a CI
 	// timeout's kill) discards whatever hadn't been flushed, silently eating
@@ -112,5 +120,20 @@ int main(int argc, char* argv[]) {
 	std::setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
 #endif
 
-	feather::Main fmain(std::move(argc), std::move(argv));
+	Main fmain(std::move(argc), std::move(argv), statics, statics_count);
+	return 0;
 }
+
+} //namespace feather
+
+// Absent under FEATHER_STATIC: a static shipping build's own generated
+// static_main.gen.cpp (feather_static_registry.lua) defines main() instead,
+// passing its statically linked-in extensions through to feather_main() --
+// this file's own CORE_SOURCES membership is shared between that build and
+// the plain dev/editor feather.exe below (see xmake/core_sources.lua), so
+// without this guard both main()s would link into the same static binary.
+#ifndef FEATHER_STATIC
+int main(int argc, char* argv[]) {
+	return feather::feather_main(argc, argv);
+}
+#endif

@@ -300,6 +300,79 @@ jobs:
           fi
           echo "Plugin loaded and ran correctly."
 
+      # ── Static plugin ABI coverage (plugin-abi-rework plan, Stage 7) ────────
+      # debug-only: this only needs to prove the static-linking machinery
+      # itself works on each platform, not that it works identically across
+      # every build mode -- the dynamic-mode smoke test above already covers
+      # debug/releasedbg/release for the ABI itself.
+      - name: Build feather-example-project (static)
+        if: matrix.mode == 'debug'
+        working-directory: feather-example-project
+        shell: bash
+        env:
+          FEATHER_ROOT: ${{ github.workspace }}
+        run: |
+          # Stale bin/lib*.so or bin/*.dll from the dynamic build above would
+          # sit alongside the new static executable in this same output dir
+          # (both modes' xmake.lua use the same set_targetdir) -- harmless to
+          # the static executable itself (index_project() just fails to
+          # dlopen it and moves on, same as any other unrecognized/broken
+          # file it can't load), but removing it keeps this step's own smoke
+          # test log free of that unrelated noise.
+          rm -f bin/libexample.so bin/example.dll bin/example.lib bin/example.exp
+          XMAKE_PLAT_FLAG=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            XMAKE_PLAT_FLAG="-p windows"
+          fi
+          xmake f -P . $XMAKE_PLAT_FLAG -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} --feather_plugins=static -y
+          xmake build -P . -v
+          ls -la bin/ || true
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            test -f bin/example.exe || (echo "::error::bin/example.exe (static) was not produced" && exit 1)
+          else
+            test -f bin/example || (echo "::error::bin/example (static) was not produced" && exit 1)
+          fi
+
+      - name: Run static plugin smoke test
+        if: matrix.mode == 'debug'
+        shell: bash
+        working-directory: feather-example-project
+        run: |
+          set +e
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            FEATHER_BIN=./bin/example.exe
+          else
+            FEATHER_BIN=./bin/example
+          fi
+          "$FEATHER_BIN" . --window-mode headless > static_smoke.log 2>&1 &
+          PID=$!
+          SEEN=0
+          for i in $(seq 1 240); do
+            if [ -f static_smoke.log ]; then
+              NOW=$(wc -c < static_smoke.log | tr -d ' ')
+              if [ "$NOW" -gt "$SEEN" ]; then
+                tail -c +"$((SEEN + 1))" static_smoke.log
+                SEEN=$NOW
+              fi
+            fi
+            grep -q "importing module ExampleModule" static_smoke.log 2>/dev/null && break
+            sleep 1
+          done
+          kill "$PID" 2>/dev/null
+          wait "$PID" 2>/dev/null
+          set -e
+          echo "--- full static_smoke.log ---"
+          cat static_smoke.log
+          if grep -qiE "undefined symbol|failed to load|failed loading" static_smoke.log; then
+            echo "::error::static executable failed to run correctly"
+            exit 1
+          fi
+          if ! grep -q "importing module ExampleModule" static_smoke.log; then
+            echo "::error::ExampleModule was never imported (static) -- something didn't link/run correctly"
+            exit 1
+          fi
+          echo "Static plugin executable ran correctly."
+
       # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload binaries
         uses: actions/upload-artifact@v4

@@ -256,3 +256,121 @@ function feather_sdk_setup(target_name, variant_or_opts, maybe_opts)
         end
     target_end()
 end
+
+-- feather_game_target(target_name, opts)
+--
+-- Static shipping mode (plugin-abi-rework plan, Stage 7): folds the engine's
+-- own core sources directly into the consumer's own executable instead of
+-- dlopen'ing a plugin against a separately built feather.exe -- see
+-- xmake/core_sources.lua, shared with the engine's own dev/editor
+-- feather.exe (xmake/engine.lua). Produces ONE binary; unlike
+-- feather_sdk_setup()'s dynamic mode, there is no separate engine
+-- executable that has to be built first, and FEATHER_API/FEATHER_LOCAL
+-- (feather_api.h) collapse to nothing -- no module boundary to export
+-- across, so none of feather_sdk_setup()'s Windows-lib-linking /
+-- Linux-rdynamic handling applies here at all.
+--
+--   target("mygame")                                   -- SEPARATE, reopened
+--       add_files("src/*.cpp")                          -- block, same
+--   target_end()                                        -- reasoning as
+--                                                        -- feather_sdk_setup()
+--
+-- opts (all optional):
+--   codegen_dirs, codegen_extensions : same as feather_sdk_setup().
+--   extension_idents                 : the ident(s) passed to this
+--                                       project's own FEATHER_DEFINE_EXTENSION
+--                                       call(s) -- feather_static_registry
+--                                       needs these to reference each
+--                                       plugin's feather_extension_<ident>()
+--                                       by name. Defaults to {target_name}.
+function feather_game_target(target_name, opts)
+    opts = opts or {}
+    local codegen_dirs = opts.codegen_dirs or {"src"}
+    local codegen_extensions = opts.codegen_extensions
+    local extension_idents = opts.extension_idents or {target_name}
+
+    includes(path.join(FEATHER_ROOT, "xmake", "core_sources.lua"))
+
+    target(target_name)
+        set_kind("binary")
+        add_files(CORE_SOURCES)
+        add_files(GENERATED_SOURCE, {always_added = true})
+        -- register_modules()/unregister_modules() (called from
+        -- feather_main.cpp, part of CORE_SOURCES) -- always_added since a
+        -- module set with none enabled still generates this file, empty.
+        add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"), {always_added = true})
+        add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
+
+        -- FEATHER_BUILDING_CORE still matters even though FEATHER_API itself
+        -- is a no-op under FEATHER_STATIC (feather_api.h): it's core's own
+        -- #ifdef for "am I the TU defining this surface" vs. consuming it,
+        -- an orthogonal concern from which way FEATHER_API expands.
+        add_defines("FEATHER_STATIC", "FEATHER_BUILDING_CORE")
+
+        if is_mode("debug", "releasedbg") then
+            add_defines("BETA")
+        end
+        if is_mode("release") then
+            add_defines("PRODUCTION")
+        end
+
+        add_deps("feather_public_api")
+        -- Same packages target("feather") itself needs (xmake/engine.lua):
+        -- CORE_SOURCES uses flecs/assimp/sdl3/taywee_args directly, and
+        -- feather_public_api doesn't re-export flecs/assimp (see
+        -- xmake/public_api.lua's own comment on why flecs isn't public).
+        add_packages("flecs", "assimp", "sdl3", "taywee_args")
+
+        add_includedirs(path.join(FEATHER_ROOT, "tools", "SDK", "include"))
+
+        set_values("feather.root", FEATHER_ROOT)
+
+        for _, entry in ipairs(codegen_dirs) do
+            local d = type(entry) == "table" and entry.dir or entry
+            local name = type(entry) == "table" and entry.name or path.basename(d)
+            add_includedirs(d)
+            add_files(path.join(d, "register_" .. name .. "_types.gen.cpp"), {always_added = true})
+        end
+        for _, entry in ipairs(codegen_dirs) do
+            local d = type(entry) == "table" and entry.dir or entry
+            local name = type(entry) == "table" and entry.name or path.basename(d)
+            add_values("feather.codegen_dirs", name .. "=" .. d)
+        end
+        for _, ext in ipairs(codegen_extensions or {}) do
+            add_values("feather.codegen_extensions", ext)
+        end
+        set_values("feather.extension_idents", extension_idents)
+
+        -- static_extensions.gen.cpp / static_main.gen.cpp don't exist on disk
+        -- until the before_build below has run at least once -- always_added,
+        -- same reasoning as the reflection codegen files above.
+        add_files("static_extensions.gen.cpp", {always_added = true})
+        add_files("static_main.gen.cpp", {always_added = true})
+
+        -- One before_build, not two: on_load/before_build/etc are a single
+        -- script slot per target (see feather_module_target()'s comment in
+        -- xmake/helper.lua), so a second before_build() call would replace
+        -- this one rather than stack with it.
+        before_build(function(target)
+            local dirs = table.wrap(target:values("feather.codegen_dirs"))
+            if #dirs > 0 then
+                import("feather_codegen")
+                feather_codegen.run_project_codegen(
+                    table.wrap(target:values("feather.root"))[1],
+                    os.projectdir(),
+                    dirs,
+                    {extensions = table.wrap(target:values("feather.codegen_extensions"))})
+            end
+
+            import("feather_static_registry")
+            feather_static_registry.generate(os.projectdir(), table.wrap(target:values("feather.extension_idents")))
+        end)
+
+        -- Same warning/optimisation flags the engine compiles itself with --
+        -- see feather_sdk_setup()'s matching call for why.
+        on_config(function(target)
+            import("feather_flags")
+            feather_flags.apply(target)
+        end)
+    target_end()
+end

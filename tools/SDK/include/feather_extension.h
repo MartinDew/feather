@@ -9,25 +9,49 @@
 #include <resources/extension_abi.h>
 #include <resources/extension_fingerprint.h>
 
-#if defined(_WIN32)
+// FEATHER_STATIC (Stage 7) collapses this to plain extern "C" linkage, same
+// spirit as FEATHER_API/FEATHER_LOCAL doing the same in feather_api.h:
+// a statically linked plugin has no module boundary to export across, so
+// dllexport/visibility("default") would just needlessly widen the binary's
+// export table.
+#if defined(FEATHER_STATIC)
+#	define FEATHER_EXTENSION_EXPORT extern "C"
+#elif defined(_WIN32)
 #	define FEATHER_EXTENSION_EXPORT extern "C" __declspec(dllexport)
 #else
 #	define FEATHER_EXTENSION_EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 
-// Declares this project DLL's extension descriptor.
+// feather_extension_main is the ONE fixed name ExtensionFormatLoader looks
+// up in a dynamically loaded plugin, regardless of ident -- but under
+// FEATHER_STATIC there is no dlopen at all (see
+// ExtensionRegistry::submit_static_extensions), and a static executable may
+// link more than one plugin, so a single fixed name across all of them
+// would collide. Static mode's generated static_extensions.gen.cpp
+// (feather_static_registry.lua) instead references each plugin's
+// feather_extension_<ident>() directly by its own distinct name, which is
+// why FEATHER_DEFINE_EXTENSION always emits that one regardless of mode --
+// only this alias is mode-conditional.
+#if defined(FEATHER_STATIC)
+#	define FEATHER_DEFINE_EXTENSION_MAIN_ALIAS(ident)
+#else
+#	define FEATHER_DEFINE_EXTENSION_MAIN_ALIAS(ident)                                                          \
+		FEATHER_EXTENSION_EXPORT const ::FeatherExtensionDesc* feather_extension_main() {                       \
+			return feather_extension_##ident();                                                                 \
+		}
+#endif
+
+// Declares this project's extension descriptor.
 //
 //   FEATHER_DEFINE_EXTENSION(mygame, "mygame", "my game's plugin",
 //                             FEATHER_EXT_PRIORITY_DEFAULT,
 //                             my_initialize, my_deinitialize);
 //
-// ident only needs to be a valid identifier, not globally unique -- it names
-// the per-plugin feather_extension_<ident>() symbol below, which exists so a
-// future static link (Stage 7) has a name distinct across plugins to pull
-// one specific plugin's objects out of its archive. Nothing outside this
-// translation unit needs to know ident: feather_extension_main, the second
-// symbol this macro emits, is the ONE fixed name ExtensionFormatLoader
-// actually looks up in a dynamically loaded plugin, regardless of ident.
+// ident only needs to be a valid identifier, not globally unique within the
+// engine as a whole -- but it DOES need to be unique among every plugin
+// linked into the SAME static executable (see FEATHER_DEFINE_EXTENSION_MAIN_ALIAS
+// above), so a game project with only one plugin can use anything, while a
+// static build folding in several should give each a distinct ident.
 //
 // init_fn/deinit_fn must both be `void (*)(FeatherExtensionContext*)`;
 // deinit_fn may be nullptr if the plugin has nothing to tear down beyond
@@ -52,6 +76,4 @@
 		};                                                                                                   \
 		return &desc;                                                                                       \
 	}                                                                                                        \
-	FEATHER_EXTENSION_EXPORT const ::FeatherExtensionDesc* feather_extension_main() {                        \
-		return feather_extension_##ident();                                                                 \
-	}
+	FEATHER_DEFINE_EXTENSION_MAIN_ALIAS(ident)

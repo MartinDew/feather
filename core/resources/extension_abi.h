@@ -62,6 +62,15 @@ typedef struct FeatherExtensionDesc {
 	const void* interface_table; // reserved; the seam if a C ABI is ever wanted
 } FeatherExtensionDesc;
 
+// The signature every feather_extension_<ident>() (and, dynamic-mode only,
+// feather_extension_main()) function has -- see
+// tools/SDK/include/feather_extension.h. Also what a static shipping
+// build's generated static_extensions.gen.cpp table holds one of per
+// linked-in plugin (plugin-abi-rework plan, Stage 7): a plain array of these
+// is a POD constant (taking a function's address is a constant expression;
+// calling it isn't), so that table needs no static initializers.
+typedef const FeatherExtensionDesc* (*FeatherExtensionFn)();
+
 #ifdef __cplusplus
 }
 #endif

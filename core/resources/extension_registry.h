@@ -2,7 +2,9 @@
 
 #include <framework/feather_api.h>
 #include <framework/singleton_helpers.h>
+#include <resources/extension_abi.h>
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -28,6 +30,20 @@ class FEATHER_API ExtensionRegistry {
 
 public:
 	void submit(std::shared_ptr<Extension> extension);
+
+	// Constructs and submit()s an Extension per descriptor, for a game
+	// project's statically linked-in plugins (plugin-abi-rework plan,
+	// Stage 7) -- called once from Main's constructor with whatever
+	// feather_main() was handed (nullptr/0 for the plain dev/editor
+	// feather.exe, which links no statics at all). No abi_version/
+	// engine_version/build_fingerprint validation here, unlike
+	// ExtensionFormatLoader's dynamic (dlopen) path: a statically linked
+	// extension is compiled into this SAME binary as the engine, so a
+	// mismatch of the kind those checks catch is structurally impossible.
+	// Each Extension's _library_handle stays null, matching a dynamically
+	// loaded one in every other respect -- shutdown_all() dropping the last
+	// reference to one is then simply a no-op instead of an unload.
+	void submit_static_extensions(const FeatherExtensionFn* fns, size_t count);
 
 	// Sorts _pending by (priority, name), moves each into _active, and
 	// calls its initialize() hook (or, for a legacy _load_extension()-ABI

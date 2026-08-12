@@ -51,7 +51,7 @@ rule_end()
 --                           exist on disk until the first before_build runs.
 --                           Added with {always_added = true} so xmake doesn't
 --                           fail description-time file-existence checks on it,
---                           matching GENERATED_SOURCE in the top-level xmake.lua.
+--                           matching GENERATED_SOURCE in xmake/core_sources.lua.
 
 function feather_module_target(name, module_dir, files, opts)
     opts = opts or {}

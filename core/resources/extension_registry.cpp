@@ -21,6 +21,23 @@ void ExtensionRegistry::submit(std::shared_ptr<Extension> extension) {
 	_pending.push_back(std::move(extension));
 }
 
+void ExtensionRegistry::submit_static_extensions(const FeatherExtensionFn* fns, size_t count) {
+	for (size_t i = 0; i < count; ++i) {
+		const FeatherExtensionDesc* desc = fns[i]();
+		if (!desc) {
+			std::cerr << "ExtensionRegistry: static extension #" << i << " returned a null descriptor" << std::endl;
+			continue;
+		}
+
+		auto ext = std::make_shared<Extension>();
+		ext->_name = desc->name ? desc->name : "";
+		ext->_priority = desc->priority;
+		ext->_initialize = desc->initialize;
+		ext->_deinitialize = desc->deinitialize;
+		submit(ext);
+	}
+}
+
 void ExtensionRegistry::activate_all() {
 	if (_pending.empty())
 		return;
