@@ -64,13 +64,18 @@ includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 -- through this file defaulted to /MDd (dynamic) -- same mode, same
 -- toolchain, disagreeing defaults -- and the resulting CRT mismatch hung the
 -- plugin inside LoadLibrary on Windows with no diagnostic output at all.
+--
+-- feather_plugins == "static" (Stage 7) also forces static, mirroring root
+-- xmake.lua's matching branch -- additive only, defaults to "dynamic" so
+-- this changes nothing unless a consumer opts in.
+local _feather_static_shipping = get_config("feather_plugins") == "static"
 if is_plat("windows") then
-    if has_config("production") then
+    if has_config("production") or _feather_static_shipping then
         set_runtimes(is_mode("debug") and "MTd" or "MT")
     else
         set_runtimes(is_mode("debug") and "MDd" or "MD")
     end
-elseif has_config("production") or has_config("static_cpp") then
+elseif has_config("production") or has_config("static_cpp") or _feather_static_shipping then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
 end
 

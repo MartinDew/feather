@@ -102,13 +102,20 @@ end
 -- feather.exe kept compiling -MTd throughout even after that fallback was
 -- added, because it was unreachable dead code. Only "production" (the
 -- shipping build) should force Windows static; static_cpp shouldn't.
+--
+-- feather_plugins == "static" (Stage 7) also forces static: per decision 7 /
+-- the plan's target-architecture table, a static-plugin shipping build pairs
+-- with a static CRT the same way "production" does. This branch is new and
+-- additive only -- feather_plugins defaults to "dynamic" (xmake/options.lua),
+-- so it changes nothing for any build that doesn't explicitly opt in.
+local _feather_static_shipping = get_config("feather_plugins") == "static"
 if is_plat("windows") then
-    if has_config("production") then
+    if has_config("production") or _feather_static_shipping then
         set_runtimes(is_mode("debug") and "MTd" or "MT")
     else
         set_runtimes(is_mode("debug") and "MDd" or "MD")
     end
-elseif has_config("production") or has_config("static_cpp") then
+elseif has_config("production") or has_config("static_cpp") or _feather_static_shipping then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
 end
 
