@@ -35,23 +35,47 @@ add_moduledirs(path.join(FEATHER_ROOT, "xmake", "modules"))
 -- hash-match the engine's own already-built xrepo cache entries instead of
 -- xrepo building a second (e.g. shared-lib) variant just for the consumer.
 includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
-includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
-includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
 -- Must match root xmake.lua's own set_runtimes() block exactly (same
--- has_config() conditions, same MTd/MDd strings) -- this is a SEPARATE
--- xmake project (the consumer's own xmake.lua includes() this file) that
--- otherwise resolves its own default CRT linkage independently of the
--- engine's. Confirmed in CI: without this, feather.exe defaulted to /MTd
--- (static) while a plugin built through this file defaulted to /MDd
--- (dynamic) -- same mode, same toolchain, disagreeing defaults -- and the
--- resulting CRT mismatch hung the plugin inside LoadLibrary on Windows
--- with no diagnostic output at all. See root xmake.lua's matching comment.
-if has_config("production") or has_config("static_cpp") then
+-- has_config() conditions, same MTd/MDd strings), AND must run before
+-- thirdparty/xmake.lua is includes()'d below, same as root xmake.lua's own
+-- ordering. set_runtimes() only affects targets defined AFTER it runs --
+-- targets from an earlier includes() keep whatever default was in effect at
+-- THEIR description-time, not this project's final global setting. Putting
+-- this block after all three includes() (as an earlier version of this file
+-- did) left the simplemath target -- defined inside thirdparty/xmake.lua --
+-- on the untouched default while example's own sources (compiled via
+-- feather_flags.apply() in on_config, which runs later and does see the
+-- override) picked up the new setting, producing an MTd/MDd LNK2038 within
+-- this SAME project's own build.
+--
+-- is_plat("windows") is checked FIRST, same as root xmake.lua, and
+-- static_cpp is deliberately excluded from its condition -- see that file's
+-- matching comment: static_cpp defaults to true on every non-macOS platform
+-- (it's the Linux static-libstdc++ switch, a different axis), so checking it
+-- ahead of is_plat("windows") silently wins MTd on Windows every time,
+-- making an `elseif is_plat("windows")` fallback dead code. Only
+-- "production" (shipping) should force Windows static here.
+--
+-- This is a SEPARATE xmake project from the engine's (the consumer's own
+-- xmake.lua includes() this file) that otherwise resolves its own default
+-- CRT linkage independently of the engine's. Confirmed in CI: without this
+-- block at all, feather.exe defaulted to /MTd (static) while a plugin built
+-- through this file defaulted to /MDd (dynamic) -- same mode, same
+-- toolchain, disagreeing defaults -- and the resulting CRT mismatch hung the
+-- plugin inside LoadLibrary on Windows with no diagnostic output at all.
+if is_plat("windows") then
+    if has_config("production") then
+        set_runtimes(is_mode("debug") and "MTd" or "MT")
+    else
+        set_runtimes(is_mode("debug") and "MDd" or "MD")
+    end
+elseif has_config("production") or has_config("static_cpp") then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
-elseif is_plat("windows") then
-    set_runtimes(is_mode("debug") and "MDd" or "MD")
 end
+
+includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
+includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
 -- feather_sdk_setup(target_name, opts)
 --

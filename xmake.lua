@@ -89,10 +89,27 @@ end
 -- Pinning both sides to the same explicit string (this file and
 -- FeatherSDK.lua's matching block) removes the ambiguity instead of hoping
 -- two independent xmake resolutions agree.
-if has_config("production") or has_config("static_cpp") then
+--
+-- is_plat("windows") is checked FIRST and static_cpp is deliberately left
+-- out of its condition: xmake/options.lua defaults static_cpp to true on
+-- every non-macOS platform (it means "static libstdc++ on Linux", a
+-- different axis than the MSVC CRT mode this block controls), so
+-- `has_config("static_cpp")` is true on Windows CI by default with nothing
+-- overriding it. An earlier version of this block checked
+-- `has_config("production") or has_config("static_cpp")` FIRST on every
+-- platform including Windows, which silently won that branch (MTd) before
+-- an `elseif is_plat("windows")` fallback could ever run -- confirmed in CI:
+-- feather.exe kept compiling -MTd throughout even after that fallback was
+-- added, because it was unreachable dead code. Only "production" (the
+-- shipping build) should force Windows static; static_cpp shouldn't.
+if is_plat("windows") then
+    if has_config("production") then
+        set_runtimes(is_mode("debug") and "MTd" or "MT")
+    else
+        set_runtimes(is_mode("debug") and "MDd" or "MD")
+    end
+elseif has_config("production") or has_config("static_cpp") then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
-elseif is_plat("windows") then
-    set_runtimes(is_mode("debug") and "MDd" or "MD")
 end
 
 -- ---- Third-party packages and local targets -----------------------------
