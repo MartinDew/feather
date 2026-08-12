@@ -87,7 +87,24 @@ int main(int argc, char* argv[]) {
 	// platform -- see framework/assert.h's comment for why fassert() itself
 	// goes to the (always-unbuffered) cerr instead, which this doesn't
 	// replace, only generalizes.
+	//
+	// _IOLBF is a no-op on Windows: the MSVC CRT does not implement true
+	// line buffering for non-console streams and silently treats _IOLBF the
+	// same as _IOFBF, so a file-redirected stdout (exactly CI's smoke-test
+	// setup) keeps batching writes into one large buffer regardless of this
+	// call. Confirmed directly in CI: a poll loop that streamed smoke.log's
+	// growth with real per-second timestamps showed zero new bytes for over
+	// four minutes, then the entire remaining backlog appearing in one shot
+	// at the exact instant the process was killed -- the CRT's buffer, not
+	// engine's actual runtime, was the bottleneck. _IONBF (fully unbuffered)
+	// is the only mode Windows actually honors per-write, so use that there;
+	// _IOLBF stays on POSIX platforms where it works as documented and is
+	// cheaper (flushes per line, not per write() call).
+#ifdef _WIN32
+	std::setvbuf(stdout, nullptr, _IONBF, 0);
+#else
 	std::setvbuf(stdout, nullptr, _IOLBF, BUFSIZ);
+#endif
 
 	feather::Main fmain(std::move(argc), std::move(argv));
 }
