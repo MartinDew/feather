@@ -73,9 +73,26 @@ if has_config("production") or has_config("use_lto") then
     set_policy("build.optimization.lto", true)
 end
 
--- ---- Static C++ runtime on MSVC (set_runtimes must be global) -----------
+-- ---- C++ runtime on MSVC (set_runtimes must be global) -------------------
+-- Static in shipping mode; dynamic otherwise (plugin-abi-rework plan,
+-- decision 7). The dynamic branch is not cosmetic: a project DLL is a
+-- SEPARATE xmake project (tools/SDK/FeatherSDK.lua, includes()'d into the
+-- consumer's own xmake.lua) that resolves its own default runtime
+-- independently of this one. Observed directly in CI: with neither branch
+-- forced, feather.exe defaulted to MTd (static) while feather-example-
+-- project's example.dll defaulted to MDd (dynamic) -- same mode, same
+-- --toolchain=clang-cl, different xmake invocations, different silent
+-- defaults. A /MT host loading a /MD plugin shares no CRT state (heap,
+-- iostream, locale) across the boundary, which is exactly why the plugin
+-- smoke test hung inside LoadLibrary on Windows with zero diagnostic
+-- output: not a build-order or symbol-visibility bug, a CRT mismatch.
+-- Pinning both sides to the same explicit string (this file and
+-- FeatherSDK.lua's matching block) removes the ambiguity instead of hoping
+-- two independent xmake resolutions agree.
 if has_config("production") or has_config("static_cpp") then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
+elseif is_plat("windows") then
+    set_runtimes(is_mode("debug") and "MDd" or "MD")
 end
 
 -- ---- Third-party packages and local targets -----------------------------

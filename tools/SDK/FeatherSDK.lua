@@ -38,6 +38,21 @@ includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
+-- Must match root xmake.lua's own set_runtimes() block exactly (same
+-- has_config() conditions, same MTd/MDd strings) -- this is a SEPARATE
+-- xmake project (the consumer's own xmake.lua includes() this file) that
+-- otherwise resolves its own default CRT linkage independently of the
+-- engine's. Confirmed in CI: without this, feather.exe defaulted to /MTd
+-- (static) while a plugin built through this file defaulted to /MDd
+-- (dynamic) -- same mode, same toolchain, disagreeing defaults -- and the
+-- resulting CRT mismatch hung the plugin inside LoadLibrary on Windows
+-- with no diagnostic output at all. See root xmake.lua's matching comment.
+if has_config("production") or has_config("static_cpp") then
+    set_runtimes(is_mode("debug") and "MTd" or "MT")
+elseif is_plat("windows") then
+    set_runtimes(is_mode("debug") and "MDd" or "MD")
+end
+
 -- feather_sdk_setup(target_name, opts)
 --
 -- opts (all optional):
