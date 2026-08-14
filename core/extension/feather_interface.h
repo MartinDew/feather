@@ -1,6 +1,6 @@
-/* FeatherEngine plugin ABI. Pure C, stdint.h/stddef.h only -- no engine
- * header may ever be included from here or from anything a plugin includes.
- * See docs/plugin_abi.md for the design rationale.
+/* FeatherEngine plugin ABI. Pure C, stdbool.h/stddef.h/stdint.h only -- no
+ * engine header may ever be included from here or from anything a plugin
+ * includes. See docs/plugin_abi.md for the design rationale.
  *
  * Engine functions are resolved BY NAME via FeatherGetProcAddress, not
  * through a struct of function pointers, so adding one never changes a
@@ -9,6 +9,7 @@
 #ifndef FEATHER_EXTENSION_INTERFACE_H
 #define FEATHER_EXTENSION_INTERFACE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -25,7 +26,7 @@ extern "C" {
 #define FEATHER_EXTENSION_EXPORT __attribute__((visibility("default")))
 #endif
 
-typedef uint8_t FeatherBool;
+typedef bool FeatherBool;
 
 /* Opaque; a plugin never dereferences these, only passes them back. */
 typedef void* FeatherObjectPtr;   /* feather::Reflected*        */
