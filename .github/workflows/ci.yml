@@ -52,15 +52,6 @@ jobs:
         uses: xmake-io/github-action-setup-xmake@v1
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
-      # Both runner images' preinstalled cmake are too old for the "vex"
-      # package's CMakeLists.txt (cmake_minimum_required 4.2.2). Put a
-      # current one first on PATH before any package install runs -- see
-      # thirdparty/packages/vex.lua's add_deps("cmake ~4.2.2") for why this
-      # can't just be a package-scoped xrepo dependency instead: xmake's
-      # find_tool("cmake") caches its result process-wide by tool name, so a
-      # package-scoped fix can still lose the race to a sibling CMake-based
-      # package (minizip, flecs_feather, sdl3_feather) that resolves the old
-      # system cmake first.
       - name: Setup cmake
         uses: lukka/get-cmake@latest
         with:
@@ -82,10 +73,6 @@ jobs:
           version: "20"
 
       # ── Linux system dependencies ─────────────────────────────────────────
-      # clang itself is no longer installed here: it was only ever needed by
-      # the reflection generator's old clang-AST backend (Linux compiles with
-      # GCC, selected via --toolchain=gcc below). llvm-20 further down is
-      # unrelated -- that one backs lld's gold-plugin LTO support, not codegen.
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
