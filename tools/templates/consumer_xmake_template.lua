@@ -40,12 +40,11 @@ local FEATHER_ROOT = resolve_feather_root()
 if FEATHER_ROOT then
     includes(path.join(FEATHER_ROOT, "tools", "SDK", "FeatherSDK.lua"))
 
-    -- This DLL must be built with the FeatherEngine checkout configured the
-    -- same way the engine binary it will load into was (EDITOR_BUILD is a
-    -- configure-time option now, xmake/options.lua's editor_build -- see
-    -- FeatherSDK.lua's feather_sdk_setup() comment). `name` sets the
-    -- generated register_<name>_types/_components entry point names,
-    -- defaulting to the dir's basename.
+    -- Must be built with the FeatherEngine checkout configured the same way
+    -- as the engine binary this DLL will load into (see FeatherSDK.lua's
+    -- feather_sdk_setup() comment). `name` sets the generated
+    -- register_<name>_types/_components entry point names, defaulting to
+    -- the dir's basename.
     feather_sdk_setup("<project_name>", { -- TODO: rename
         codegen_dirs = { {dir = "src", name = "<project_name>"} }, -- TODO: rename
     })

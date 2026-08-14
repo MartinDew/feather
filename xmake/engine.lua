@@ -1,12 +1,11 @@
 -- xmake/engine.lua: engine target declarations (the feather executable, its
--- core sources, codegen wiring, and modules). Split out of the root
+-- core sources, codegen wiring, and modules) -- kept out of the root
 -- xmake.lua so it can eventually be includes()'d cross-repo -- e.g. by a
 -- consumer building a fully static shipping executable (see
 -- tools/SDK/FeatherSDK.lua) -- without dragging in set_project()/set_version()/
--- etc, which only make sense once, at the true top level. This file, by
--- itself, is NOT yet sufficient for that (thirdparty packages and
--- feather_public_api must already be includes()'d by the caller, same as the
--- root xmake.lua does today) -- it only owns the target declarations.
+-- etc, which only make sense once, at the true top level. Thirdparty
+-- packages and feather_public_api still need to be includes()'d by the
+-- caller first; this file only owns the target declarations.
 --
 -- Rooted at os.scriptdir() rather than $(projectdir)/os.projectdir(), same
 -- reasoning as xmake/public_api.lua: those resolve to whichever project is
@@ -134,11 +133,8 @@ local function apply_compile_flags(target)
 end
 
 -- ---- Main executable ------------------------------------------------------
--- One binary (was feather.editor/feather.standalone): EDITOR_BUILD is now a
--- single configure-time option (xmake/options.lua's editor_build, applied via
--- feather_public_api -- see xmake/public_api.lua) instead of a full
--- build-variant split that doubled every module target and every plugin
--- build for what boils down to one macro. Flip it with
+-- EDITOR_BUILD comes from feather_public_api (xmake/public_api.lua), driven
+-- by xmake/options.lua's editor_build option. Flip it with
 -- `xmake f --editor_build=n && xmake build -r`.
 target("feather")
     set_kind("binary")

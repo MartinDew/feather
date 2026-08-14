@@ -35,9 +35,6 @@ rule_end()
 --
 -- Prerequisites: the feather target and feather_public_api must already be
 -- declared, and the caller should have checked has_config("enable_<name>").
--- EDITOR_BUILD does not need to be set here — it comes from feather_public_api
--- (add_deps below), which every module and the feather target itself already
--- depend on, so it can't drift between them.
 --
 -- opts:
 --   exe_packages         : packages added to the executable
