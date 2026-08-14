@@ -69,6 +69,13 @@ ClassDB::on_subclass_registered(std::string_view base_class_name,
 	return get()->_subclass_delegates[StaticString(base_class_name)].subscribe(callback);
 }
 
+void ClassDB::unregister_subclass_delegate(std::string_view base_class_name, Delegate<std::string_view>::id_t id) {
+	auto it = get()->_subclass_delegates.find(StaticString(base_class_name));
+	if (it != get()->_subclass_delegates.end()) {
+		it->second.remove(id);
+	}
+}
+
 void ClassDB::_fire_subclass_delegates(std::string_view class_name) {
 	ClassInfo* ci = _get_class_info_internal(class_name);
 	while (ci && ci->parent != ""_ss) {

@@ -36,6 +36,7 @@ public:
 	static Engine& get() { return *_instance; }
 
 	static bool is_editor();
+	static bool is_headless();
 
 	Window& get_main_window() { return _main_window; }
 

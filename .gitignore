@@ -33,3 +33,6 @@ build/
 ConanPresets.json
 CMakeUserPresets.json
 logs/
+
+# Python bytecode from tools/codegen (also runs from downstream project builds)
+__pycache__/

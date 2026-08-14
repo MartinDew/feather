@@ -1,6 +1,7 @@
 #include "world_sim.h"
 
 #include "engine.h"
+#include "world/ecs_feature.h"
 #include <world/components/scene.h>
 #include <world/register_core_features.h>
 #include <framework/static_string.hpp>
@@ -15,19 +16,34 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 	_world.set<Ecs::Rest>({});
 #endif
 
+	_subclass_delegate_id = ClassDB::on_subclass_registered(
+			EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
+				if (world_sim) {
+					ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
+				}
+			});
+}
+
+WorldSim::~WorldSim() {
+	ClassDB::unregister_subclass_delegate(EcsFeature::get_class_static(), _subclass_delegate_id);
+}
+
+void WorldSim::init() {
+	// Every reflected Component registers before any EcsFeature imports
 	register_core_components(_world);
+
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());
 	set_active_scene(scene);
 
-	auto children = ClassDB::get_children_names("EcsFeature");
+	// Picks up EcsFeature subclasses from core, from built-in modules, and --
+	// because this runs after index_project() -- from loaded project DLLs.
+	auto children = ClassDB::get_children_names(EcsFeature::get_class_static());
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);
 	}
 }
-
-WorldSim::~WorldSim() = default;
 
 void WorldSim::update(double delta) {
 	// Ecs::query<Transform, MeshInstance, MaterialInstance> q

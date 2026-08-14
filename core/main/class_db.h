@@ -24,8 +24,12 @@ class ClassDB {
 
 	ClassDB();
 
+public:
+	using subclass_delegate_t = Delegate<const std::string_view>;
+
+private:
 	std::map<StaticString, ClassInfo> _class_infos;
-	std::map<StaticString, Delegate<const std::string_view>> _subclass_delegates;
+	std::map<StaticString, subclass_delegate_t> _subclass_delegates;
 
 	ClassInfo* _current_info = nullptr;
 
@@ -139,6 +143,8 @@ public:
 	static Delegate<std::string_view>::id_t
 	on_subclass_registered(std::string_view base_class_name,
 						   const Delegate<std::string_view>::DelegateFuncType& callback);
+
+	static void unregister_subclass_delegate(std::string_view base_class_name, Delegate<std::string_view>::id_t id);
 
 	static std::vector<StaticString> get_children_names(std::string_view object_name, bool exclusive = false);
 

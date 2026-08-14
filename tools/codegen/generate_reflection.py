@@ -1263,12 +1263,29 @@ def _parse_extension_arg(raw: str) -> tuple:
     return (scope_path, ext_path)
 
 
+def _parse_module_path_arg(raw: str) -> tuple:
+    """--module-path DIR, or --module-path NAME=DIR to override the generated
+    name (defaults to the dir's basename, which is wrong for a generically
+    named dir like a project's src/). Returns (dir, name)."""
+    name, sep, dir_part = raw.partition("=")
+    if not sep:
+        mod_path = Path(raw).resolve()
+        return (mod_path, mod_path.name)
+    if not name or not dir_part:
+        print(f"[ERROR] --module-path expects 'DIR' or 'NAME=DIR', got: {raw!r}", file=sys.stderr)
+        sys.exit(1)
+    return (Path(dir_part).resolve(), name)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--core-path", type=Path, default=Path("./core"))
     ap.add_argument("--project-root", type=Path, default=Path("."))
     ap.add_argument("--module-path", action="append", default=[], dest="module_paths",
-                    help="additional (non-core) source dir to scan (repeatable)")
+                    help="'DIR' or 'NAME=DIR': additional (non-core) source dir to scan "
+                         "(repeatable). NAME overrides the generated register_<NAME>_types "
+                         "name, which otherwise comes from DIR's basename -- needed when the "
+                         "dir is generically named (a project's src/).")
     ap.add_argument("--skip-core", action="store_true",
                     help="don't scan --core-path; only process --module-path dirs. "
                          "For manually refreshing a single module's own generated "
@@ -1302,15 +1319,14 @@ def main():
             total_changed += process_source_dir(folder, sub, core_path, project_root, extra_extensions)
 
     for mp in args.module_paths:
-        mod_path = Path(mp).resolve()
+        mod_path, mod_name = _parse_module_path_arg(mp)
         if not mod_path.is_dir():
             print(f"[WARN] module path not found: {mod_path}", file=sys.stderr)
             continue
-        # Named after the directory itself (e.g. "vex_renderer"), producing
-        # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp} -- the
-        # module's own xmake.lua adds that cpp to its file list, same idea as
-        # GENERATED_SOURCE does for core's register_<sub>_types.gen.cpp.
-        total_changed += process_source_dir(mod_path, mod_path.name, mod_path, project_root, extra_extensions)
+        # Named after the directory itself by default, e.g.
+        # modules/vex_renderer/register_vex_renderer_types.gen.{h,cpp};
+        # NAME=DIR overrides that (see _parse_module_path_arg).
+        total_changed += process_source_dir(mod_path, mod_name, mod_path, project_root, extra_extensions)
 
     print(f"Done ({total_changed} file(s) updated).")
 

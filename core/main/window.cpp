@@ -32,6 +32,10 @@ constexpr Notification to_notification(const SDL_Event& event) {
 } //namespace
 
 Window::Window() : _internal_event(), _fullscreen_mode() {
+	if (Engine::is_headless()) {
+		SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+	}
+
 	if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
 		std::cerr << SDL_GetError() << std::endl;
 		assert(false);

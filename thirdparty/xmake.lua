@@ -9,6 +9,9 @@ if is_mode("debug") then
     add_requireconfs("*", {debug = true})
 end
 
+-- Local package (packages/flecs.lua): builds flecs with default rather than
+-- hidden symbol visibility, so -rdynamic can re-export ecs_* to project DLLs.
+-- Stock xrepo flecs hides those symbols and crashes project DLLs on startup.
 add_requires("flecs 4.1.5", {
     system = false,
     alias  = "flecs",

@@ -7,11 +7,25 @@
 #include <resources/resource_loader.h>
 
 #include <chrono>
+#include <csignal>
 
 #include <rendering/rendering_server.h>
 #include <resources/mesh.h>
 
 namespace feather {
+
+namespace {
+
+// Headless has no window which in turn can't deliver quit events.
+// this is the only exit condition. sig_atomic_t is the only type a signal
+// handler may portably touch.
+volatile std::sig_atomic_t quit_requested = 0;
+
+void _on_terminate_signal(int) {
+	quit_requested = 1;
+}
+
+} //namespace
 
 Engine* Engine::_instance = nullptr;
 
@@ -64,11 +78,9 @@ inline void _setup_demo_scene(WorldSim& _world_sim) {
 	w.entity("BoxChild").emplace<Transform>(t4).emplace<MeshInstance>(std::make_shared<BoxMesh>()).child_of(_);
 
 	_world_sim.create_entity(s, "Floor")
-			.emplace<Transform>(
-					Vector3 { 0, -2, 0 },
-					Quaternion::create_from_yaw_pitch_roll({ 0, 0, 0 }),
-					Vector3 { 200, 0.1f, 200 }
-			)
+			.emplace<Transform>(Vector3 { 0, -2, 0 },
+								Quaternion::create_from_yaw_pitch_roll({ 0, 0, 0 }),
+								Vector3 { 200, 0.1f, 200 })
 			.emplace<MeshInstance>(std::make_shared<BoxMesh>());
 
 	auto dir = Vector3 { -0.5f, -1.0f, -1.f };
@@ -105,14 +117,15 @@ bool Engine::run() {
 
 	bool keep_running = true;
 
-	// Debug stuff
+	// initialization
+	ResourceLoader::get()->index_project();
+
+#if BETA
 	if (LaunchSettings::get().dump_db.Get()) {
 		ClassDB::get()->print_db();
 		return true;
 	}
-
-	// initialization
-	ResourceLoader::get()->index_project();
+#endif
 
 	_world_sim.init();
 
@@ -122,9 +135,14 @@ bool Engine::run() {
 	}
 #endif
 
+	// Installed in every mode: Ctrl+C on a windowed session should also shut
+	// down through normal teardown, not just headless.
+	std::signal(SIGINT, &_on_terminate_signal);
+	std::signal(SIGTERM, &_on_terminate_signal);
+
 	// update
 	double accumulator = 0.0;
-	while (keep_running) {
+	while (keep_running && !quit_requested) {
 		keep_running = _main_window.update();
 
 		auto new_time = Clock::now();
@@ -146,6 +164,8 @@ bool Engine::run() {
 		_rendering_server.update(frame_time);
 	}
 
+	_rendering_server.stop();
+
 	return true;
 }
 
@@ -159,4 +179,18 @@ bool Engine::is_editor() {
 	else
 		return LaunchSettings::get().editor_mode.Get();
 }
+
+bool Engine::is_headless() {
+	static const bool headless = [] {
+		const std::string& mode = LaunchSettings::get().windowed.Get();
+		if (mode == "headless")
+			return true;
+
+		fassert(mode == "windowed", std::format("Unknown window mode '{}' (expected 'windowed' or 'headless')", mode));
+		return false;
+	}();
+
+	return headless;
+}
+
 } //namespace feather

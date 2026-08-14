@@ -20,6 +20,11 @@ bool SharedLibrary::load(const std::string& path) {
 	return _handle != nullptr;
 }
 
+std::string SharedLibrary::get_last_error() {
+	const char* err = SDL_GetError();
+	return err ? err : "";
+}
+
 void SharedLibrary::unload() {
 	if (!_handle) {
 		return;

@@ -1,4 +1,5 @@
 #include "rendering_server.h"
+#include "null_renderer.h"
 #include "renderer.h"
 #include <main/engine.h>
 #include <main/notification.h>
@@ -64,13 +65,21 @@ RenderingServer::~RenderingServer() {
 }
 
 void RenderingServer::init() {
-	_renderer = ClassDB::create_object<Renderer>(LaunchSettings::get().renderer.Get());
+	// Use a null renderer in headless mode, otherwise use the renderer specified in the launch settings.
+	// Eventually, it will be required to look into booting a renderer even if headless to support compute shaders among
+	// other things.
+	const std::string_view renderer_name = Engine::is_headless()
+			? std::string_view { NullRenderer::get_class_static() }
+			: std::string_view { LaunchSettings::get().renderer.Get() };
 
-	Engine::get().get_main_window().register_notification(Notification::WINDOW_RESIZED, [&flag = _needs_resize] {
-		flag.store(true, std::memory_order_relaxed);
-	});
+	_renderer = ClassDB::create_object<Renderer>(renderer_name);
+	fassert(_renderer.get(), std::format("Failed to create renderer of type {}", renderer_name));
 
-	if (!LaunchSettings::get().force_single_thread.Get())
+	Engine::get().get_main_window().register_notification(
+			Notification::WINDOW_RESIZED, [&flag = _needs_resize] { flag.store(true, std::memory_order_relaxed); });
+
+	// A render thread whose only job is to call a no-op isn't worth spawning.
+	if (!Engine::is_headless() && !LaunchSettings::get().force_single_thread.Get())
 		_run();
 }
 

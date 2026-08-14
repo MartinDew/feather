@@ -51,6 +51,13 @@ jobs:
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
 
+      # ── CMake/Ninja ───────────────────────────────────────────────────────
+      - name: Setup cmake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: latest
+          ninjaVersion: latest
+
       # ── Vulkan SDK ────────────────────────────────────────────────────────
       - name: Setup Vulkan SDK
         uses: humbletim/setup-vulkan-sdk@v1.2.1
@@ -66,10 +73,6 @@ jobs:
           version: "20"
 
       # ── Linux system dependencies ─────────────────────────────────────────
-      # clang itself is no longer installed here: it was only ever needed by
-      # the reflection generator's old clang-AST backend (Linux compiles with
-      # GCC, selected via --toolchain=gcc below). llvm-20 further down is
-      # unrelated -- that one backs lld's gold-plugin LTO support, not codegen.
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
