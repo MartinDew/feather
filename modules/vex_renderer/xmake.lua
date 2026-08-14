@@ -76,13 +76,13 @@ if has_config("enable_vex_renderer") then
         "register_module.cpp",
         "vex_renderer.cpp",
     }, {
-        -- Pull vex onto the executables so target:pkg("vex") resolves in
+        -- Pull vex onto the executable so target:pkg("vex") resolves in
         -- vex_renderer.deploy_runtime's hooks (xmake dedupes the link).
         exe_packages = {"vex"},
         exe_packages_windows = {"directx12-agility"},
         exe_rules = {"vex_renderer.deploy_runtime"},
         -- Produced by generate_reflection.py --module-path (see run_codegen in
-        -- the top-level xmake.lua): the module's _bind_members() definitions,
+        -- xmake/engine.lua): the module's _bind_members() definitions,
         -- generated the same way core/*/register_<sub>_types.gen.cpp are.
         generated_files = {"register_vex_renderer_types.gen.cpp"},
     })

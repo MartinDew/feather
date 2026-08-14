@@ -13,15 +13,10 @@ includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
--- There is a single feather binary now (EDITOR_BUILD is a configure-time
--- option, xmake/options.lua's editor_build, not a build-variant choice), so
--- this DLL must be built in the SAME xmake configure as the engine binary
--- it's loading into: add_deps("feather_public_api") below picks up
--- EDITOR_BUILD from whatever editor_build was set to at `xmake f` time,
--- and that has to match the already-built feather binary's own value or
--- launch_settings.h's #ifdef EDITOR_BUILD-gated layout disagrees between
--- the two (see xmake/public_api.lua's comment on why this is one shared
--- define, not a per-target choice).
+-- This DLL must be built in the same xmake configure as the engine binary
+-- it's loading into, so EDITOR_BUILD (from feather_public_api via add_deps
+-- below) matches the already-built feather binary's value -- see
+-- xmake/public_api.lua's comment on why that has to be one shared define.
 --
 -- opts.codegen_dirs: dirs to run reflection codegen over (default {"src"}); pass {} to opt out.
 -- opts.codegen_extensions: project modifier extensions, scoped to codegen_dirs.
