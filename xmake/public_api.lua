@@ -9,6 +9,14 @@ local FEATHER_ROOT = path.directory(os.scriptdir())
 
 target("feather_public_api")
     set_kind("headeronly")
+    -- Single source of truth for EDITOR_BUILD: propagates {public = true} to
+    -- every target that add_deps("feather_public_api") -- the engine target,
+    -- every module target, and any downstream plugin DLL via FeatherSDK.lua's
+    -- feather_sdk_setup() -- so it can never drift between them. This matters
+    -- because launch_settings.h (#ifdef EDITOR_BUILD-gated) is transitively
+    -- included by rendering_server.h, a public core header: a mismatch here
+    -- would be an ODR/layout bug, not just a missing feature.
+    add_defines("EDITOR_BUILD=" .. (has_config("editor_build") and "1" or "0"), {public = true})
     add_includedirs(FEATHER_ROOT, {public = true})
     add_includedirs(path.join(FEATHER_ROOT, "core"), {public = true})
     -- Added directly: xmake doesn't reliably propagate public include dirs

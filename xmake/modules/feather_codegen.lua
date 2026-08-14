@@ -69,7 +69,7 @@ local function common_argv(extra, feather_root, project_root)
 end
 
 -- Runs generate_reflection.py for core/ plus any module dirs -- the "refresh
--- everything" entry point, attached to feather.editor/standalone's before_build.
+-- everything" entry point, attached to the feather target's before_build.
 function run_core_codegen(module_dirs, opts)
     opts = opts or {}
     module_dirs = module_dirs or {}
@@ -87,7 +87,12 @@ function run_core_codegen(module_dirs, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py")
-    os.vrunv("python3", argv, {curdir = os.projectdir()})
+    -- opts.feather_root (not a bare os.projectdir()) when given: this function
+    -- may run from a before_build includes()'d cross-repo, where
+    -- os.projectdir() resolves to the CONSUMER, not the engine. Falls back to
+    -- os.projectdir() for a caller that hasn't passed one -- same default
+    -- common_argv uses.
+    os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
 -- Runs generate_reflection.py for core/ AND a single module dir -- for a
@@ -105,7 +110,8 @@ function run_module_codegen(module_dir, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
-    os.vrunv("python3", argv, {curdir = os.projectdir()})
+    -- See the matching comment in run_core_codegen above.
+    os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
 -- Runs generate_reflection.py for a downstream "project DLL" repo: only its
