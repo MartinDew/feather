@@ -151,3 +151,24 @@ function run_project_codegen(feather_root, project_root, dirs, opts)
     cprint("${cyan}[codegen]${reset} generate_reflection.py --skip-core (project: %s)", project_root)
     os.vrunv("python3", argv, {curdir = project_root})
 end
+
+-- Runs the engine's --dump-api then generate_bindings.py (see
+-- docs/plugin_abi.md), producing <out_dir>/feather_bindings.gen.h for a
+-- plugin project. Both steps are mtime-guarded against the engine binary,
+-- so a no-change build costs one process spawn plus a cheap write_if_changed.
+function run_binding_codegen(feather_root, engine_bin, out_dir)
+    os.mkdir(out_dir)
+    local api_json = path.join(out_dir, "api.json")
+
+    if not os.isfile(api_json) or os.mtime(engine_bin) > os.mtime(api_json) then
+        cprint("${cyan}[codegen]${reset} %s --dump-api", engine_bin)
+        os.vrunv(engine_bin, { "--dump-api", api_json }, { curdir = feather_root })
+    end
+
+    cprint("${cyan}[codegen]${reset} generate_bindings.py")
+    os.vrunv("python3", {
+        path.join(feather_root, "tools", "codegen", "generate_bindings.py"),
+        "--api", api_json,
+        "--out", out_dir,
+    }, { curdir = feather_root })
+end
