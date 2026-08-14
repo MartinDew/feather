@@ -1,6 +1,6 @@
-/* Hand-written C test plugin for the ECS surface (Stage 6): declares a
- * component, creates an entity with it, registers a system that mutates it
- * every tick, and logs once when the mutation is first observed. */
+/* Hand-written C test plugin for the ECS surface: declares a component,
+ * creates an entity with it, registers a system that mutates it every tick,
+ * and logs once when the mutation is first observed. */
 #include <extension/feather_interface.h>
 #include <stdio.h>
 

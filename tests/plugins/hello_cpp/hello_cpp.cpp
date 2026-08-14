@@ -1,7 +1,6 @@
-// C++ test plugin exercising the generated bindings (Stage 5) rather than the
-// raw C ABI directly -- see tests/plugins/hello for the hand-written C
-// version this is meant to behave identically to. Calls a real bound engine
-// method (ResourceFormatLoader::recognize_extension) on a real engine object
+// C++ test plugin exercising the generated bindings in feather_bindings.gen.h
+// rather than the raw C ABI directly. Calls a real bound engine method
+// (ResourceFormatLoader::recognize_extension) on a real engine object
 // (MaterialFormatLoader) through generated code, going through the
 // method_variant_call fallback since STRING has no fixed C layout.
 #include <feather_bindings.gen.h>

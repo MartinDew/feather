@@ -1,9 +1,9 @@
 -- feather_public_api: single source of truth for the engine's own public API
 -- surface (public include dirs + PUBLIC thirdparty packages), consumed one
 -- hop away via add_deps("feather_public_api") by the engine executable and
--- in-engine modules (e.g. modules/vex_renderer). A plugin is no longer a
--- consumer of this at all -- it only ever sees core/extension/feather_interface.h,
--- a pure C header with no engine dependency behind it (docs/plugin_abi.md).
+-- in-engine modules (e.g. modules/vex_renderer). Purely engine-internal: a
+-- plugin only ever sees core/extension/feather_interface.h, a pure C header
+-- with no engine dependency behind it (docs/plugin_abi.md).
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 target("feather_public_api")

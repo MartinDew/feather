@@ -43,9 +43,8 @@ includes("thirdparty/xmake.lua")
 
 -- ---- feather_public_api -------------------------------------------------
 -- Headeronly umbrella target giving modules engine include dirs and PUBLIC
--- thirdparty headers without a module -> executable circular dep. Also the
--- single source of truth for downstream "project DLL" consumers, via
--- tools/SDK/FeatherSDK.lua -- see xmake/public_api.lua.
+-- thirdparty headers without a module -> executable circular dep. Engine-
+-- internal only -- see xmake/public_api.lua.
 includes("xmake/public_api.lua")
 
 -- ---- Engine targets -------------------------------------------------------

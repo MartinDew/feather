@@ -1,7 +1,7 @@
-/* Hand-written C test plugin for the feather_extension_init handshake --
- * intentionally has no build system of its own (see the compile line in
- * docs/plugin_abi.md's Stage 3 verification) to prove the ABI needs neither
- * C++ nor a matching compiler/stdlib on the plugin side. */
+/* Hand-written C test plugin for the feather_extension_init handshake and
+ * classdb_register_extension_class. Intentionally has no build system of its
+ * own -- compiled directly with `cc -shared -fPIC` -- to prove the ABI needs
+ * neither C++ nor a matching compiler/stdlib on the plugin side. */
 #include <extension/feather_interface.h>
 #include <stdio.h>
 #include <string.h>
