@@ -46,7 +46,17 @@ virtuals to plugin function pointers resolved once at registration. Adding a new
 is a deliberate, bounded act — an allowlist of bridges — not another header to annotate.
 
 Every engine class is otherwise reached through **generated** bindings built from a machine
--readable API dump (`--dump-api`), so growing the surface costs no hand-written ABI code.
+-readable API dump (`--dump-api`), so growing the surface costs no hand-written ABI code. A
+method whose signature can't be marshaled through a fixed C layout (`STRING`/`PATH`) falls back
+to `method_variant_call`, going through the same opaque `Variant` pointer as above; the generator
+picks the path automatically per method, so a plugin author never sees the distinction.
+
+The ECS surface (`ecs_register_component`, `ecs_register_system`, entity create/set/get) is
+deliberately not a flecs mirror — six functions covering exactly what a plugin needs to declare
+components and run systems, using a per-table `FeatherTableIter` (one callback per matched
+table, not per entity) so a system's inner loop makes zero engine calls. Engine code keeps using
+flecs directly; there is one ECS dialect per side of the boundary, not two permanently-diverging
+ones — a lesson taken directly from the abandoned branch's hand-written flecs wrapper.
 
 ## What this removes
 
