@@ -17,12 +17,6 @@ includes("xmake/helper.lua")
 -- release    -> CMake Release     (-O3, NDEBUG)
 add_rules("mode.debug", "mode.releasedbg", "mode.release")
 
--- mode.release hides symbols by default, which defeats -rdynamic and breaks
--- dlopen'd project DLLs. Set globally so linked-in static libs match too.
-if is_mode("release") then
-    set_symbols("none")
-end
-
 -- Keep compile_commands.json up to date for clangd / clang-tidy
 add_rules("plugin.compile_commands.autoupdate", {outputdir = "$(builddir)"})
 

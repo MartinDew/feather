@@ -1,5 +1,4 @@
 #include "shared_library.h"
-#include "callable.h"
 
 #include <SDL3/SDL_loadso.h>
 
@@ -32,20 +31,6 @@ void SharedLibrary::unload() {
 
 	SDL_UnloadObject(_handle);
 	_handle = nullptr;
-}
-
-Callable SharedLibrary::get_symbol(const std::string& name) const {
-	if (!_handle) {
-		return {};
-	}
-
-	auto sym = SDL_LoadFunction(_handle, name.c_str());
-	if (!sym) {
-		return {};
-	}
-
-	void (*sym_cpp)() = reinterpret_cast<void (*)()>(sym);
-	return Callable(sym_cpp);
 }
 
 bool SharedLibrary::is_loaded() const {

@@ -1,7 +1,7 @@
--- Template xmake.lua for a downstream "project DLL" repo (a shared library
--- loaded at runtime via _load_extension()). Copy to your project root, fill
--- in the two <project_name> placeholders and your own add_files() list.
--- Requires the FeatherEngine checkout to already be built.
+-- Template xmake.lua for a downstream plugin repo, loaded at runtime through
+-- the C ABI (docs/plugin_abi.md). Copy to your project root, fill in the two
+-- <project_name> placeholders and your own add_files() list. Requires the
+-- FeatherEngine checkout to already be built.
 set_xmakever("2.9.0")
 set_project("<project_name>") -- TODO: rename
 set_languages("cxx23")
@@ -40,23 +40,13 @@ local FEATHER_ROOT = resolve_feather_root()
 if FEATHER_ROOT then
     includes(path.join(FEATHER_ROOT, "tools", "SDK", "FeatherSDK.lua"))
 
-    -- Must be built with the FeatherEngine checkout configured the same way
-    -- as the engine binary this DLL will load into (see FeatherSDK.lua's
-    -- feather_sdk_setup() comment). `name` sets the generated
-    -- register_<name>_types/_components entry point names, defaulting to
-    -- the dir's basename.
-    feather_sdk_setup("<project_name>", { -- TODO: rename
-        codegen_dirs = { {dir = "src", name = "<project_name>"} }, -- TODO: rename
-    })
+    -- Sets target kind/targetdir and wires codegen (--dump-api then
+    -- generate_bindings.py -> .gen/feather_bindings.gen.h); see FeatherSDK.lua.
+    feather_sdk_setup("<project_name>") -- TODO: rename
 
     -- Reopened block: feather_sdk_setup() opens/closes its own target scope,
     -- so this must come after it, not nested inside it.
     target("<project_name>") -- TODO: same name as above
-        set_kind("shared")
-        -- Flat, not bin/$(mode): the engine finds this DLL by recursively
-        -- scanning the project dir (ResourceLoader::index_project), so a
-        -- per-mode subdir would leave stale copies for it to load a second time.
-        set_targetdir(path.join(os.projectdir(), "bin"))
         add_files("src/*.cpp")
     target_end()
 else

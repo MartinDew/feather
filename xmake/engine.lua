@@ -56,7 +56,6 @@ for _, p in ipairs({
     "core/resources/shader.cpp",
     "core/resources/texture.cpp",
     "core/resources/texture_format_loader.cpp",
-    "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
     "core/extension/feather_interface.cpp",
     "core/extension/extension_registry.cpp",
@@ -163,17 +162,6 @@ target("feather")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
-        -- Lets a dlopen'd project DLL resolve engine symbols at runtime.
-        add_ldflags("-rdynamic", {force = true})
-    end
-
-    -- Windows analog: needs a .def file (dumpbin /EXPORTS) to get a companion
-    -- import .lib. Not yet committed -- no-op until it exists.
-    if is_plat("windows") then
-        local def_file = path.join(FEATHER_ROOT, "tools", "feather.def")
-        if os.isfile(def_file) then
-            add_ldflags("/DEF:" .. def_file, {force = true})
-        end
     end
 
     before_build(run_codegen)

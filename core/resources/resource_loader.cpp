@@ -114,7 +114,7 @@ void ResourceLoader::index_project() {
 
 			auto res = loader->instantiate(path);
 			if (!res)
-				break; // loader explicitly declined (e.g. DLL without _load_extension)
+				break; // loader explicitly declined (e.g. DLL without feather_extension_init)
 
 			res->_rid = generate_rid();
 			self._cache[res->_rid] = res;

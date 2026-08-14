@@ -1,7 +1,5 @@
 #pragma once
 
-#include "callable.h"
-
 #include <SDL3/SDL_loadso.h>
 #include <memory>
 #include <string>
@@ -20,7 +18,6 @@ public:
 
 	[[nodiscard]] static std::string get_last_error();
 
-	[[nodiscard]] Callable get_symbol(const std::string& name) const;
 	[[nodiscard]] bool is_loaded() const;
 
 	template <typename Fn>
