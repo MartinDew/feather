@@ -1,5 +1,6 @@
 #include "feather_interface.h"
 
+#include "bridges/resource_format_loader_bridge.h"
 #include "extension_interface.h"
 #include <framework/reflected.h>
 #include <main/class_db.h>
@@ -8,6 +9,7 @@
 
 #include <array>
 #include <cstring>
+#include <deque>
 #include <iostream>
 #include <string_view>
 
@@ -149,6 +151,17 @@ Variant invoke_callable(ClassInfo::Method* method, FeatherObjectPtr obj, ArgAt&&
 	return method->callable.call(std::span<Variant>(stack_args.data(), idx));
 }
 
+// A registered class's name/parent become StaticString map keys (non-owning
+// views), but a plugin's const char* is only guaranteed to live as long as
+// the plugin is loaded. Interning here is a process-lifetime arena, not a
+// per-plugin one -- fine as long as nothing unregisters/unloads yet; revisit
+// once plugin unload is wired up.
+std::string_view intern(std::string_view s) {
+	static std::deque<std::string> arena;
+	arena.emplace_back(s);
+	return arena.back();
+}
+
 // ---- extern "C" interface functions, resolved by name via get_proc_address ----
 
 extern "C" {
@@ -232,6 +245,30 @@ FeatherBool object_set_property(FeatherObjectPtr obj, FeatherClassPtr cls, const
 	return 0;
 }
 
+FeatherBool classdb_register_extension_class(FeatherLibraryPtr library, const char* class_name,
+		const char* parent_class_name, const FeatherExtensionClassInfo* info) {
+	(void)library;
+	if (!info || !class_name || !parent_class_name)
+		return 0;
+
+	// Only bridge that exists so far -- see feather_interface.h's comment on
+	// FeatherExtensionClassInfo. Adding another parent means adding another
+	// bridge type here, not widening this function.
+	if (std::string_view(parent_class_name) != "ResourceFormatLoader") {
+		std::cerr << "classdb_register_extension_class: unsupported parent class '" << parent_class_name
+				  << "' (only ResourceFormatLoader is bridged so far)" << std::endl;
+		return 0;
+	}
+
+	std::string_view name = intern(class_name);
+	std::string_view parent = intern(parent_class_name);
+	FeatherExtensionClassInfo info_copy = *info;
+
+	ClassDB::register_extension_class(
+			name, parent, [info_copy]() -> Variant { return new ExtensionResourceFormatLoader(info_copy); });
+	return 1;
+}
+
 FeatherVariantPtr variant_new() {
 	return new Variant();
 }
@@ -280,10 +317,11 @@ struct ProcEntry {
 };
 
 // clang-format off
-const std::array<ProcEntry, 16> PROC_TABLE {{
+const std::array<ProcEntry, 17> PROC_TABLE {{
 	{ "feather_log",              reinterpret_cast<FeatherProc>(&feather_log) },
 	{ "classdb_get_class",        reinterpret_cast<FeatherProc>(&classdb_get_class) },
 	{ "classdb_class_get_method", reinterpret_cast<FeatherProc>(&classdb_class_get_method) },
+	{ "classdb_register_extension_class", reinterpret_cast<FeatherProc>(&classdb_register_extension_class) },
 	{ "object_create",            reinterpret_cast<FeatherProc>(&object_create) },
 	{ "object_destroy",           reinterpret_cast<FeatherProc>(&object_destroy) },
 	{ "method_ptrcall",           reinterpret_cast<FeatherProc>(&method_ptrcall) },

@@ -63,6 +63,13 @@ public:
 	template <is_reflected_class_type T>
 	static void register_singleton_class();
 
+	// Non-template registration for a runtime-named class (the plugin ABI's
+	// classdb_register_extension_class) -- there's no C++ type to bind members
+	// through, so the caller supplies the finished factory directly. `name`
+	// and `parent` must already be stable storage (e.g. interned): ClassInfo
+	// keys on StaticString, a non-owning view.
+	static void register_extension_class(std::string_view name, std::string_view parent, std::function<Variant()> factory);
+
 	// Value type (FSTRUCT / FCLASS(novtable)): properties/static methods only,
 	// no Reflected base or object_create_func -- no vtable to factory through.
 	template <is_reflected_value_type T>

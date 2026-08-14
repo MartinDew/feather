@@ -143,6 +143,54 @@ typedef FeatherBool (*FeatherInterfaceObjectGetProperty)(
 typedef FeatherBool (*FeatherInterfaceObjectSetProperty)(
 		FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value);
 
+/* ---- Plugin-registered classes ----
+ *
+ * A plugin registers a new ClassDB entry under an existing extensible base;
+ * the engine builds an internal C++ shim deriving from that base and
+ * forwards its virtuals to the plugin through get_virtual_func, resolved
+ * once at registration and cached. The plugin never allocates the shim --
+ * create_instance returns the plugin's OWN opaque per-instance data (often
+ * just class_userdata itself, or NULL for a stateless class); the engine
+ * owns the shim's lifetime and passes that same pointer back into every
+ * virtual call and into free_instance at teardown.
+ *
+ * Today the only extensible base is "ResourceFormatLoader" -- adding
+ * another means adding another bridge (core/extension/bridges/), not
+ * widening this struct. */
+
+typedef void* (*FeatherClassCreateInstanceFn)(void* class_userdata, FeatherObjectPtr owner);
+typedef void (*FeatherClassFreeInstanceFn)(void* class_userdata, void* instance);
+/* Returns NULL for a virtual the plugin doesn't implement; the bridge then
+ * falls back to the base class's default behavior where one exists (e.g.
+ * ResourceFormatLoader::requires_immediate_load), or is a no-op/false. */
+typedef FeatherProc (*FeatherClassGetVirtualFn)(void* class_userdata, const char* virtual_name);
+
+typedef struct {
+	uint32_t struct_size;
+	void* class_userdata;
+	FeatherClassCreateInstanceFn create_instance;
+	FeatherClassFreeInstanceFn free_instance;
+	FeatherClassGetVirtualFn get_virtual;
+} FeatherExtensionClassInfo;
+
+/* "classdb_register_extension_class" */
+typedef FeatherBool (*FeatherInterfaceClassdbRegisterExtensionClass)(
+		FeatherLibraryPtr library, const char* class_name, const char* parent_class_name,
+		const FeatherExtensionClassInfo* info);
+
+/* ---- ResourceFormatLoader virtuals, resolved via get_virtual by these names ---- */
+
+/* "recognize_extension" */
+typedef FeatherBool (*FeatherVirtualResourceFormatLoaderRecognizeExtension)(void* instance, const char* extension);
+/* "instantiate" -- must return an already engine-allocated Resource (e.g.
+ * via object_create); the engine always owns Resource lifetime, a plugin
+ * never hands it a pointer it allocated itself. NULL means "decline". */
+typedef FeatherObjectPtr (*FeatherVirtualResourceFormatLoaderInstantiate)(void* instance, const char* path_utf8);
+/* "load" */
+typedef void (*FeatherVirtualResourceFormatLoaderLoad)(void* instance, FeatherObjectPtr resource, const char* path_utf8);
+/* "requires_immediate_load" -- optional; unimplemented means false. */
+typedef FeatherBool (*FeatherVirtualResourceFormatLoaderRequiresImmediateLoad)(void* instance);
+
 /* "variant_new" / "variant_destroy" -- every FeatherVariantPtr the plugin
  * holds must come from variant_new() and be freed with variant_destroy(). */
 typedef FeatherVariantPtr (*FeatherInterfaceVariantNew)(void);

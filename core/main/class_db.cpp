@@ -85,6 +85,22 @@ ClassDB::ClassDB() {
 	_class_infos.insert(std::make_pair("Reflected", ClassInfo { .name = "Reflected"_ss, .parent = ""_ss }));
 }
 
+void ClassDB::register_extension_class(std::string_view name, std::string_view parent, std::function<Variant()> factory) {
+	ClassInfo& info = get()->_class_infos[StaticString(name)];
+	info.name = StaticString(name);
+	info.parent = StaticString(parent);
+	info.is_abstract = false;
+	info.is_singleton = false;
+	info.is_value_type = false;
+	info.object_create_func = std::move(factory);
+
+	if (!parent.empty()) {
+		get()->_class_infos[StaticString(parent)].children.emplace_back(&info);
+	}
+
+	_fire_subclass_delegates(name);
+}
+
 ClassInfo* ClassDB::get_class_info(std::string_view name) {
 	return _get_class_info_internal(name);
 }
