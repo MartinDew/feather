@@ -12,7 +12,7 @@ end
 -- Local package (packages/flecs.lua): builds flecs with default rather than
 -- hidden symbol visibility, so -rdynamic can re-export ecs_* to project DLLs.
 -- Stock xrepo flecs hides those symbols and crashes project DLLs on startup.
-add_requires("flecs_feather 4.1.5", {
+add_requires("flecs 4.1.5", {
     system = false,
     alias  = "flecs",
     configs = {shared = not has_config("static_deps")},

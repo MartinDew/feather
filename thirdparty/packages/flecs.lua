@@ -4,7 +4,7 @@
 -- C_VISIBILITY_PRESET hidden at the target level, which no -D override can
 -- beat. This package patches that cmake file. Otherwise a copy of
 -- xmake-repo's packages/f/flecs/xmake.lua; keep in sync when bumping.
-package("flecs_feather")
+package("flecs")
     set_homepage("https://github.com/SanderMertens/flecs")
     set_description("A fast entity component system (ECS) for C & C++, built with default symbol visibility")
     set_license("MIT")
