@@ -20,6 +20,7 @@ namespace {
 struct SystemContext {
 	FeatherSystemFn callback;
 	int32_t term_count;
+	void* user_data;
 };
 
 void system_trampoline(ecs_iter_t* it) {
@@ -39,6 +40,7 @@ void system_trampoline(ecs_iter_t* it) {
 	titer.count = it->count;
 	titer.term_count = ctx->term_count;
 	titer.delta_time = static_cast<float>(it->delta_time);
+	titer.user_data = ctx->user_data;
 	ctx->callback(&titer);
 }
 
@@ -61,12 +63,12 @@ FeatherComponentId feather_ecs_register_component(FeatherWorldPtr world, const c
 }
 
 void feather_ecs_register_system(FeatherWorldPtr world, const char* name, FeatherSystemPhase phase,
-		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback) {
+		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback, void* user_data) {
 	auto* w = static_cast<ecs_world_t*>(world);
 
 	// Leaked deliberately -- there's no system unregistration path yet, same
 	// as ClassDB extension classes (see feather_interface.cpp's `intern`).
-	auto* ctx = new SystemContext { callback, term_count };
+	auto* ctx = new SystemContext { callback, term_count, user_data };
 
 	ecs_entity_desc_t entity_desc {};
 	entity_desc.name = name;

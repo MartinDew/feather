@@ -196,8 +196,10 @@ namespace feather::ext {
 // generated class method is called.
 namespace _bindings {
 
+inline FeatherInterfaceLog log_fn = nullptr;
 inline FeatherInterfaceClassdbGetClass classdb_get_class = nullptr;
 inline FeatherInterfaceClassdbClassGetMethod classdb_class_get_method = nullptr;
+inline FeatherInterfaceClassdbRegisterExtensionClass classdb_register_extension_class_fn = nullptr;
 inline FeatherInterfaceObjectCreate object_create_fn = nullptr;
 inline FeatherInterfaceObjectDestroy object_destroy_fn = nullptr;
 inline FeatherInterfaceMethodPtrcall method_ptrcall_fn = nullptr;
@@ -208,10 +210,23 @@ inline FeatherInterfaceVariantFromPtr variant_from_ptr_fn = nullptr;
 inline FeatherInterfaceVariantToPtr variant_to_ptr_fn = nullptr;
 inline FeatherInterfaceVariantGetStringUtf8 variant_get_string_utf8_fn = nullptr;
 inline FeatherInterfaceVariantSetStringUtf8 variant_set_string_utf8_fn = nullptr;
+inline FeatherInterfaceEcsGetWorld ecs_get_world_fn = nullptr;
+inline FeatherInterfaceEcsRegisterComponent ecs_register_component_fn = nullptr;
+inline FeatherInterfaceEcsRegisterSystem ecs_register_system_fn = nullptr;
+inline FeatherInterfaceEcsEntityCreate ecs_entity_create_fn = nullptr;
+inline FeatherInterfaceEcsEntitySet ecs_entity_set_fn = nullptr;
+inline FeatherInterfaceEcsEntityGetMut ecs_entity_get_mut_fn = nullptr;
 
+// The only function a plugin ever has to resolve by hand: every generated
+// binding and every feather::ext::ecs helper goes through the cached
+// pointers above from here on, so this runs once, in feather_extension_init,
+// and nowhere else needs a FeatherGetProcAddress parameter.
 inline void init(FeatherGetProcAddress get_proc_address) {
+	log_fn = (FeatherInterfaceLog)get_proc_address("feather_log");
 	classdb_get_class = (FeatherInterfaceClassdbGetClass)get_proc_address("classdb_get_class");
 	classdb_class_get_method = (FeatherInterfaceClassdbClassGetMethod)get_proc_address("classdb_class_get_method");
+	classdb_register_extension_class_fn =
+			(FeatherInterfaceClassdbRegisterExtensionClass)get_proc_address("classdb_register_extension_class");
 	object_create_fn = (FeatherInterfaceObjectCreate)get_proc_address("object_create");
 	object_destroy_fn = (FeatherInterfaceObjectDestroy)get_proc_address("object_destroy");
 	method_ptrcall_fn = (FeatherInterfaceMethodPtrcall)get_proc_address("method_ptrcall");
@@ -222,6 +237,12 @@ inline void init(FeatherGetProcAddress get_proc_address) {
 	variant_to_ptr_fn = (FeatherInterfaceVariantToPtr)get_proc_address("variant_to_ptr");
 	variant_get_string_utf8_fn = (FeatherInterfaceVariantGetStringUtf8)get_proc_address("variant_get_string_utf8");
 	variant_set_string_utf8_fn = (FeatherInterfaceVariantSetStringUtf8)get_proc_address("variant_set_string_utf8");
+	ecs_get_world_fn = (FeatherInterfaceEcsGetWorld)get_proc_address("ecs_get_world");
+	ecs_register_component_fn = (FeatherInterfaceEcsRegisterComponent)get_proc_address("ecs_register_component");
+	ecs_register_system_fn = (FeatherInterfaceEcsRegisterSystem)get_proc_address("ecs_register_system");
+	ecs_entity_create_fn = (FeatherInterfaceEcsEntityCreate)get_proc_address("ecs_entity_create");
+	ecs_entity_set_fn = (FeatherInterfaceEcsEntitySet)get_proc_address("ecs_entity_set");
+	ecs_entity_get_mut_fn = (FeatherInterfaceEcsEntityGetMut)get_proc_address("ecs_entity_get_mut");
 }
 
 inline FeatherMethodPtr get_method(const char* cls_name, const char* method_name) {
@@ -230,6 +251,14 @@ inline FeatherMethodPtr get_method(const char* cls_name, const char* method_name
 }
 inline FeatherObjectPtr create(const char* cls_name) { return object_create_fn(cls_name); }
 inline void destroy(FeatherObjectPtr obj) { object_destroy_fn(obj); }
+inline bool register_extension_class(
+		const char* class_name, const char* parent_class_name, const FeatherExtensionClassInfo* info) {
+	return classdb_register_extension_class_fn(nullptr, class_name, parent_class_name, info);
+}
+inline void log(const char* message) {
+	if (log_fn)
+		log_fn(message);
+}
 inline void ptrcall(FeatherMethodPtr m, FeatherObjectPtr o, const void* const* a, void* r) { method_ptrcall_fn(m, o, a, r); }
 inline void variant_call(FeatherMethodPtr m, FeatherObjectPtr o, const FeatherVariantPtr* a, size_t n, FeatherVariantPtr r) {
 	method_variant_call_fn(m, o, a, n, r);
@@ -242,6 +271,72 @@ inline size_t variant_get_string_utf8(FeatherVariantPtr v, char* d, size_t cap) 
 inline void variant_set_string_utf8(FeatherVariantPtr v, const char* s, size_t len) { variant_set_string_utf8_fn(v, s, len); }
 
 } // namespace _bindings
+
+// Typed sugar over the six raw ecs_* functions -- registers/creates/iterates
+// by C++ type instead of by hand-built FeatherTableIter/column-index code.
+// Still just those six functions underneath: no new ABI surface, and engine
+// code never sees this layer (it's generated into the plugin only).
+namespace ecs {
+
+namespace detail {
+
+template <class T>
+inline FeatherComponentId g_component_id = 0;
+
+template <class T>
+struct EachContext {
+	void (*callback)(T&, float delta_time);
+};
+
+template <class T>
+void each_trampoline(FeatherTableIter* it) {
+	auto* ctx = static_cast<EachContext<T>*>(it->user_data);
+	auto* items = static_cast<T*>(it->columns[0]);
+	for (int32_t i = 0; i < it->count; ++i) {
+		ctx->callback(items[i], it->delta_time);
+	}
+}
+
+} // namespace detail
+
+// Must be called once per component type, before spawn<T>/get_mut<T>/each<T>.
+template <class T>
+void register_component(const char* name) {
+	detail::g_component_id<T> = _bindings::ecs_register_component_fn(
+			_bindings::ecs_get_world_fn(), name, static_cast<uint32_t>(sizeof(T)), static_cast<uint32_t>(alignof(T)));
+}
+
+template <class T>
+FeatherComponentId component_id() {
+	return detail::g_component_id<T>;
+}
+
+// Registers a system running `callback` once per entity carrying T, every
+// tick. Each call gets its own context (via FeatherTableIter::user_data), so
+// multiple systems over the same T don't collide.
+template <class T>
+void each(const char* system_name, FeatherSystemPhase phase, void (*callback)(T&, float delta_time)) {
+	// Leaked deliberately, matching the rest of the ABI's no-unregister story.
+	auto* ctx = new detail::EachContext<T> { callback };
+	FeatherComponentId terms[] = { component_id<T>() };
+	_bindings::ecs_register_system_fn(
+			_bindings::ecs_get_world_fn(), system_name, phase, terms, 1, &detail::each_trampoline<T>, ctx);
+}
+
+template <class T>
+FeatherEntityId spawn(const char* entity_name, const T& initial) {
+	FeatherWorldPtr world = _bindings::ecs_get_world_fn();
+	FeatherEntityId entity = _bindings::ecs_entity_create_fn(world, entity_name);
+	_bindings::ecs_entity_set_fn(world, entity, component_id<T>(), &initial, sizeof(T));
+	return entity;
+}
+
+template <class T>
+T* get_mut(FeatherEntityId entity) {
+	return static_cast<T*>(_bindings::ecs_entity_get_mut_fn(_bindings::ecs_get_world_fn(), entity, component_id<T>()));
+}
+
+} // namespace ecs
 
 """
 

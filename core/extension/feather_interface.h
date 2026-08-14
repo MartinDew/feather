@@ -226,13 +226,18 @@ typedef enum {
 /* One call per matched TABLE, not per entity -- `columns[i]` is the base
  * pointer for term i's component array across all `count` entities in this
  * table, matching what flecs's own each()/iter() compile down to. Zero
- * engine calls needed in a system's inner loop. */
+ * engine calls needed in a system's inner loop. `user_data` is whatever was
+ * passed to ecs_register_system for THIS system -- lets one FeatherSystemFn
+ * be shared by multiple registrations (e.g. one trampoline instantiated per
+ * component type, dispatching to a distinct per-registration callback)
+ * without them colliding. */
 typedef struct {
 	void* const* columns; /* one base pointer per term, columns[0..term_count) */
 	const uint64_t* entities;
 	int32_t count; /* entities in THIS table */
 	int32_t term_count;
 	float delta_time;
+	void* user_data;
 } FeatherTableIter;
 
 typedef void (*FeatherSystemFn)(FeatherTableIter* iter);
@@ -246,9 +251,11 @@ typedef FeatherComponentId (*FeatherInterfaceEcsRegisterComponent)(
 
 /* "ecs_register_system" -- terms/term_count describe the query; `callback`
  * fires once per matched table for as long as the world exists (no
- * unregister yet, matching where plugin unload sits generally right now). */
+ * unregister yet, matching where plugin unload sits generally right now).
+ * `user_data` is copied into every FeatherTableIter passed to `callback` for
+ * this registration. */
 typedef void (*FeatherInterfaceEcsRegisterSystem)(FeatherWorldPtr world, const char* name, FeatherSystemPhase phase,
-		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback);
+		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback, void* user_data);
 
 /* "ecs_entity_create" */
 typedef FeatherEntityId (*FeatherInterfaceEcsEntityCreate)(FeatherWorldPtr world, const char* name);

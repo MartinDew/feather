@@ -46,7 +46,7 @@ static void my_initialize(void* userdata, FeatherInitializationLevel level) {
 
 	FeatherComponentId terms[1];
 	terms[0] = spinner_id;
-	ecs_register_system_fn(world, "SpinnerSystem", FEATHER_PHASE_ON_UPDATE, terms, 1, &spinner_system);
+	ecs_register_system_fn(world, "SpinnerSystem", FEATHER_PHASE_ON_UPDATE, terms, 1, &spinner_system, 0);
 
 	if (log_fn)
 		log_fn("ecs_test plugin: registered Spinner component, entity, and system");
