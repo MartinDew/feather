@@ -2,6 +2,7 @@
 
 #include "simulation.h"
 
+#include <framework/delegate.h>
 #include <framework/reflection_macros.h>
 #include <world/components/scene.h>
 #include <world/ecs_defs.h>
@@ -23,6 +24,8 @@ class WorldSim final : public Simulation {
 	Entity _current_scene;
 
 	std::vector<Entity> _scenes;
+
+	Delegate<std::string_view>::id_t _subclass_delegate_id = -1;
 
 	// In world_sim.h, private section:
 	bool _is_in_scene(flecs::entity e, Entity scene) const;
