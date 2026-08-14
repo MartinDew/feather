@@ -56,6 +56,10 @@ struct ClassInfo {
 		// generated (non-Variant) binding to know what to marshal.
 		VariantType return_type = VariantType::NIL;
 		std::vector<VariantType> param_types;
+		// bind_method injects a leading Reflected* receiver into the Callable
+		// that param_types never sees; the plugin ABI's ptrcall shim needs to
+		// know that to build the right argument count.
+		bool is_static = false;
 	};
 
 	std::vector<Method> methods;

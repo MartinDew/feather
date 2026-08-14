@@ -85,6 +85,10 @@ ClassDB::ClassDB() {
 	_class_infos.insert(std::make_pair("Reflected", ClassInfo { .name = "Reflected"_ss, .parent = ""_ss }));
 }
 
+ClassInfo* ClassDB::get_class_info(std::string_view name) {
+	return _get_class_info_internal(name);
+}
+
 Reflected* ClassDB::create_object_unsafe(std::string_view name) {
 	auto object_info_it = _instance->_class_infos.find(name);
 	if (object_info_it != _instance->_class_infos.end()) {
@@ -258,6 +262,7 @@ void ClassDB::dump_api_json(const std::string& path) {
 			buf << "          \"name\": ";
 			write_json_string(buf, method.name.str());
 			buf << ",\n          \"access\": \"" << access_level_name(method.access) << "\"";
+			buf << ",\n          \"is_static\": " << (method.is_static ? "true" : "false");
 			buf << ",\n          \"return_type\": \"" << variant_type_name(method.return_type) << "\"";
 			buf << ",\n          \"param_types\": [";
 			for (size_t p = 0; p < method.param_types.size(); ++p) {

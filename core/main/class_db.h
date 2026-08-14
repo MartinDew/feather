@@ -134,6 +134,11 @@ public:
 										std::string_view name,
 										AccessLevel access = AccessLevel::Public);
 
+	// Raw ClassInfo* for a registered class, or nullptr. Used to hand the
+	// plugin ABI an opaque FeatherClassPtr handle (core/extension) -- callers
+	// never dereference the fields directly except through ClassDB itself.
+	static ClassInfo* get_class_info(std::string_view name);
+
 	// Returns an unmanaged raw pointer to a reflected object
 	static Reflected* create_object_unsafe(std::string_view object_name);
 

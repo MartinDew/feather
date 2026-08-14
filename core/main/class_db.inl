@@ -285,7 +285,8 @@ inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_vi
 									.access = access,
 									.callable = Callable { func },
 									.return_type = get_variant_type<std::decay_t<TRet>>(),
-									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... },
+									.is_static = true };
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
