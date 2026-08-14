@@ -59,6 +59,8 @@ for _, p in ipairs({
     "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
     "core/extension/feather_interface.cpp",
+    "core/extension/extension_registry.cpp",
+    "core/extension/extension_ecs.cpp",
     "core/extension/bridges/resource_format_loader_bridge.cpp",
     "core/world/ecs_feature.cpp",
     "core/world/rendering_world_feature.cpp",

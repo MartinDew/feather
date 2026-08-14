@@ -206,6 +206,63 @@ typedef FeatherBool (*FeatherInterfaceVariantToPtr)(FeatherVariantPtr src, Feath
 typedef size_t (*FeatherInterfaceVariantGetStringUtf8)(FeatherVariantPtr variant, char* dst, size_t cap);
 typedef void (*FeatherInterfaceVariantSetStringUtf8)(FeatherVariantPtr variant, const char* src, size_t len);
 
+/* ---- ECS ----
+ *
+ * Deliberately not a general flecs mirror: only what a project needs to
+ * declare components and run systems against the engine's one world.
+ * Engine code never calls these -- it uses flecs directly (core/world/ecs_defs.h)
+ * -- so there is exactly one ECS dialect per side of the boundary, not two
+ * permanently-diverging ones. If a plugin needs relationships, prefabs,
+ * observers, or custom query traversal, that's a signal the engine should
+ * grow a first-class feature, not that this surface should widen. */
+
+typedef uint64_t FeatherEntityId;
+typedef uint64_t FeatherComponentId;
+typedef void* FeatherWorldPtr; /* flecs ecs_world_t* */
+
+typedef enum {
+	FEATHER_PHASE_ON_UPDATE = 0 /* the only phase wired up so far */
+} FeatherSystemPhase;
+
+/* One call per matched TABLE, not per entity -- `columns[i]` is the base
+ * pointer for term i's component array across all `count` entities in this
+ * table, matching what flecs's own each()/iter() compile down to. Zero
+ * engine calls needed in a system's inner loop. */
+typedef struct {
+	void* const* columns; /* one base pointer per term, columns[0..term_count) */
+	const uint64_t* entities;
+	int32_t count; /* entities in THIS table */
+	int32_t term_count;
+	float delta_time;
+} FeatherTableIter;
+
+typedef void (*FeatherSystemFn)(FeatherTableIter* iter);
+
+/* "ecs_get_world" -- valid only from FEATHER_INIT_WORLD onward. */
+typedef FeatherWorldPtr (*FeatherInterfaceEcsGetWorld)(void);
+
+/* "ecs_register_component" */
+typedef FeatherComponentId (*FeatherInterfaceEcsRegisterComponent)(
+		FeatherWorldPtr world, const char* name, uint32_t size, uint32_t align);
+
+/* "ecs_register_system" -- terms/term_count describe the query; `callback`
+ * fires once per matched table for as long as the world exists (no
+ * unregister yet, matching where plugin unload sits generally right now). */
+typedef void (*FeatherInterfaceEcsRegisterSystem)(FeatherWorldPtr world, const char* name, FeatherSystemPhase phase,
+		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback);
+
+/* "ecs_entity_create" */
+typedef FeatherEntityId (*FeatherInterfaceEcsEntityCreate)(FeatherWorldPtr world, const char* name);
+
+/* "ecs_entity_set" -- adds the component if the entity doesn't have it yet,
+ * then copies `size` bytes from `data` into it. `size` must match what the
+ * component was registered with. */
+typedef void (*FeatherInterfaceEcsEntitySet)(
+		FeatherWorldPtr world, FeatherEntityId entity, FeatherComponentId component, const void* data, size_t size);
+
+/* "ecs_entity_get_mut" -- NULL if the entity doesn't have the component. */
+typedef void* (*FeatherInterfaceEcsEntityGetMut)(FeatherWorldPtr world, FeatherEntityId entity, FeatherComponentId component);
+
 #ifdef __cplusplus
 }
 #endif

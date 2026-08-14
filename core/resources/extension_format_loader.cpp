@@ -1,6 +1,7 @@
 #include "extension_format_loader.h"
 #include "extension.h"
 #include <extension/extension_interface.h>
+#include <extension/extension_registry.h>
 #include <framework/shared_library.h>
 #include <iostream>
 
@@ -59,9 +60,7 @@ void ExtensionFormatLoader::load(std::shared_ptr<Resource> resource, const Path&
 	auto ext = std::static_pointer_cast<Extension>(resource);
 
 	if (ext->_is_c_abi) {
-		if (ext->_c_abi_init.initialize) {
-			ext->_c_abi_init.initialize(ext->_c_abi_init.userdata, FEATHER_INIT_CORE);
-		}
+		ExtensionRegistry::register_extension(ext->_c_abi_init);
 		std::println(std::cout, "ExtensionFormatLoader: Loaded extension '{}' from {}", ext->get_name(), path.string());
 		return;
 	}

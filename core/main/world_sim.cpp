@@ -2,6 +2,7 @@
 
 #include "engine.h"
 #include "world/ecs_feature.h"
+#include <extension/extension_registry.h>
 #include <world/components/scene.h>
 #include <world/register_core_features.h>
 #include <framework/static_string.hpp>
@@ -43,6 +44,10 @@ void WorldSim::init() {
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);
 	}
+
+	// The world and active scene both exist now -- safe for a plugin to
+	// register components/systems against.
+	ExtensionRegistry::fire_level(FEATHER_INIT_WORLD);
 }
 
 void WorldSim::update(double delta) {

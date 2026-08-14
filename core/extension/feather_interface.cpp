@@ -348,7 +348,7 @@ FeatherProc feather_get_proc_address(const char* name) {
 		if (entry.name == needle)
 			return entry.fn;
 	}
-	return nullptr;
+	return feather_get_ecs_proc_address(name);
 }
 
 } // namespace feather
