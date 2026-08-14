@@ -49,7 +49,7 @@ PARAM_CPP_TYPE = {
     "VERTEX": "FeatherVertex",
 }
 STORAGE_TYPE = {
-    "BOOL": "FeatherBool",
+    "BOOL": "bool",
     "INT": "int32_t",
     "FLOAT": "float",
     "RID": "uint64_t",
@@ -237,7 +237,7 @@ inline void variant_call(FeatherMethodPtr m, FeatherObjectPtr o, const FeatherVa
 inline FeatherVariantPtr variant_new() { return variant_new_fn(); }
 inline void variant_destroy(FeatherVariantPtr v) { variant_destroy_fn(v); }
 inline void variant_from_ptr(FeatherVariantPtr v, FeatherVariantType t, const void* s) { variant_from_ptr_fn(v, t, s); }
-inline FeatherBool variant_to_ptr(FeatherVariantPtr v, FeatherVariantType t, void* d) { return variant_to_ptr_fn(v, t, d); }
+inline bool variant_to_ptr(FeatherVariantPtr v, FeatherVariantType t, void* d) { return variant_to_ptr_fn(v, t, d); }
 inline size_t variant_get_string_utf8(FeatherVariantPtr v, char* d, size_t cap) { return variant_get_string_utf8_fn(v, d, cap); }
 inline void variant_set_string_utf8(FeatherVariantPtr v, const char* s, size_t len) { variant_set_string_utf8_fn(v, s, len); }
 

@@ -26,7 +26,7 @@ bool ExtensionResourceFormatLoader::recognize_extension(const std::string& exten
 	if (!_recognize_extension_fn)
 		return false;
 	auto fn = reinterpret_cast<FeatherVirtualResourceFormatLoaderRecognizeExtension>(_recognize_extension_fn);
-	return fn(_plugin_instance, extension.c_str()) != 0;
+	return fn(_plugin_instance, extension.c_str());
 }
 
 std::shared_ptr<Resource> ExtensionResourceFormatLoader::instantiate(const Path& path) {
@@ -55,7 +55,7 @@ bool ExtensionResourceFormatLoader::requires_immediate_load() const {
 	if (!_requires_immediate_load_fn)
 		return false;
 	auto fn = reinterpret_cast<FeatherVirtualResourceFormatLoaderRequiresImmediateLoad>(_requires_immediate_load_fn);
-	return fn(_plugin_instance) != 0;
+	return fn(_plugin_instance);
 }
 
 } // namespace feather

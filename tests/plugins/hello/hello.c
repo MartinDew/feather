@@ -10,7 +10,7 @@ static FeatherInterfaceLog log_fn = 0;
 static FeatherInterfaceClassdbGetClass classdb_get_class_fn = 0;
 static FeatherInterfaceClassdbRegisterExtensionClass register_class_fn = 0;
 
-static FeatherBool hello_recognize_extension(void* instance, const char* extension) {
+static bool hello_recognize_extension(void* instance, const char* extension) {
 	(void)instance;
 	if (log_fn)
 		log_fn("hello plugin: recognize_extension() called");
@@ -55,7 +55,7 @@ static void my_deinitialize(void* userdata, FeatherInitializationLevel level) {
 		log_fn("hello plugin: deinitialize");
 }
 
-FEATHER_EXTENSION_EXPORT FeatherBool feather_extension_init(
+FEATHER_EXTENSION_EXPORT bool feather_extension_init(
 		FeatherGetProcAddress get_proc_address, FeatherLibraryPtr library, FeatherInitialization* r_init) {
 	(void)library;
 
@@ -70,5 +70,5 @@ FEATHER_EXTENSION_EXPORT FeatherBool feather_extension_init(
 	r_init->userdata = 0;
 	r_init->initialize = my_initialize;
 	r_init->deinitialize = my_deinitialize;
-	return 1;
+	return true;
 }

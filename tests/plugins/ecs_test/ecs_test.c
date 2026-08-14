@@ -57,7 +57,7 @@ static void my_deinitialize(void* userdata, FeatherInitializationLevel level) {
 	(void)level;
 }
 
-FEATHER_EXTENSION_EXPORT FeatherBool feather_extension_init(
+FEATHER_EXTENSION_EXPORT bool feather_extension_init(
 		FeatherGetProcAddress get_proc_address, FeatherLibraryPtr library, FeatherInitialization* r_init) {
 	(void)library;
 
@@ -75,5 +75,5 @@ FEATHER_EXTENSION_EXPORT FeatherBool feather_extension_init(
 	r_init->userdata = 0;
 	r_init->initialize = my_initialize;
 	r_init->deinitialize = my_deinitialize;
-	return 1;
+	return true;
 }

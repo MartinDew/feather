@@ -45,7 +45,7 @@ Variant variant_from_c_layout(VariantType type, const void* src) {
 	case VariantType::NIL:
 		return Variant();
 	case VariantType::BOOL:
-		return Variant(*static_cast<const FeatherBool*>(src) != 0);
+		return Variant(*static_cast<const bool*>(src));
 	case VariantType::INT:
 		return Variant(*static_cast<const int32_t*>(src));
 	case VariantType::FLOAT:
@@ -91,7 +91,7 @@ void variant_to_c_layout(VariantType type, const Variant& value, void* dst) {
 	case VariantType::NIL:
 		return;
 	case VariantType::BOOL:
-		*static_cast<FeatherBool*>(dst) = value.as<bool>().value() ? 1 : 0;
+		*static_cast<bool*>(dst) = value.as<bool>().value();
 		return;
 	case VariantType::INT:
 		*static_cast<int32_t*>(dst) = value.as<int>().value();
@@ -212,44 +212,44 @@ void method_variant_call(
 	}
 }
 
-FeatherBool object_get_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr r_out) {
+bool object_get_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr r_out) {
 	auto* info = static_cast<ClassInfo*>(cls);
 	while (info) {
 		for (auto& prop : info->properties) {
 			if (prop.name == prop_name) {
 				if (!prop.getter)
-					return 0;
+					return false;
 				if (r_out)
 					*static_cast<Variant*>(r_out) = prop.getter(obj);
-				return 1;
+				return true;
 			}
 		}
 		info = ClassDB::get_class_info(info->parent.str());
 	}
-	return 0;
+	return false;
 }
 
-FeatherBool object_set_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value) {
+bool object_set_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value) {
 	auto* info = static_cast<ClassInfo*>(cls);
 	while (info) {
 		for (auto& prop : info->properties) {
 			if (prop.name == prop_name) {
 				if (!prop.setter)
-					return 0;
+					return false;
 				prop.setter(obj, *static_cast<Variant*>(value));
-				return 1;
+				return true;
 			}
 		}
 		info = ClassDB::get_class_info(info->parent.str());
 	}
-	return 0;
+	return false;
 }
 
-FeatherBool classdb_register_extension_class(FeatherLibraryPtr library, const char* class_name,
+bool classdb_register_extension_class(FeatherLibraryPtr library, const char* class_name,
 		const char* parent_class_name, const FeatherExtensionClassInfo* info) {
 	(void)library;
 	if (!info || !class_name || !parent_class_name)
-		return 0;
+		return false;
 
 	// Only bridge that exists so far -- see feather_interface.h's comment on
 	// FeatherExtensionClassInfo. Adding another parent means adding another
@@ -257,7 +257,7 @@ FeatherBool classdb_register_extension_class(FeatherLibraryPtr library, const ch
 	if (std::string_view(parent_class_name) != "ResourceFormatLoader") {
 		std::cerr << "classdb_register_extension_class: unsupported parent class '" << parent_class_name
 				  << "' (only ResourceFormatLoader is bridged so far)" << std::endl;
-		return 0;
+		return false;
 	}
 
 	std::string_view name = intern(class_name);
@@ -266,7 +266,7 @@ FeatherBool classdb_register_extension_class(FeatherLibraryPtr library, const ch
 
 	ClassDB::register_extension_class(
 			name, parent, [info_copy]() -> Variant { return new ExtensionResourceFormatLoader(info_copy); });
-	return 1;
+	return true;
 }
 
 FeatherVariantPtr variant_new() {
@@ -285,12 +285,12 @@ void variant_from_ptr(FeatherVariantPtr dst, FeatherVariantType type, const void
 	*static_cast<Variant*>(dst) = variant_from_c_layout(static_cast<VariantType>(type), src);
 }
 
-FeatherBool variant_to_ptr(FeatherVariantPtr src, FeatherVariantType type, void* dst) {
+bool variant_to_ptr(FeatherVariantPtr src, FeatherVariantType type, void* dst) {
 	auto* v = static_cast<Variant*>(src);
 	if (v->get_type() != static_cast<VariantType>(type))
-		return 0;
+		return false;
 	variant_to_c_layout(static_cast<VariantType>(type), *v, dst);
-	return 1;
+	return true;
 }
 
 size_t variant_get_string_utf8(FeatherVariantPtr variant, char* dst, size_t cap) {

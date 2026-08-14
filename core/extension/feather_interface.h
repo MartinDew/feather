@@ -26,8 +26,6 @@ extern "C" {
 #define FEATHER_EXTENSION_EXPORT __attribute__((visibility("default")))
 #endif
 
-typedef bool FeatherBool;
-
 /* Opaque; a plugin never dereferences these, only passes them back. */
 typedef void* FeatherObjectPtr;   /* feather::Reflected*        */
 typedef void* FeatherClassPtr;    /* feather::ClassInfo*        */
@@ -100,7 +98,7 @@ typedef struct {
 } FeatherInitialization;
 
 /* The plugin's sole exported symbol, named "feather_extension_init". */
-typedef FeatherBool (*FeatherInitializationFn)(
+typedef bool (*FeatherInitializationFn)(
 		FeatherGetProcAddress get_proc_address, FeatherLibraryPtr library, FeatherInitialization* r_init);
 
 /* ---- Functions available via FeatherGetProcAddress, by name ---- */
@@ -136,12 +134,12 @@ typedef void (*FeatherInterfaceMethodPtrcall)(
 typedef void (*FeatherInterfaceMethodVariantCall)(FeatherMethodPtr method, FeatherObjectPtr obj,
 		const FeatherVariantPtr* args, size_t argc, FeatherVariantPtr r_ret);
 
-/* "object_get_property" / "object_set_property" -- FeatherBool return is
- * false if no such property exists or the accessor is missing (write-only /
- * read-only property) or its access level denies it. */
-typedef FeatherBool (*FeatherInterfaceObjectGetProperty)(
+/* "object_get_property" / "object_set_property" -- returns false if no such
+ * property exists or the accessor is missing (write-only / read-only
+ * property) or its access level denies it. */
+typedef bool (*FeatherInterfaceObjectGetProperty)(
 		FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr r_out);
-typedef FeatherBool (*FeatherInterfaceObjectSetProperty)(
+typedef bool (*FeatherInterfaceObjectSetProperty)(
 		FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value);
 
 /* ---- Plugin-registered classes ----
@@ -175,14 +173,14 @@ typedef struct {
 } FeatherExtensionClassInfo;
 
 /* "classdb_register_extension_class" */
-typedef FeatherBool (*FeatherInterfaceClassdbRegisterExtensionClass)(
+typedef bool (*FeatherInterfaceClassdbRegisterExtensionClass)(
 		FeatherLibraryPtr library, const char* class_name, const char* parent_class_name,
 		const FeatherExtensionClassInfo* info);
 
 /* ---- ResourceFormatLoader virtuals, resolved via get_virtual by these names ---- */
 
 /* "recognize_extension" */
-typedef FeatherBool (*FeatherVirtualResourceFormatLoaderRecognizeExtension)(void* instance, const char* extension);
+typedef bool (*FeatherVirtualResourceFormatLoaderRecognizeExtension)(void* instance, const char* extension);
 /* "instantiate" -- must return an already engine-allocated Resource (e.g.
  * via object_create); the engine always owns Resource lifetime, a plugin
  * never hands it a pointer it allocated itself. NULL means "decline". */
@@ -190,7 +188,7 @@ typedef FeatherObjectPtr (*FeatherVirtualResourceFormatLoaderInstantiate)(void* 
 /* "load" */
 typedef void (*FeatherVirtualResourceFormatLoaderLoad)(void* instance, FeatherObjectPtr resource, const char* path_utf8);
 /* "requires_immediate_load" -- optional; unimplemented means false. */
-typedef FeatherBool (*FeatherVirtualResourceFormatLoaderRequiresImmediateLoad)(void* instance);
+typedef bool (*FeatherVirtualResourceFormatLoaderRequiresImmediateLoad)(void* instance);
 
 /* "variant_new" / "variant_destroy" -- every FeatherVariantPtr the plugin
  * holds must come from variant_new() and be freed with variant_destroy(). */
@@ -203,7 +201,7 @@ typedef FeatherVariantType (*FeatherInterfaceVariantGetType)(FeatherVariantPtr v
  * for STRING/PATH/ARRAY). "variant_get_string_utf8" / "variant_set_string_utf8"
  * cover STRING/PATH instead (PATH is UTF-8 too, converted at the boundary). */
 typedef void (*FeatherInterfaceVariantFromPtr)(FeatherVariantPtr dst, FeatherVariantType type, const void* src);
-typedef FeatherBool (*FeatherInterfaceVariantToPtr)(FeatherVariantPtr src, FeatherVariantType type, void* dst);
+typedef bool (*FeatherInterfaceVariantToPtr)(FeatherVariantPtr src, FeatherVariantType type, void* dst);
 typedef size_t (*FeatherInterfaceVariantGetStringUtf8)(FeatherVariantPtr variant, char* dst, size_t cap);
 typedef void (*FeatherInterfaceVariantSetStringUtf8)(FeatherVariantPtr variant, const char* src, size_t len);
 
