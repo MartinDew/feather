@@ -56,6 +56,14 @@ public:
 	args::ImplicitValueFlag<bool> dump_db {
 		_parser, "dump db", "dumps the class database", { "dump-db" }, true, false
 	};
+
+	// Path to write the class database as JSON to, or "-" for stdout; empty
+	// (the default) means don't dump. Runs before project/engine setup, so it
+	// needs no project and never touches a window or renderer -- see
+	// ClassDB::dump_api_json.
+	args::ValueFlag<std::string> dump_api {
+		_parser, "dump api", "dumps the class database as JSON to a path (or '-' for stdout)", { "dump-api" }, ""
+	};
 #endif
 
 	static LaunchSettings& get();

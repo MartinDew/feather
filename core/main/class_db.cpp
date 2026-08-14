@@ -1,12 +1,82 @@
 #include "class_db.h"
 #include "framework/reflected.h"
 #include <algorithm>
+#include <fstream>
+#include <iostream>
 #include <memory>
 #include <ranges>
+#include <sstream>
 
 #include <print>
 
 namespace feather {
+
+namespace {
+
+constexpr const char* variant_type_name(VariantType type) {
+	switch (type) {
+	case VariantType::NIL:
+		return "NIL";
+	case VariantType::BOOL:
+		return "BOOL";
+	case VariantType::INT:
+		return "INT";
+	case VariantType::FLOAT:
+		return "FLOAT";
+	case VariantType::VECTOR3:
+		return "VECTOR3";
+	case VariantType::VECTOR2:
+		return "VECTOR2";
+	case VariantType::VERTEX:
+		return "VERTEX";
+	case VariantType::COLOR:
+		return "COLOR";
+	case VariantType::RID:
+		return "RID";
+	case VariantType::STRING:
+		return "STRING";
+	case VariantType::ARRAY:
+		return "ARRAY";
+	case VariantType::PATH:
+		return "PATH";
+	case VariantType::OBJECT:
+		return "OBJECT";
+	case VariantType::INVALID:
+		return "INVALID";
+	}
+	return "INVALID";
+}
+
+constexpr const char* access_level_name(AccessLevel access) {
+	switch (access) {
+	case AccessLevel::Public:
+		return "public";
+	case AccessLevel::Protected:
+		return "protected";
+	case AccessLevel::Private:
+		return "private";
+	}
+	return "public";
+}
+
+// Every name that flows through here is a C++ identifier -- this only guards
+// against the pathological case, it isn't a general JSON string escaper.
+std::string json_escape(std::string_view str) {
+	std::string out;
+	out.reserve(str.size());
+	for (char c : str) {
+		if (c == '"' || c == '\\')
+			out += '\\';
+		out += c;
+	}
+	return out;
+}
+
+void write_json_string(std::ostream& out, std::string_view str) {
+	out << '"' << json_escape(str) << '"';
+}
+
+} // namespace
 
 FSINGLETON_INSTANCE(ClassDB);
 
@@ -141,6 +211,74 @@ void ClassDB::print_db() {
 		std::println("Children : {}", get_children_names_string(name, false));
 	}
 #endif
+}
+
+void ClassDB::dump_api_json(const std::string& path) {
+	std::vector<const ClassInfo*> classes;
+	classes.reserve(get()->_class_infos.size());
+	for (auto& [name, info] : get()->_class_infos) {
+		classes.push_back(&info);
+	}
+	// Map order is by StaticString's hash (its only comparable value, see
+	// static_string.hpp), not name -- sort here so the dump is stable across
+	// runs and diffable, which the generator relies on (write_if_changed).
+	std::ranges::sort(classes, {}, [](const ClassInfo* ci) { return ci->name.str(); });
+
+	std::ostringstream buf;
+	buf << "{\n  \"classes\": [\n";
+	for (size_t ci = 0; ci < classes.size(); ++ci) {
+		const ClassInfo& info = *classes[ci];
+		buf << "    {\n      \"name\": ";
+		write_json_string(buf, info.name.str());
+		buf << ",\n      \"parent\": ";
+		write_json_string(buf, info.parent.str());
+		buf << ",\n      \"is_abstract\": " << (info.is_abstract ? "true" : "false");
+		buf << ",\n      \"is_singleton\": " << (info.is_singleton ? "true" : "false");
+		buf << ",\n      \"is_value_type\": " << (info.is_value_type ? "true" : "false");
+
+		buf << ",\n      \"properties\": [";
+		for (size_t i = 0; i < info.properties.size(); ++i) {
+			const auto& prop = info.properties[i];
+			buf << (i ? ",\n        {\n" : "\n        {\n");
+			buf << "          \"name\": ";
+			write_json_string(buf, prop.name.str());
+			buf << ",\n          \"type\": \"" << variant_type_name(prop.type) << "\"";
+			buf << ",\n          \"has_getter\": " << (prop.getter ? "true" : "false");
+			buf << ",\n          \"has_setter\": " << (prop.setter ? "true" : "false");
+			buf << ",\n          \"getter_access\": \"" << access_level_name(prop.getter_access) << "\"";
+			buf << ",\n          \"setter_access\": \"" << access_level_name(prop.setter_access) << "\"";
+			buf << "\n        }";
+		}
+		buf << (info.properties.empty() ? "]" : "\n      ]");
+
+		buf << ",\n      \"methods\": [";
+		for (size_t i = 0; i < info.methods.size(); ++i) {
+			const auto& method = info.methods[i];
+			buf << (i ? ",\n        {\n" : "\n        {\n");
+			buf << "          \"name\": ";
+			write_json_string(buf, method.name.str());
+			buf << ",\n          \"access\": \"" << access_level_name(method.access) << "\"";
+			buf << ",\n          \"return_type\": \"" << variant_type_name(method.return_type) << "\"";
+			buf << ",\n          \"param_types\": [";
+			for (size_t p = 0; p < method.param_types.size(); ++p) {
+				buf << (p ? ", " : "") << "\"" << variant_type_name(method.param_types[p]) << "\"";
+			}
+			buf << "]";
+			buf << "\n        }";
+		}
+		buf << (info.methods.empty() ? "]" : "\n      ]");
+
+		buf << "\n    }" << (ci + 1 < classes.size() ? ",\n" : "\n");
+	}
+	buf << "  ]\n}\n";
+
+	if (path == "-") {
+		std::cout << buf.str();
+		return;
+	}
+	std::ofstream file(path);
+	fassert(file.is_open(), std::format("dump_api_json: could not open '{}' for writing", path));
+	file << buf.str();
 }
 
 Callable ClassDB::get_static_method(const StaticString& class_name, std::string_view func_name) {

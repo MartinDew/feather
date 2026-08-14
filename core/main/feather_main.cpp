@@ -26,14 +26,22 @@ struct Main {
 };
 
 Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(argc), std::move(argv)) {
-	if (!_project_settings.init() && !_launch_settings.demo_mode.Get())
-		return;
-
 	setup_db();
 
-	Engine engine;
+#if EDITOR_BUILD
+	// Describes the engine's own reflected API, so it needs no project and
+	// runs before Engine/RenderingServer exist -- no window, no renderer.
+	if (!_launch_settings.dump_api.Get().empty()) {
+		ClassDB::dump_api_json(_launch_settings.dump_api.Get());
+		unregister_modules();
+		return;
+	}
+#endif
 
-	engine.run();
+	if (_project_settings.init() || _launch_settings.demo_mode.Get()) {
+		Engine engine;
+		engine.run();
+	}
 
 	unregister_modules();
 }

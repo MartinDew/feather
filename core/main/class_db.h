@@ -47,6 +47,11 @@ private:
 public:
 	void print_db();
 
+	// path == "-" writes to stdout. Describes the engine's own reflected API
+	// only -- called before index_project(), so no project/plugin type is ever
+	// included (see docs/plugin_abi.md).
+	static void dump_api_json(const std::string& path);
+
 	static Callable get_static_method(const StaticString& class_name, std::string_view func_name);
 
 	template <is_reflected_class_type T>
