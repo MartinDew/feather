@@ -25,7 +25,7 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 }
 
 WorldSim::~WorldSim() {
-	ClassDB::off_subclass_registered(EcsFeature::get_class_static(), _subclass_delegate_id);
+	ClassDB::unregister_subclass_delegate(EcsFeature::get_class_static(), _subclass_delegate_id);
 }
 
 void WorldSim::init() {

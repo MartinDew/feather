@@ -25,7 +25,7 @@ class WorldSim final : public Simulation {
 
 	std::vector<Entity> _scenes;
 
-	Delegate<std::string_view>::id_t _subclass_delegate_id = -1;
+	ClassDB::subclass_delegate_t::id_t _subclass_delegate_id = -1;
 
 	// In world_sim.h, private section:
 	bool _is_in_scene(flecs::entity e, Entity scene) const;
