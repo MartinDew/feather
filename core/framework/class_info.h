@@ -51,6 +51,11 @@ struct ClassInfo {
 		// Possibly need to store param names later
 		AccessLevel access = AccessLevel::Public;
 		Callable callable;
+		// Captured at bind time from the method's real signature -- Callable itself
+		// only knows its arity, not the types, so this is the sole source for a
+		// generated (non-Variant) binding to know what to marshal.
+		VariantType return_type = VariantType::NIL;
+		std::vector<VariantType> param_types;
 	};
 
 	std::vector<Method> methods;

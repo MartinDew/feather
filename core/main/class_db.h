@@ -146,6 +146,8 @@ public:
 
 	static void unregister_subclass_delegate(std::string_view base_class_name, Delegate<std::string_view>::id_t id);
 
+	static void unregister_class(std::string_view name);
+
 	static std::vector<StaticString> get_children_names(std::string_view object_name, bool exclusive = false);
 
 	static std::string get_children_names_string(StaticString object_name, bool exclusive = false);

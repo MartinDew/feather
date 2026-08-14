@@ -243,7 +243,11 @@ inline void ClassDB::bind_method(TRet (T::*method)(TArgs...), std::string_view n
 		return (object_cast<T>(instance)->*method)(args...);
 	};
 
-	ClassInfo::Method method_info { .name = StaticString(name), .access = access, .callable = Callable { func } };
+	ClassInfo::Method method_info { .name = StaticString(name),
+									.access = access,
+									.callable = Callable { func },
+									.return_type = get_variant_type<std::decay_t<TRet>>(),
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
@@ -259,7 +263,11 @@ inline void ClassDB::bind_method(TRet (T::*method)(TArgs...) const, std::string_
 		return (object_cast<T>(instance)->*method)(args...);
 	};
 
-	ClassInfo::Method method_info { .name = StaticString(name), .access = access, .callable = Callable { func } };
+	ClassInfo::Method method_info { .name = StaticString(name),
+									.access = access,
+									.callable = Callable { func },
+									.return_type = get_variant_type<std::decay_t<TRet>>(),
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
@@ -273,7 +281,11 @@ inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_vi
 	// No instance parameter needed for static functions
 	std::function<TRet(TArgs...)> func = [method](TArgs... args) -> TRet { return method(args...); };
 
-	ClassInfo::Method method_info { .name = StaticString(name), .access = access, .callable = Callable { func } };
+	ClassInfo::Method method_info { .name = StaticString(name),
+									.access = access,
+									.callable = Callable { func },
+									.return_type = get_variant_type<std::decay_t<TRet>>(),
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }

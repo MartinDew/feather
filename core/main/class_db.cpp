@@ -76,6 +76,25 @@ void ClassDB::unregister_subclass_delegate(std::string_view base_class_name, Del
 	}
 }
 
+// Callers must unregister a class's own children first -- this only detaches
+// `name` from its parent and erases it, it doesn't recurse into `children`.
+void ClassDB::unregister_class(std::string_view name) {
+	ClassInfo* ci = _get_class_info_internal(name);
+	if (!ci) {
+		return;
+	}
+
+	if (ci->parent != ""_ss) {
+		if (auto parent_it = get()->_class_infos.find(ci->parent); parent_it != get()->_class_infos.end()) {
+			auto& siblings = parent_it->second.children;
+			std::erase(siblings, ci);
+		}
+	}
+
+	get()->_subclass_delegates.erase(StaticString(name));
+	get()->_class_infos.erase(StaticString(name));
+}
+
 void ClassDB::_fire_subclass_delegates(std::string_view class_name) {
 	ClassInfo* ci = _get_class_info_internal(class_name);
 	while (ci && ci->parent != ""_ss) {
@@ -106,6 +125,17 @@ void ClassDB::print_db() {
 		std::println("Class: {} : ", info.name.str());
 		for (auto& prop : info.properties) {
 			std::println("\tProperty: {} Type: {}\n", prop.name.str(), std::to_underlying<VariantType>(prop.type));
+		}
+
+		for (auto& method : info.methods) {
+			std::print("\tMethod: {} Return: {} Args: (", method.name.str(),
+					std::to_underlying<VariantType>(method.return_type));
+			for (size_t i = 0; i < method.param_types.size(); ++i) {
+				if (i)
+					std::print(", ");
+				std::print("{}", std::to_underlying<VariantType>(method.param_types[i]));
+			}
+			std::println(")");
 		}
 
 		std::println("Children : {}", get_children_names_string(name, false));

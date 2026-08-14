@@ -28,7 +28,7 @@ public:
 														   "The path to the project directory",
 														   std::filesystem::current_path().c_str() };
 
-#ifdef EDITOR_BUILD
+#if EDITOR_BUILD
 	// Editor mode?
 	args::ImplicitValueFlag<bool> editor_mode { _parser,		   "editor", "Should run in editor mode",
 												{ 'e', "editor" }, true,	 false };
@@ -52,7 +52,7 @@ public:
 		_parser, "single thread", "Force single threaded rendering", { "single-thread" }, true, false
 	};
 
-#ifdef EDITOR_BUILD
+#if EDITOR_BUILD
 	args::ImplicitValueFlag<bool> dump_db {
 		_parser, "dump db", "dumps the class database", { "dump-db" }, true, false
 	};
