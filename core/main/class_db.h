@@ -72,13 +72,11 @@ public:
 	// independent accessibility per accessor. Read-only/write-only overloads
 	// exist because a null member pointer can't be deduced.
 	template <class T, class TGet, class TSet>
-	static void bind_property_accessors(
-			TGet (T::*getter)() const,
-			void (T::*setter)(TSet),
-			std::string_view name,
-			AccessLevel getter_access = AccessLevel::Public,
-			AccessLevel setter_access = AccessLevel::Public
-	);
+	static void bind_property_accessors(TGet (T::*getter)() const,
+										void (T::*setter)(TSet),
+										std::string_view name,
+										AccessLevel getter_access = AccessLevel::Public,
+										AccessLevel setter_access = AccessLevel::Public);
 
 	template <class T, class TGet>
 	static void
@@ -91,27 +89,21 @@ public:
 	// Guarded binds: no-op when the property type isn't Variant-marshalable
 	// (e.g. std::shared_ptr<...>), so generated accessors never break the build.
 	template <class T, class TGet, class TSet>
-	static void bind_property_accessors_if_bindable(
-			TGet (T::*getter)() const,
-			void (T::*setter)(TSet),
-			std::string_view name,
-			AccessLevel getter_access = AccessLevel::Public,
-			AccessLevel setter_access = AccessLevel::Public
-	);
+	static void bind_property_accessors_if_bindable(TGet (T::*getter)() const,
+													void (T::*setter)(TSet),
+													std::string_view name,
+													AccessLevel getter_access = AccessLevel::Public,
+													AccessLevel setter_access = AccessLevel::Public);
 
 	template <class T, class TGet>
-	static void bind_property_get_if_bindable(
-			TGet (T::*getter)() const,
-			std::string_view name,
-			AccessLevel access = AccessLevel::Public
-	);
+	static void bind_property_get_if_bindable(TGet (T::*getter)() const,
+											  std::string_view name,
+											  AccessLevel access = AccessLevel::Public);
 
 	template <class T, class TSet>
-	static void bind_property_set_if_bindable(
-			void (T::*setter)(TSet),
-			std::string_view name,
-			AccessLevel access = AccessLevel::Public
-	);
+	static void bind_property_set_if_bindable(void (T::*setter)(TSet),
+											  std::string_view name,
+											  AccessLevel access = AccessLevel::Public);
 
 	template <class T, class TRet, class... TArgs>
 	static void
@@ -128,18 +120,14 @@ public:
 	// Guarded bind_method: no-op when the signature isn't Variant-marshalable.
 	// Used for auto-bound (opt-out) methods; explicit [[method]] uses bind_method directly.
 	template <class T, class TRet, class... TArgs>
-	static void bind_method_if_bindable(
-			TRet (T::*method)(TArgs...),
-			std::string_view name,
-			AccessLevel access = AccessLevel::Public
-	);
+	static void bind_method_if_bindable(TRet (T::*method)(TArgs...),
+										std::string_view name,
+										AccessLevel access = AccessLevel::Public);
 
 	template <class T, class TRet, class... TArgs>
-	static void bind_method_if_bindable(
-			TRet (T::*method)(TArgs...) const,
-			std::string_view name,
-			AccessLevel access = AccessLevel::Public
-	);
+	static void bind_method_if_bindable(TRet (T::*method)(TArgs...) const,
+										std::string_view name,
+										AccessLevel access = AccessLevel::Public);
 
 	// Returns an unmanaged raw pointer to a reflected object
 	static Reflected* create_object_unsafe(std::string_view object_name);
@@ -152,10 +140,9 @@ public:
 		return ptr;
 	}
 
-	static Delegate<std::string_view>::id_t on_subclass_registered(
-			std::string_view base_class_name,
-			const Delegate<std::string_view>::DelegateFuncType& callback
-	);
+	static Delegate<std::string_view>::id_t
+	on_subclass_registered(std::string_view base_class_name,
+						   const Delegate<std::string_view>::DelegateFuncType& callback);
 
 	static void unregister_subclass_delegate(std::string_view base_class_name, Delegate<std::string_view>::id_t id);
 

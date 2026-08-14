@@ -75,9 +75,8 @@ void RenderingServer::init() {
 	_renderer = ClassDB::create_object<Renderer>(renderer_name);
 	fassert(_renderer.get(), std::format("Failed to create renderer of type {}", renderer_name));
 
-	Engine::get().get_main_window().register_notification(Notification::WINDOW_RESIZED, [&flag = _needs_resize] {
-		flag.store(true, std::memory_order_relaxed);
-	});
+	Engine::get().get_main_window().register_notification(
+			Notification::WINDOW_RESIZED, [&flag = _needs_resize] { flag.store(true, std::memory_order_relaxed); });
 
 	// A render thread whose only job is to call a no-op isn't worth spawning.
 	if (!Engine::is_headless() && !LaunchSettings::get().force_single_thread.Get())

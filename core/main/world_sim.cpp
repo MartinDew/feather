@@ -16,12 +16,12 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 	_world.set<Ecs::Rest>({});
 #endif
 
-	_subclass_delegate_id =
-		ClassDB::on_subclass_registered(EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
-			if (world_sim) {
-				ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
-			}
-		});
+	_subclass_delegate_id = ClassDB::on_subclass_registered(
+			EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
+				if (world_sim) {
+					ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
+				}
+			});
 }
 
 WorldSim::~WorldSim() {
