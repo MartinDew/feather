@@ -28,6 +28,11 @@ option("enable_clang_tidy")
     set_description("Run clang-tidy during compilation (requires compile_commands.json)")
 option_end()
 
+option("editor_build")
+    set_default(true)
+    set_description("Compile with editor support (EDITOR_BUILD=1); off builds a shipping-only binary (EDITOR_BUILD=0)")
+option_end()
+
 -- Toolchain selection is done via CLI flags, not options:
 --   LLVM/Clang (non-Windows):  xmake f --toolchain=llvm
 --   Clang-CL (Windows):        xmake f --toolchain=clang-cl
