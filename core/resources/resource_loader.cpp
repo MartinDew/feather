@@ -13,7 +13,7 @@ FSINGLETON_INSTANCE(ResourceLoader)
 ResourceLoader::ResourceLoader() {
 	FSINGLETON_CONSTRUCT_INSTANCE();
 
-	ClassDB::on_subclass_registered("ResourceFormatLoader", [](std::string_view class_name) {
+	ClassDB::on_subclass_registered(ResourceFormatLoader::get_class_static(), [](std::string_view class_name) {
 		auto loader = ClassDB::create_object<ResourceFormatLoader>(class_name);
 		if (loader) {
 			std::println(std::cout, "Registered resource format loader: {}", class_name);

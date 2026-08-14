@@ -1,6 +1,7 @@
 #include "world_sim.h"
 
 #include "engine.h"
+#include "world/ecs_feature.h"
 #include <world/components/scene.h>
 #include <world/register_core_features.h>
 #include <framework/static_string.hpp>
@@ -14,9 +15,17 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 #if BETA
 	_world.set<Ecs::Rest>({});
 #endif
+
+	ClassDB::on_subclass_registered(EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
+		if (world_sim) {
+			ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
+		}
+	});
 }
 
-WorldSim::~WorldSim() = default;
+WorldSim::~WorldSim() {
+
+};
 
 void WorldSim::init() {
 	// Every reflected Component registers before any EcsFeature imports
@@ -29,7 +38,7 @@ void WorldSim::init() {
 
 	// Picks up EcsFeature subclasses from core, from built-in modules, and --
 	// because this runs after index_project() -- from loaded project DLLs.
-	auto children = ClassDB::get_children_names("EcsFeature");
+	auto children = ClassDB::get_children_names(EcsFeature::get_class_static());
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);
 	}
