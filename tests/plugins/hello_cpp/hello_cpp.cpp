@@ -14,14 +14,14 @@ static void my_initialize(void* userdata, FeatherInitializationLevel level) {
 	if (level != FEATHER_INIT_CORE)
 		return;
 
-	FeatherObjectPtr obj = feather::ext::_bindings::create("MaterialFormatLoader");
+	FeatherObjectPtr obj = feather::_bindings::create("MaterialFormatLoader");
 	if (!obj) {
 		if (log_fn)
 			log_fn("hello_cpp plugin: object_create('MaterialFormatLoader') failed");
 		return;
 	}
 
-	feather::ext::ResourceFormatLoader loader(obj);
+	feather::ResourceFormatLoader loader(obj);
 	bool matches_mat = loader.recognize_extension("mat");
 	bool matches_txt = loader.recognize_extension("txt");
 
@@ -32,7 +32,7 @@ static void my_initialize(void* userdata, FeatherInitializationLevel level) {
 							: "hello_cpp plugin: recognize_extension('txt') -> false (expected)");
 	}
 
-	feather::ext::_bindings::destroy(obj);
+	feather::_bindings::destroy(obj);
 }
 
 static void my_deinitialize(void*, FeatherInitializationLevel) {}
@@ -42,7 +42,7 @@ extern "C" FEATHER_EXTENSION_EXPORT bool feather_extension_init(
 	(void)library;
 
 	log_fn = (FeatherInterfaceLog)get_proc_address("feather_log");
-	feather::ext::_bindings::init(get_proc_address);
+	feather::_bindings::init(get_proc_address);
 
 	if (log_fn)
 		log_fn("hello_cpp plugin: feather_extension_init");

@@ -189,7 +189,7 @@ HEADER_PREAMBLE = """\
 #include <cstdint>
 #include <string>
 
-namespace feather::ext {
+namespace feather {
 
 // Resolved once via feather_extension_init's FeatherGetProcAddress; every
 // generated method call goes through these. init() must run before any
@@ -218,9 +218,9 @@ inline FeatherInterfaceEcsEntitySet ecs_entity_set_fn = nullptr;
 inline FeatherInterfaceEcsEntityGetMut ecs_entity_get_mut_fn = nullptr;
 
 // The only function a plugin ever has to resolve by hand: every generated
-// binding and every feather::ext::ecs helper goes through the cached
-// pointers above from here on, so this runs once, in feather_extension_init,
-// and nowhere else needs a FeatherGetProcAddress parameter.
+// binding and every feather::ecs helper goes through the cached pointers
+// above from here on, so this runs once, in feather_extension_init, and
+// nowhere else needs a FeatherGetProcAddress parameter.
 inline void init(FeatherGetProcAddress get_proc_address) {
 	log_fn = (FeatherInterfaceLog)get_proc_address("feather_log");
 	classdb_get_class = (FeatherInterfaceClassdbGetClass)get_proc_address("classdb_get_class");
@@ -341,7 +341,7 @@ T* get_mut(FeatherEntityId entity) {
 """
 
 HEADER_POSTAMBLE = """
-} // namespace feather::ext
+} // namespace feather
 """
 
 
