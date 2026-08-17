@@ -89,17 +89,11 @@ if has_config("enable_vex_renderer") then
 
     target("vex_renderer")
         add_packages("vex", {public = false})
-        -- vex_renderer is a dependency of feather (added via
-        -- feather_module_target -> add_deps), so xmake compiles its files --
-        -- including the generated register_vex_renderer_types.gen.cpp --
-        -- before feather's own before_build(run_codegen) would get a chance
-        -- to produce it. Generate it here instead; see
-        -- xmake/modules/feather_codegen.lua's run_module_codegen.
         before_build(function(target)
             import("feather_codegen")
             feather_codegen.run_module_codegen(os.scriptdir())
         end)
-        -- Mirrors CMake's per-config Vex defines
+
         if is_mode("debug") then
             add_defines("VEX_DEBUG=1", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=0")
         elseif is_mode("releasedbg") then

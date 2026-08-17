@@ -16,8 +16,7 @@
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 -- ---- Core source files ----------------------------------------------------
--- Mirrors FEATHER_CORE_SOURCES in the old CMakeLists.txt exactly. add_files()
--- resolves a relative path against the CALLING script's own directory (this
+-- add_files() resolves a relative path against the CALLING script's own directory (this
 -- file's, i.e. xmake/) -- not the engine root -- so every entry is joined
 -- with FEATHER_ROOT explicitly rather than left bare.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
@@ -82,32 +81,9 @@ for _, p in ipairs({
     table.insert(GENERATED_SOURCE, core_path(p))
 end
 
--- Runs both codegen scripts before any source file compiles; both use
--- write_if_changed() internally, so repeated runs are cheap. The actual
--- generate_reflection.py invocation lives in xmake/modules/feather_codegen.lua,
--- imported below, rather than as a plain function in this file: on_load/before_build/etc
--- scripts run inside a sandbox with its own _ENV that doesn't see ordinary Lua
--- globals defined at xmake.lua description scope, only xmake's own APIs and
--- import()ed modules -- and modules/vex_renderer/xmake.lua's own before_build
--- hook needs this same logic (see feather_codegen.run_module_codegen and the
--- comment there for why).
---
--- FEATHER_ROOT (the upvalue captured above), not os.projectdir(), is threaded
--- through as opts.feather_root: feather_codegen.lua's own functions default
--- that to os.projectdir(), which is wrong the moment this file is includes()'d
--- from a consumer's build.
 local function run_codegen(target)
     import("feather_codegen")
 
-    -- Modules using FCLASS live outside core/ and need their own --module-path so
-    -- the generator scans them too (see process_source_dir() in
-    -- generate_reflection.py). This pass is redundant with vex_renderer's own
-    -- before_build hook (feather_codegen.run_module_codegen) -- that one exists
-    -- for build-ordering correctness, this one keeps `xmake` alone (without a full
-    -- rebuild) sufficient to refresh everything. vex_renderer is skipped entirely
-    -- on macOS (see modules/vex_renderer/xmake.lua) and gated by enable_vex_renderer
-    -- elsewhere, so mirror both checks here rather than feeding the generator a
-    -- directory whose FCLASS headers aren't actually being compiled into this build.
     local module_dirs = {}
     if not is_plat("macosx") and has_config("enable_vex_renderer") then
         local vex_dir = path.join(FEATHER_ROOT, "modules", "vex_renderer")
@@ -123,19 +99,12 @@ local function run_codegen(target)
     }, {curdir = FEATHER_ROOT})
 end
 
--- Body lives in xmake/modules/feather_flags.lua so tools/SDK/FeatherSDK.lua can
--- import() the exact same flags for downstream project DLLs -- notably
--- -Wno-attributes, which reflection's bare [[get]]/[[method]] attributes need
--- wherever an FCLASS header is compiled.
 local function apply_compile_flags(target)
     import("feather_flags")
     feather_flags.apply(target)
 end
 
 -- ---- Main executable ------------------------------------------------------
--- EDITOR_BUILD comes from feather_public_api (xmake/public_api.lua), driven
--- by xmake/options.lua's editor_build option. Flip it with
--- `xmake f --editor_build=n && xmake build -r`.
 target("feather")
     set_kind("binary")
     set_basename("feather")
@@ -174,11 +143,8 @@ target("feather")
 
     before_build(run_codegen)
 
-    -- Copy raw_resources/shaders next to the executable after every build.
     add_rules("feather.deploy_shaders")
-
-    -- on_config, not on_load: toolchain-conditional flags need the
-    -- resolved toolchain, which isn't available at load time.
+    
     on_config(apply_compile_flags)
 target_end()
 
