@@ -318,9 +318,16 @@ template <class T>
 void each(const char* system_name, FeatherSystemPhase phase, void (*callback)(T&, float delta_time)) {
 	// Leaked deliberately, matching the rest of the ABI's no-unregister story.
 	auto* ctx = new detail::EachContext<T> { callback };
-	FeatherComponentId terms[] = { component_id<T>() };
-	_bindings::ecs_register_system_fn(
-			_bindings::ecs_get_world_fn(), system_name, phase, terms, 1, &detail::each_trampoline<T>, ctx);
+	FeatherSystemTerm terms[] = { { component_id<T>(), FEATHER_TERM_NONE } };
+	FeatherSystemDesc desc {};
+	desc.struct_size = sizeof(FeatherSystemDesc);
+	desc.name = system_name;
+	desc.phase = phase;
+	desc.terms = terms;
+	desc.term_count = 1;
+	desc.callback = &detail::each_trampoline<T>;
+	desc.user_data = ctx;
+	_bindings::ecs_register_system_fn(_bindings::ecs_get_world_fn(), &desc);
 }
 
 template <class T>

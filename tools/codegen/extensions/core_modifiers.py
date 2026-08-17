@@ -31,6 +31,14 @@ class SingletonModifier(Modifier):
     def gen_body_lines(self, cls, ctx):
         return [("pre", f"FDECLARE_SINGLETON({cls.name});")]
 
+    def bind_members_lines(self, cls, ctx):
+        # T::get() itself is never reflected as a user-facing method (it's
+        # generated boilerplate, not something [[method]] opted into) -- but
+        # the plugin ABI's classdb_get_singleton needs SOME reflected way to
+        # reach the live instance without knowing T at compile time, so bind
+        # it under a name no real property/method would ever claim.
+        return [f'ClassDB::bind_static_method(&{cls.name}::get, "__singleton_get", AccessLevel::Public);']
+
     def register_statements(self, cls, ctx):
         return [f"ClassDB::register_singleton_class<{cls.name}>();"]
 

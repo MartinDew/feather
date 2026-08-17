@@ -5,6 +5,8 @@
 
 namespace feather {
 
+void register_resource_format_loader_bridge();
+
 // Engine-side shim for a plugin-registered ResourceFormatLoader subclass.
 // One instance per plugin class registration (see ClassDB::register_extension_class
 // in feather_interface.cpp) -- the engine allocates and owns this, never the

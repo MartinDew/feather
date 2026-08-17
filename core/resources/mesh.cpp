@@ -27,6 +27,14 @@ void Mesh::set_indices(const CowVector<Index>& indices) {
 	}
 }
 
+// object_create("ComplexMesh") (the plugin ABI's factory path -- see
+// classdb_register_extension_class in feather_interface.cpp) default-
+// constructs one with no format loader involved, unlike a normal Mesh
+// load; add_vertices/add_indices write to _mesh_data unconditionally, so
+// it must never be null.
+ComplexMesh::ComplexMesh() : Mesh(std::make_shared<MeshData>()) {
+}
+
 void ComplexMesh::add_vertices(const VariantArray vertices) {
 	CowVector<Vertex> raw_vertices;
 	if (_mesh_data) {

@@ -2,9 +2,20 @@
 
 #include <framework/assert.h>
 #include <framework/reflection_utils.h>
+#include <main/class_db.h>
 #include <resources/resource.h>
 
 namespace feather {
+
+// classdb_register_extension_class (feather_interface.cpp) checks
+// ClassInfo::is_extensible before it will accept a parent class name -- this
+// is what actually puts "ResourceFormatLoader" on that allowlist, called
+// once from Main::setup_db() after register_resources_types().
+void register_resource_format_loader_bridge() {
+	if (auto* info = ClassDB::get_class_info("ResourceFormatLoader")) {
+		info->is_extensible = true;
+	}
+}
 
 ExtensionResourceFormatLoader::ExtensionResourceFormatLoader(const FeatherExtensionClassInfo& info) : _info(info) {
 	_plugin_instance = _info.create_instance ? _info.create_instance(_info.class_userdata, this) : nullptr;

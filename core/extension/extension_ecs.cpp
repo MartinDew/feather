@@ -29,9 +29,16 @@ void system_trampoline(ecs_iter_t* it) {
 	// ecs_field_w_size's `index` is 0-based (verified against flecs's own
 	// assertion `index < it->field_count`, despite a doc comment example
 	// that suggests otherwise for a different, higher-level API).
+	//
+	// it->sizes[i] == 0 covers two cases that both need a NULL column rather
+	// than a real call: a genuine tag (zero-sized component, nothing to
+	// fetch) and an optional term absent from this table (flecs still
+	// reports its registered size as 0 in that slot) -- ecs_field_w_size
+	// itself asserts size != 0, so either case would crash if called.
 	std::vector<void*> columns(static_cast<size_t>(ctx->term_count));
 	for (int32_t i = 0; i < ctx->term_count; ++i) {
-		columns[i] = ecs_field_w_size(it, static_cast<size_t>(it->sizes[i]), static_cast<int8_t>(i));
+		columns[i] = it->sizes[i] != 0 ? ecs_field_w_size(it, static_cast<size_t>(it->sizes[i]), static_cast<int8_t>(i))
+										: nullptr;
 	}
 
 	FeatherTableIter titer {};
@@ -62,30 +69,48 @@ FeatherComponentId feather_ecs_register_component(FeatherWorldPtr world, const c
 	return static_cast<FeatherComponentId>(ecs_component_init(w, &comp_desc));
 }
 
-void feather_ecs_register_system(FeatherWorldPtr world, const char* name, FeatherSystemPhase phase,
-		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback, void* user_data) {
+ecs_entity_t feather_phase_id(FeatherSystemPhase phase) {
+	switch (phase) {
+	case FEATHER_PHASE_PRE_UPDATE:
+		return EcsPreUpdate;
+	case FEATHER_PHASE_ON_UPDATE:
+		return EcsOnUpdate;
+	case FEATHER_PHASE_POST_UPDATE:
+		return EcsPostUpdate;
+	case FEATHER_PHASE_PRE_STORE:
+		return EcsPreStore;
+	case FEATHER_PHASE_ON_STORE:
+		return EcsOnStore;
+	}
+	return EcsOnUpdate;
+}
+
+void feather_ecs_register_system(FeatherWorldPtr world, const FeatherSystemDesc* desc_in) {
 	auto* w = static_cast<ecs_world_t*>(world);
 
 	// Leaked deliberately -- there's no system unregistration path yet, same
 	// as ClassDB extension classes (see feather_interface.cpp's `intern`).
-	auto* ctx = new SystemContext { callback, term_count, user_data };
+	auto* ctx = new SystemContext { desc_in->callback, desc_in->term_count, desc_in->user_data };
 
 	ecs_entity_desc_t entity_desc {};
-	entity_desc.name = name;
+	entity_desc.name = desc_in->name;
 
 	ecs_system_desc_t desc {};
 	desc.entity = ecs_entity_init(w, &entity_desc);
-	for (int32_t i = 0; i < term_count && i < FLECS_TERM_COUNT_MAX; ++i) {
-		desc.query.terms[i].id = static_cast<ecs_id_t>(terms[i]);
+	for (int32_t i = 0; i < desc_in->term_count && i < FLECS_TERM_COUNT_MAX; ++i) {
+		const FeatherSystemTerm& src_term = desc_in->terms[i];
+		ecs_term_t& term = desc.query.terms[i];
+		term.id = static_cast<ecs_id_t>(src_term.id);
+		if (src_term.flags & FEATHER_TERM_CONST)
+			term.inout = EcsIn;
+		if (src_term.flags & FEATHER_TERM_OPTIONAL)
+			term.oper = EcsOptional;
+		if (src_term.flags & FEATHER_TERM_UP)
+			term.src.id |= EcsUp;
 	}
 	desc.callback = &system_trampoline;
 	desc.ctx = ctx;
-	switch (phase) {
-	case FEATHER_PHASE_ON_UPDATE:
-	default:
-		desc.phase = EcsOnUpdate;
-		break;
-	}
+	desc.phase = feather_phase_id(desc_in->phase);
 	ecs_system_init(w, &desc);
 }
 

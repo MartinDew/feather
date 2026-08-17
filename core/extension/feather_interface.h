@@ -142,6 +142,20 @@ typedef bool (*FeatherInterfaceObjectGetProperty)(
 typedef bool (*FeatherInterfaceObjectSetProperty)(
 		FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value);
 
+/* "classdb_get_singleton" -- NULL if no such class is registered or it isn't
+ * a singleton. Live engine instance, not a plugin-owned one: never pass the
+ * result to object_destroy. */
+typedef FeatherObjectPtr (*FeatherInterfaceClassdbGetSingleton)(const char* class_name);
+
+/* "classdb_class_get_size" / "classdb_class_get_align" -- sizeof/alignof the
+ * class's real C++ type, captured at ClassDB registration time. 0 for a
+ * class the engine never sized (a plugin-registered extension class has no
+ * concrete C++ type on the engine side). A generated value-type mirror
+ * asserts its own sizeof/alignof against these at plugin init, so a stale
+ * regeneration fails loudly instead of corrupting memory. */
+typedef uint32_t (*FeatherInterfaceClassdbClassGetSize)(FeatherClassPtr cls);
+typedef uint32_t (*FeatherInterfaceClassdbClassGetAlign)(FeatherClassPtr cls);
+
 /* ---- Plugin-registered classes ----
  *
  * A plugin registers a new ClassDB entry under an existing extensible base;
@@ -153,9 +167,12 @@ typedef bool (*FeatherInterfaceObjectSetProperty)(
  * owns the shim's lifetime and passes that same pointer back into every
  * virtual call and into free_instance at teardown.
  *
- * Today the only extensible base is "ResourceFormatLoader" -- adding
- * another means adding another bridge (core/extension/bridges/), not
- * widening this struct. */
+ * Which classes accept this (ClassInfo::is_extensible) is a real data query
+ * (classdb_get_class(parent)), not a name a plugin has to already know --
+ * but the allowlist and the bridge implementation are two different things.
+ * Today the only bridged base is "ResourceFormatLoader"; adding another
+ * means adding another bridge (core/extension/bridges/), not widening this
+ * struct. */
 
 typedef void* (*FeatherClassCreateInstanceFn)(void* class_userdata, FeatherObjectPtr owner);
 typedef void (*FeatherClassFreeInstanceFn)(void* class_userdata, void* instance);
@@ -205,6 +222,36 @@ typedef bool (*FeatherInterfaceVariantToPtr)(FeatherVariantPtr src, FeatherVaria
 typedef size_t (*FeatherInterfaceVariantGetStringUtf8)(FeatherVariantPtr variant, char* dst, size_t cap);
 typedef void (*FeatherInterfaceVariantSetStringUtf8)(FeatherVariantPtr variant, const char* src, size_t len);
 
+/* ---- Array (feather::VariantArray) ----
+ *
+ * The only way to call a method with ARRAY in its signature (e.g.
+ * ComplexMesh::add_vertices/get_vertices) -- ARRAY has no fixed C layout, so
+ * it never goes through method_ptrcall, only method_variant_call via
+ * variant_from_array/variant_to_array below. */
+
+typedef void* FeatherArrayPtr; /* feather::VariantArray* */
+
+/* "array_new" / "array_destroy" -- every FeatherArrayPtr the plugin holds
+ * must come from array_new() and be freed with array_destroy(). */
+typedef FeatherArrayPtr (*FeatherInterfaceArrayNew)(void);
+typedef void (*FeatherInterfaceArrayDestroy)(FeatherArrayPtr array);
+typedef size_t (*FeatherInterfaceArraySize)(FeatherArrayPtr array);
+/* "array_get" -- copies element `index` into r_out (an already-variant_new'd
+ * FeatherVariantPtr); false if index is out of range. */
+typedef bool (*FeatherInterfaceArrayGet)(FeatherArrayPtr array, size_t index, FeatherVariantPtr r_out);
+/* "array_set" -- false if index is out of range; doesn't grow the array
+ * (see array_resize/array_append). */
+typedef bool (*FeatherInterfaceArraySet)(FeatherArrayPtr array, size_t index, FeatherVariantPtr value);
+typedef void (*FeatherInterfaceArrayAppend)(FeatherArrayPtr array, FeatherVariantPtr value);
+typedef void (*FeatherInterfaceArrayResize)(FeatherArrayPtr array, size_t count);
+
+/* "variant_from_array" -- copies `array`'s contents into an ARRAY-typed
+ * Variant; the plugin still owns and must separately array_destroy `array`.
+ * "variant_to_array" -- false if the variant isn't ARRAY-typed; replaces
+ * `dst`'s contents (an already-array_new'd FeatherArrayPtr) with a copy. */
+typedef void (*FeatherInterfaceVariantFromArray)(FeatherVariantPtr dst, FeatherArrayPtr array);
+typedef bool (*FeatherInterfaceVariantToArray)(FeatherVariantPtr src, FeatherArrayPtr dst);
+
 /* ---- ECS ----
  *
  * Deliberately not a general flecs mirror: only what a project needs to
@@ -219,9 +266,32 @@ typedef uint64_t FeatherEntityId;
 typedef uint64_t FeatherComponentId;
 typedef void* FeatherWorldPtr; /* flecs ecs_world_t* */
 
+/* Mirrors the 5 flecs pipeline phases engine code itself schedules against
+ * (core/world/rendering_world_feature.cpp uses PreStore/OnStore alongside
+ * OnUpdate) -- not the full flecs phase list, which has more than engine
+ * code has ever needed. */
 typedef enum {
-	FEATHER_PHASE_ON_UPDATE = 0 /* the only phase wired up so far */
+	FEATHER_PHASE_PRE_UPDATE = 0,
+	FEATHER_PHASE_ON_UPDATE,
+	FEATHER_PHASE_POST_UPDATE,
+	FEATHER_PHASE_PRE_STORE,
+	FEATHER_PHASE_ON_STORE
 } FeatherSystemPhase;
+
+/* Bitmask on FeatherSystemTerm::flags. A tag (zero-sized) component needs no
+ * flag of its own -- it's just a component registered with size 0, and its
+ * FeatherTableIter column is always NULL since there's no data to fetch. */
+typedef enum {
+	FEATHER_TERM_NONE = 0,
+	FEATHER_TERM_CONST = 1 << 0,    /* read-only access (flecs EcsIn) */
+	FEATHER_TERM_OPTIONAL = 1 << 1, /* term may not match this table (flecs EcsOptional); its column is NULL when absent */
+	FEATHER_TERM_UP = 1 << 2        /* traverse the default relationship upward for this term's source (flecs .up()) */
+} FeatherTermFlags;
+
+typedef struct {
+	FeatherComponentId id;
+	uint32_t flags; /* FeatherTermFlags bitmask */
+} FeatherSystemTerm;
 
 /* One call per matched TABLE, not per entity -- `columns[i]` is the base
  * pointer for term i's component array across all `count` entities in this
@@ -249,13 +319,25 @@ typedef FeatherWorldPtr (*FeatherInterfaceEcsGetWorld)(void);
 typedef FeatherComponentId (*FeatherInterfaceEcsRegisterComponent)(
 		FeatherWorldPtr world, const char* name, uint32_t size, uint32_t align);
 
-/* "ecs_register_system" -- terms/term_count describe the query; `callback`
- * fires once per matched table for as long as the world exists (no
+/* struct_size-versioned like FeatherInitialization/FeatherExtensionClassInfo:
+ * a plugin fills struct_size = sizeof(FeatherSystemDesc) as it saw it, so a
+ * future field addition can be detected rather than read out of bounds.
+ * `callback` fires once per matched table for as long as the world exists (no
  * unregister yet, matching where plugin unload sits generally right now).
  * `user_data` is copied into every FeatherTableIter passed to `callback` for
  * this registration. */
-typedef void (*FeatherInterfaceEcsRegisterSystem)(FeatherWorldPtr world, const char* name, FeatherSystemPhase phase,
-		const FeatherComponentId* terms, int32_t term_count, FeatherSystemFn callback, void* user_data);
+typedef struct {
+	uint32_t struct_size;
+	const char* name;
+	FeatherSystemPhase phase;
+	const FeatherSystemTerm* terms;
+	int32_t term_count;
+	FeatherSystemFn callback;
+	void* user_data;
+} FeatherSystemDesc;
+
+/* "ecs_register_system" */
+typedef void (*FeatherInterfaceEcsRegisterSystem)(FeatherWorldPtr world, const FeatherSystemDesc* desc);
 
 /* "ecs_entity_create" */
 typedef FeatherEntityId (*FeatherInterfaceEcsEntityCreate)(FeatherWorldPtr world, const char* name);

@@ -3,6 +3,7 @@
 #include "project_settings.h"
 #include "resources/resource_loader.h"
 
+#include <extension/bridges/resource_format_loader_bridge.h>
 #include <framework/register_framework_types.gen.h>
 #include <main/register_main_types.gen.h>
 #include <math/register_math_types.gen.h>
@@ -55,6 +56,7 @@ void Main::setup_db() {
 	register_rendering_types();
 	register_world_types();
 	register_main_types();
+	register_resource_format_loader_bridge();
 
 	// then register module types
 	register_modules();

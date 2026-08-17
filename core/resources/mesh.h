@@ -37,7 +37,7 @@ class ComplexMesh : public Mesh {
 	FCLASS();
 
 public:
-	ComplexMesh() = default;
+	ComplexMesh();
 
 	[[method]]
 	void add_vertices(const VariantArray vertices);

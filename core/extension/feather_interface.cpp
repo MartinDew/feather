@@ -3,6 +3,7 @@
 #include "bridges/resource_format_loader_bridge.h"
 #include "extension_interface.h"
 #include <framework/reflected.h>
+#include <framework/variant_array.h>
 #include <main/class_db.h>
 #include <math/math_defs.h>
 #include <resources/rid.h>
@@ -229,6 +230,28 @@ bool object_get_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* 
 	return false;
 }
 
+FeatherObjectPtr classdb_get_singleton(const char* class_name) {
+	auto* info = ClassDB::get_class_info(class_name);
+	if (!info || !info->is_singleton)
+		return nullptr;
+	// Singletons have no object_create_func (see ClassDB::register_singleton_class);
+	// their live instance is only reachable through the reflected static
+	// method the singleton modifier binds T::get() under (core_modifiers.py).
+	Callable get_fn = ClassDB::get_static_method(info->name, "__singleton_get");
+	Variant result = get_fn.call();
+	return result.is_nil() ? nullptr : result.as<Reflected*>().value();
+}
+
+uint32_t classdb_class_get_size(FeatherClassPtr cls) {
+	auto* info = static_cast<ClassInfo*>(cls);
+	return info ? info->size : 0;
+}
+
+uint32_t classdb_class_get_align(FeatherClassPtr cls) {
+	auto* info = static_cast<ClassInfo*>(cls);
+	return info ? info->align : 0;
+}
+
 bool object_set_property(FeatherObjectPtr obj, FeatherClassPtr cls, const char* prop_name, FeatherVariantPtr value) {
 	auto* info = static_cast<ClassInfo*>(cls);
 	while (info) {
@@ -251,12 +274,17 @@ bool classdb_register_extension_class(FeatherLibraryPtr library, const char* cla
 	if (!info || !class_name || !parent_class_name)
 		return false;
 
-	// Only bridge that exists so far -- see feather_interface.h's comment on
-	// FeatherExtensionClassInfo. Adding another parent means adding another
-	// bridge type here, not widening this function.
-	if (std::string_view(parent_class_name) != "ResourceFormatLoader") {
-		std::cerr << "classdb_register_extension_class: unsupported parent class '" << parent_class_name
-				  << "' (only ResourceFormatLoader is bridged so far)" << std::endl;
+	// The allowlist itself is a real data query (ClassInfo::is_extensible,
+	// set by each bridge's own registration -- see
+	// core/extension/bridges/resource_format_loader_bridge.cpp), not a name a
+	// plugin has to already know. Which C++ shim to build for an extensible
+	// base is still a hardcoded dispatch below, since that's inherently one
+	// bridge type per base -- see feather_interface.h's comment on
+	// FeatherExtensionClassInfo.
+	ClassInfo* parent_info = ClassDB::get_class_info(parent_class_name);
+	if (!parent_info || !parent_info->is_extensible) {
+		std::cerr << "classdb_register_extension_class: '" << parent_class_name
+				  << "' is not an extensible base (see docs/plugin_abi.md)" << std::endl;
 		return false;
 	}
 
@@ -264,9 +292,15 @@ bool classdb_register_extension_class(FeatherLibraryPtr library, const char* cla
 	std::string_view parent = intern(parent_class_name);
 	FeatherExtensionClassInfo info_copy = *info;
 
-	ClassDB::register_extension_class(
-			name, parent, [info_copy]() -> Variant { return new ExtensionResourceFormatLoader(info_copy); });
-	return true;
+	if (parent == "ResourceFormatLoader") {
+		ClassDB::register_extension_class(
+				name, parent, [info_copy]() -> Variant { return new ExtensionResourceFormatLoader(info_copy); });
+		return true;
+	}
+
+	std::cerr << "classdb_register_extension_class: '" << parent_class_name
+			  << "' is marked extensible but has no bridge implementation" << std::endl;
+	return false;
 }
 
 FeatherVariantPtr variant_new() {
@@ -308,6 +342,55 @@ void variant_set_string_utf8(FeatherVariantPtr variant, const char* src, size_t 
 	*static_cast<Variant*>(variant) = Variant(std::string(src, len));
 }
 
+FeatherArrayPtr array_new() {
+	return new VariantArray();
+}
+
+void array_destroy(FeatherArrayPtr array) {
+	delete static_cast<VariantArray*>(array);
+}
+
+size_t array_size(FeatherArrayPtr array) {
+	return static_cast<VariantArray*>(array)->size();
+}
+
+bool array_get(FeatherArrayPtr array, size_t index, FeatherVariantPtr r_out) {
+	auto* arr = static_cast<VariantArray*>(array);
+	if (index >= arr->size())
+		return false;
+	if (r_out)
+		*static_cast<Variant*>(r_out) = (*arr)[index];
+	return true;
+}
+
+bool array_set(FeatherArrayPtr array, size_t index, FeatherVariantPtr value) {
+	auto* arr = static_cast<VariantArray*>(array);
+	if (index >= arr->size())
+		return false;
+	(*arr)[index] = *static_cast<Variant*>(value);
+	return true;
+}
+
+void array_append(FeatherArrayPtr array, FeatherVariantPtr value) {
+	static_cast<VariantArray*>(array)->push_back(*static_cast<Variant*>(value));
+}
+
+void array_resize(FeatherArrayPtr array, size_t count) {
+	static_cast<VariantArray*>(array)->resize(count);
+}
+
+void variant_from_array(FeatherVariantPtr dst, FeatherArrayPtr array) {
+	*static_cast<Variant*>(dst) = Variant(*static_cast<VariantArray*>(array));
+}
+
+bool variant_to_array(FeatherVariantPtr src, FeatherArrayPtr dst) {
+	auto* v = static_cast<Variant*>(src);
+	if (v->get_type() != VariantType::ARRAY)
+		return false;
+	*static_cast<VariantArray*>(dst) = v->as<VariantArray>().value();
+	return true;
+}
+
 } // extern "C"
 
 // name -> function pointer, linear scan; called rarely (at plugin init only).
@@ -317,11 +400,14 @@ struct ProcEntry {
 };
 
 // clang-format off
-const std::array<ProcEntry, 17> PROC_TABLE {{
+const std::array<ProcEntry, 29> PROC_TABLE {{
 	{ "feather_log",              reinterpret_cast<FeatherProc>(&feather_log) },
 	{ "classdb_get_class",        reinterpret_cast<FeatherProc>(&classdb_get_class) },
 	{ "classdb_class_get_method", reinterpret_cast<FeatherProc>(&classdb_class_get_method) },
 	{ "classdb_register_extension_class", reinterpret_cast<FeatherProc>(&classdb_register_extension_class) },
+	{ "classdb_get_singleton",    reinterpret_cast<FeatherProc>(&classdb_get_singleton) },
+	{ "classdb_class_get_size",   reinterpret_cast<FeatherProc>(&classdb_class_get_size) },
+	{ "classdb_class_get_align",  reinterpret_cast<FeatherProc>(&classdb_class_get_align) },
 	{ "object_create",            reinterpret_cast<FeatherProc>(&object_create) },
 	{ "object_destroy",           reinterpret_cast<FeatherProc>(&object_destroy) },
 	{ "method_ptrcall",           reinterpret_cast<FeatherProc>(&method_ptrcall) },
@@ -335,6 +421,15 @@ const std::array<ProcEntry, 17> PROC_TABLE {{
 	{ "variant_to_ptr",           reinterpret_cast<FeatherProc>(&variant_to_ptr) },
 	{ "variant_get_string_utf8",  reinterpret_cast<FeatherProc>(&variant_get_string_utf8) },
 	{ "variant_set_string_utf8",  reinterpret_cast<FeatherProc>(&variant_set_string_utf8) },
+	{ "array_new",                reinterpret_cast<FeatherProc>(&array_new) },
+	{ "array_destroy",            reinterpret_cast<FeatherProc>(&array_destroy) },
+	{ "array_size",               reinterpret_cast<FeatherProc>(&array_size) },
+	{ "array_get",                reinterpret_cast<FeatherProc>(&array_get) },
+	{ "array_set",                reinterpret_cast<FeatherProc>(&array_set) },
+	{ "array_append",             reinterpret_cast<FeatherProc>(&array_append) },
+	{ "array_resize",             reinterpret_cast<FeatherProc>(&array_resize) },
+	{ "variant_from_array",       reinterpret_cast<FeatherProc>(&variant_from_array) },
+	{ "variant_to_array",         reinterpret_cast<FeatherProc>(&variant_to_array) },
 }};
 // clang-format on
 
