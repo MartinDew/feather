@@ -8,9 +8,9 @@ if (is_plat("macosx")) then
 end
 
 if has_config("enable_vex_renderer") then
-    -- Owns everything the executables need for Vex's runtime deploy step, so
-    -- feather.editor/standalone below never redefine on_load/after_build
-    -- directly (rules stack; those closures don't — see xmake/helper.lua).
+    -- Owns everything the executable needs for Vex's runtime deploy step, so
+    -- the feather target below never redefines on_load/after_build directly
+    -- (rules stack; those closures don't — see xmake/helper.lua).
     rule("vex_renderer.deploy_runtime")
         on_load(function(target)
             -- D3D12 reads D3D12SDKVersion/D3D12SDKPath from the main exe at
@@ -76,38 +76,30 @@ if has_config("enable_vex_renderer") then
         "register_module.cpp",
         "vex_renderer.cpp",
     }, {
-        -- Pull vex onto the executables so target:pkg("vex") resolves in
+        -- Pull vex onto the executable so target:pkg("vex") resolves in
         -- vex_renderer.deploy_runtime's hooks (xmake dedupes the link).
         exe_packages = {"vex"},
         exe_packages_windows = {"directx12-agility"},
         exe_rules = {"vex_renderer.deploy_runtime"},
         -- Produced by generate_reflection.py --module-path (see run_codegen in
-        -- the top-level xmake.lua): the module's _bind_members() definitions,
+        -- xmake/engine.lua): the module's _bind_members() definitions,
         -- generated the same way core/*/register_<sub>_types.gen.cpp are.
         generated_files = {"register_vex_renderer_types.gen.cpp"},
     })
 
-    for _, variant in ipairs({"editor", "standalone"}) do
-        target("vex_renderer_" .. variant)
-            add_packages("vex", {public = false})
-            -- vex_renderer_<variant> is a dependency of feather.<variant> (added
-            -- via feather_module_target -> add_deps), so xmake compiles its files
-            -- -- including the generated register_vex_renderer_types.gen.cpp --
-            -- before feather.<variant>'s own before_build(run_codegen) would get a
-            -- chance to produce it. Generate it here instead; see
-            -- xmake/modules/feather_codegen.lua's run_module_codegen.
-            before_build(function(target)
-                import("feather_codegen")
-                feather_codegen.run_module_codegen(os.scriptdir())
-            end)
-            -- Mirrors CMake's per-config Vex defines
-            if is_mode("debug") then
-                add_defines("VEX_DEBUG=1", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=0")
-            elseif is_mode("releasedbg") then
-                add_defines("VEX_DEBUG=0", "VEX_DEVELOPMENT=1", "VEX_SHIPPING=0")
-            elseif is_mode("release") then
-                add_defines("VEX_DEBUG=0", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=1")
-            end
-        target_end()
-    end
+    target("vex_renderer")
+        add_packages("vex", {public = false})
+        before_build(function(target)
+            import("feather_codegen")
+            feather_codegen.run_module_codegen(os.scriptdir())
+        end)
+
+        if is_mode("debug") then
+            add_defines("VEX_DEBUG=1", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=0")
+        elseif is_mode("releasedbg") then
+            add_defines("VEX_DEBUG=0", "VEX_DEVELOPMENT=1", "VEX_SHIPPING=0")
+        elseif is_mode("release") then
+            add_defines("VEX_DEBUG=0", "VEX_DEVELOPMENT=0", "VEX_SHIPPING=1")
+        end
+    target_end()
 end

@@ -40,10 +40,12 @@ local FEATHER_ROOT = resolve_feather_root()
 if FEATHER_ROOT then
     includes(path.join(FEATHER_ROOT, "tools", "SDK", "FeatherSDK.lua"))
 
-    -- "editor" or "standalone" must match which engine binary this DLL loads
-    -- into. `name` sets the generated register_<name>_types/_components
-    -- entry point names, defaulting to the dir's basename.
-    feather_sdk_setup("<project_name>", "editor", { -- TODO: rename + pick variant
+    -- Must be built with the FeatherEngine checkout configured the same way
+    -- as the engine binary this DLL will load into (see FeatherSDK.lua's
+    -- feather_sdk_setup() comment). `name` sets the generated
+    -- register_<name>_types/_components entry point names, defaulting to
+    -- the dir's basename.
+    feather_sdk_setup("<project_name>", { -- TODO: rename
         codegen_dirs = { {dir = "src", name = "<project_name>"} }, -- TODO: rename
     })
 

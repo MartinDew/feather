@@ -13,27 +13,24 @@ includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
--- variant: "editor" or "standalone" -- must match the engine binary this DLL loads into.
+-- This DLL must be built in the same xmake configure as the engine binary
+-- it's loading into, so EDITOR_BUILD (from feather_public_api via add_deps
+-- below) matches the already-built feather binary's value -- see
+-- xmake/public_api.lua's comment on why that has to be one shared define.
+--
 -- opts.codegen_dirs: dirs to run reflection codegen over (default {"src"}); pass {} to opt out.
 -- opts.codegen_extensions: project modifier extensions, scoped to codegen_dirs.
 -- opts.engine_bin_dir: defaults to <engine>/build/bin.
-function feather_sdk_setup(target_name, variant, opts)
+function feather_sdk_setup(target_name, opts)
     opts = opts or {}
-    variant = variant or "standalone"
-    if variant ~= "editor" and variant ~= "standalone" then
-        -- assert() is unavailable at description scope, so warn instead of hard-failing.
-        print("[feather] feather_sdk_setup: variant must be 'editor' or 'standalone', got: " .. tostring(variant) .. " -- defaulting to 'standalone'")
-        variant = "standalone"
-    end
 
     local bin_dir = opts.engine_bin_dir or path.join(FEATHER_ROOT, "build", "bin")
-    local engine_bin = path.join(bin_dir, "feather." .. variant)
+    local engine_bin = path.join(bin_dir, "feather")
 
     local codegen_dirs = opts.codegen_dirs or {"src"}
     local codegen_extensions = opts.codegen_extensions
 
     target(target_name)
-        add_defines("EDITOR_BUILD=" .. (variant == "editor" and "1" or "0"))
         add_deps("feather_public_api")
 
         -- before_build/on_load closures run sandboxed and can't see this
@@ -98,7 +95,7 @@ function feather_sdk_setup(target_name, variant, opts)
 
         if is_plat("windows") then
             add_linkdirs(bin_dir)
-            add_links("feather." .. variant)
+            add_links("feather")
         else
             -- No link target on ELF/Mach-O: undefined engine/flecs/SDL symbols
             -- bind to the host exe at dlopen() time (-rdynamic, {links = {}}).
