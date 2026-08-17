@@ -30,6 +30,7 @@ public:
 private:
 	std::map<StaticString, ClassInfo> _class_infos;
 	std::map<StaticString, subclass_delegate_t> _subclass_delegates;
+	std::map<StaticString, EnumInfo> _enum_infos;
 
 	ClassInfo* _current_info = nullptr;
 
@@ -53,6 +54,13 @@ public:
 	static void dump_api_json(const std::string& path);
 
 	static Callable get_static_method(const StaticString& class_name, std::string_view func_name);
+
+	// A free enum reflected alongside a class (e.g. LightType next to Light).
+	// `values` names must already be stable storage (generated code only ever
+	// passes string literals, same convention as register_extension_class).
+	static void register_enum(std::string_view name, VariantType underlying,
+							  std::vector<std::pair<std::string_view, int64_t>> values);
+	static const EnumInfo* get_enum_info(std::string_view name);
 
 	template <is_reflected_class_type T>
 	static void register_class();
@@ -98,6 +106,43 @@ public:
 	static void
 	bind_property_set(void (T::*setter)(TSet), std::string_view name, AccessLevel access = AccessLevel::Public);
 
+	// Property backed by a data member with no Variant mapping at all (e.g. a
+	// value type's raw physical layout) -- goes into ClassInfo::fields, not
+	// ::properties. Never guarded/no-op like bind_property_*_if_bindable:
+	// layout is layout regardless of whether the type is script-marshalable.
+	template <class T, class U>
+	static void bind_field(U T::* member, std::string_view name);
+
+	// Same, but the member's declared type is a registered enum (register_enum)
+	// rather than something get_variant_class_name<U>() can name on its own --
+	// the generator passes the enum's name explicitly.
+	template <class T, class U>
+	static void bind_field(U T::* member, std::string_view name, std::string_view type_class_override);
+
+	// Property whose C++ type is an enum class: stored as its underlying
+	// integer (get_variant_type<enum>() is INVALID, so bind_property_accessors
+	// would silently no-op via the _if_bindable guard) with type_class set to
+	// the enum's name so a consumer can still recover it.
+	template <class T, class TGet, class TSet>
+	static void bind_enum_property_accessors(TGet (T::*getter)() const,
+											 void (T::*setter)(TSet),
+											 std::string_view name,
+											 std::string_view enum_type_name,
+											 AccessLevel getter_access = AccessLevel::Public,
+											 AccessLevel setter_access = AccessLevel::Public);
+
+	template <class T, class TGet>
+	static void bind_enum_property_get(TGet (T::*getter)() const,
+									   std::string_view name,
+									   std::string_view enum_type_name,
+									   AccessLevel access = AccessLevel::Public);
+
+	template <class T, class TSet>
+	static void bind_enum_property_set(void (T::*setter)(TSet),
+									   std::string_view name,
+									   std::string_view enum_type_name,
+									   AccessLevel access = AccessLevel::Public);
+
 	// Guarded binds: no-op when the property type isn't Variant-marshalable
 	// (e.g. std::shared_ptr<...>), so generated accessors never break the build.
 	template <class T, class TGet, class TSet>
@@ -117,29 +162,42 @@ public:
 											  std::string_view name,
 											  AccessLevel access = AccessLevel::Public);
 
+	// param_names/is_virtual are best-effort metadata captured from the
+	// declaration text (generate_reflection.py) for a typed plugin-side
+	// mirror -- they don't affect dispatch, so a hand-written bind_method call
+	// can safely omit them.
 	template <class T, class TRet, class... TArgs>
-	static void
-	bind_method(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access = AccessLevel::Public);
+	static void bind_method(TRet (T::*method)(TArgs...), std::string_view name,
+							AccessLevel access = AccessLevel::Public,
+							std::initializer_list<std::string_view> param_names = {},
+							bool is_virtual = false);
 
 	template <class T, class TRet, class... TArgs>
-	static void
-	bind_method(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access = AccessLevel::Public);
+	static void bind_method(TRet (T::*method)(TArgs...) const, std::string_view name,
+							AccessLevel access = AccessLevel::Public,
+							std::initializer_list<std::string_view> param_names = {},
+							bool is_virtual = false);
 
 	template <class TRet, class... TArgs>
-	static void
-	bind_static_method(TRet (*method)(TArgs...), std::string_view name, AccessLevel access = AccessLevel::Public);
+	static void bind_static_method(TRet (*method)(TArgs...), std::string_view name,
+								   AccessLevel access = AccessLevel::Public,
+								   std::initializer_list<std::string_view> param_names = {});
 
 	// Guarded bind_method: no-op when the signature isn't Variant-marshalable.
 	// Used for auto-bound (opt-out) methods; explicit [[method]] uses bind_method directly.
 	template <class T, class TRet, class... TArgs>
 	static void bind_method_if_bindable(TRet (T::*method)(TArgs...),
 										std::string_view name,
-										AccessLevel access = AccessLevel::Public);
+										AccessLevel access = AccessLevel::Public,
+										std::initializer_list<std::string_view> param_names = {},
+										bool is_virtual = false);
 
 	template <class T, class TRet, class... TArgs>
 	static void bind_method_if_bindable(TRet (T::*method)(TArgs...) const,
 										std::string_view name,
-										AccessLevel access = AccessLevel::Public);
+										AccessLevel access = AccessLevel::Public,
+										std::initializer_list<std::string_view> param_names = {},
+										bool is_virtual = false);
 
 	// Raw ClassInfo* for a registered class, or nullptr. Used to hand the
 	// plugin ABI an opaque FeatherClassPtr handle (core/extension) -- callers

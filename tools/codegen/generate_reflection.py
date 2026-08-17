@@ -95,7 +95,15 @@ class MethodPlan:
     access: str             # public / protected / private
     strict: bool            # true when force-bound via [[method]] (hard error if unbindable)
     is_static: bool = False
+    is_virtual: bool = False
+    param_names: list = dc_field(default_factory=list)  # best-effort, "" for an unresolved slot
     condition: str = None   # verbatim (flattened) #if expression guarding this member, if any
+
+
+@dataclass
+class EnumDesc:
+    name: str
+    values: list   # list[(enumerator_name, value: int)]
 
 
 @dataclass
@@ -122,6 +130,11 @@ class ClassDesc:
     properties: list = dc_field(default_factory=list)     # list[PropertyPlan]
     gen_getters: list = dc_field(default_factory=list)    # (access, code, condition) inline accessor defs
     methods: list = dc_field(default_factory=list)        # list[MethodPlan]
+    # Every non-static data member, value types only -- list[(member, type_spelling,
+    # condition)]. Unlike `properties` this is NOT opt-in via [[get]]/[[set]]:
+    # a value type's physical layout is needed regardless of which members are
+    # script-exposed (see ClassInfo::Field in class_info.h).
+    all_fields: list = dc_field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -243,6 +256,93 @@ def _find_matching_brace(text: str, open_pos: int) -> int:
                 return i
         i += 1
     raise ParseError(f"unbalanced braces starting at offset {open_pos} (line {_line_of(text, open_pos)})")
+
+
+def _find_matching_paren(text: str, open_pos: int) -> int:
+    """text[open_pos] must be '('. Returns the index of the matching ')'. Only
+    tracks '('/')' -- any '{'/'[' inside (e.g. an inline method body following
+    the parameter list) is irrelevant to finding where the parameter list
+    itself ends, since parens are always balanced regardless of what braces
+    surround them."""
+    depth = 0
+    i, n = open_pos, len(text)
+    while i < n:
+        c = text[i]
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n
+
+
+def _parse_param_names(param_text: str) -> list:
+    """Best-effort parameter names from a method's raw parameter-list text
+    (e.g. "const std::string& extension, int count = 0"). Not a general C++
+    parser -- a parameter with no name (an abstract-declarator param, e.g.
+    bare "int") yields "" for that slot rather than a guess; callers treat ""
+    as 'name unknown'."""
+    text = param_text.strip()
+    if not text or text == "void":
+        return []
+    names = []
+    for part in _split_top_level(text):
+        part = part.split("=")[0].strip()  # drop a default value
+        idents = list(_IDENT_RE.finditer(part))
+        if not idents:
+            names.append("")
+            continue
+        last = idents[-1]
+        # The name is the trailing identifier UNLESS it's also the type (no
+        # qualifier/*/& text precedes it) -- an unnamed parameter's sole
+        # identifier is its type, not a name.
+        names.append(last.group(0) if part[:last.start()].rstrip() else "")
+    return names
+
+
+def _names_literal(names: list) -> str:
+    if not names:
+        return "{}"
+    return "{ " + ", ".join(f'"{n}"' for n in names) + " }"
+
+
+# `enum class Name [: Underlying] { ... };` at file/namespace scope (not
+# nested in a class body -- see scan_enum_occurrences). No nested braces
+# expected in a plain enumerator list.
+_ENUM_RE = re.compile(r"\benum\s+class\s+(\w+)\s*(?::\s*[\w:]+)?\s*\{([^{}]*)\}\s*;")
+
+
+def scan_enum_occurrences(text: str, class_spans: list) -> list:
+    """Free enum class declarations in `text` (already comment/literal-
+    blanked), skipping any whose match falls inside a class/struct body
+    (class_spans, from find_class_bodies) -- a nested enum isn't handled here,
+    matching find_class_bodies' own "don't recurse into a found record" rule.
+    Enumerator values follow C++ defaulting (sequential from the last
+    explicit value, starting at 0); anything after '=' other than a bare
+    integer literal is left at its sequential default rather than guessed --
+    not a general constant-expression evaluator."""
+    out = []
+    for m in _ENUM_RE.finditer(text):
+        if any(s <= m.start() < e for s, e in class_spans):
+            continue
+        name = m.group(1)
+        values, next_val = [], 0
+        for enumerator in _split_top_level(m.group(2)):
+            enumerator = enumerator.strip()
+            if not enumerator:
+                continue
+            name_m = _IDENT_RE.match(enumerator)
+            if not name_m:
+                continue
+            val_m = re.match(r"^\w+\s*=\s*(-?\d+)\s*$", enumerator)
+            if val_m:
+                next_val = int(val_m.group(1))
+            values.append((name_m.group(0), next_val))
+            next_val += 1
+        out.append(EnumDesc(name=name, values=values))
+    return out
 
 
 def find_class_bodies(text: str):
@@ -496,6 +596,14 @@ def classify_chunk(chunk: str):
     if not decl or (fw and fw.group(0) in _NON_MEMBER_LEAD_WORDS):
         return {"attrs": attrs, "kind": None}
 
+    # Never reflectable, and must be caught before the '(' / '=' scan below:
+    # operator==/!=/etc. contain a bare '=' that the naive depth-0 scan would
+    # hit before ever reaching the operator's real parameter list, misrouting
+    # it into the field branch (see classify_chunk's field path, which has no
+    # operator awareness of its own).
+    if re.search(r"\boperator\b", decl):
+        return {"attrs": attrs, "kind": None}
+
     # First depth-0 '(' or '=' decides method vs. field: a '(' must be checked
     # *before* the generic depth-increment for "([{", or it would always be
     # swallowed by that branch first and never recorded (paren_pos would stay
@@ -518,8 +626,6 @@ def classify_chunk(chunk: str):
 
     if paren_pos is not None:
         prefix = decl[:paren_pos]
-        if re.search(r"\boperator\b", prefix):
-            return {"attrs": attrs, "kind": None}
         idents = list(_IDENT_RE.finditer(prefix))
         if not idents:
             return {"attrs": attrs, "kind": None}
@@ -527,8 +633,12 @@ def classify_chunk(chunk: str):
         name = name_m.group(0)
         is_dtor = prefix[:name_m.start()].rstrip().endswith("~")
         is_static = bool(re.search(r"(?<!\w)static(?!\w)", prefix[:name_m.start()]))
+        is_virtual = bool(re.search(r"(?<!\w)virtual(?!\w)", prefix[:name_m.start()]))
+        close_paren = _find_matching_paren(decl, paren_pos)
+        param_names = _parse_param_names(decl[paren_pos + 1:close_paren])
         return {"attrs": attrs, "kind": "method", "name": name,
-                "is_static": is_static, "is_dtor": is_dtor}
+                "is_static": is_static, "is_dtor": is_dtor,
+                "is_virtual": is_virtual, "param_names": param_names}
 
     region = decl if eq_pos is None else decl[:eq_pos]
     region = region.rstrip()
@@ -637,6 +747,8 @@ def build_class(name: str, parent: str, tag: str, body: str, header: Path, fclas
                 continue
 
             if kind == "field":
+                if not info["is_static"] and cls.is_value_type:
+                    cls.all_fields.append((info["name"], info["type"], condition))
                 _handle_field(cls, info, current_access, condition, header, body, offset, fclass_line)
             elif kind == "method":
                 if info["is_dtor"] or info["name"] == name:
@@ -793,7 +905,8 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offs
 
     cls.methods.append(MethodPlan(
         name=name, bind_name=bind_name, access=access, strict=forced,
-        is_static=info["is_static"], condition=condition
+        is_static=info["is_static"], is_virtual=info["is_virtual"],
+        param_names=info["param_names"], condition=condition
     ))
 
 
@@ -924,7 +1037,7 @@ def generate_gen_header(classes: list, header: Path, project_root: Path, registr
     return "\n".join(lines) + "\n"
 
 
-def _bind_members_body(c: ClassDesc, dir_name: str) -> list:
+def _bind_members_body(c: ClassDesc, dir_name: str, known_enums: dict) -> list:
     # Unlike the .gen.h macro, this is a real function body -- #if/#endif can
     # wrap a conditional binding call directly, no hoisted-helper-macro
     # indirection needed.
@@ -942,7 +1055,22 @@ def _bind_members_body(c: ClassDesc, dir_name: str) -> list:
         sa = ACCESS_ENUM[p.setter_access]
         has_get = p.getter_kind != "none"
         has_set = p.setter_kind != "none"
-        if has_get and has_set:
+        # An enum-typed property has no VariantType of its own -- the plain
+        # _if_bindable path would silently no-op it (see Light::type before
+        # this existed) -- so route it through the enum-aware overloads
+        # instead, which store it as its underlying integer.
+        if p.type_spelling in known_enums:
+            if has_get and has_set:
+                emit(out, p.condition, f"\tClassDB::bind_enum_property_accessors("
+                     f"&{c.name}::{p.getter_method}, &{c.name}::{p.setter_method}, "
+                     f'"{p.prop_name}", "{p.type_spelling}", {ga}, {sa});')
+            elif has_get:
+                emit(out, p.condition, f"\tClassDB::bind_enum_property_get("
+                     f'&{c.name}::{p.getter_method}, "{p.prop_name}", "{p.type_spelling}", {ga});')
+            elif has_set:
+                emit(out, p.condition, f"\tClassDB::bind_enum_property_set("
+                     f'&{c.name}::{p.setter_method}, "{p.prop_name}", "{p.type_spelling}", {sa});')
+        elif has_get and has_set:
             emit(out, p.condition, f"\tClassDB::bind_property_accessors_if_bindable("
                  f"&{c.name}::{p.getter_method}, &{c.name}::{p.setter_method}, "
                  f'"{p.prop_name}", {ga}, {sa});')
@@ -952,13 +1080,23 @@ def _bind_members_body(c: ClassDesc, dir_name: str) -> list:
         elif has_set:
             emit(out, p.condition, f"\tClassDB::bind_property_set_if_bindable("
                  f'&{c.name}::{p.setter_method}, "{p.prop_name}", {sa});')
+    for member, type_spelling, condition in c.all_fields:
+        fname = _prop_name(member)
+        if type_spelling in known_enums:
+            emit(out, condition, f'\tClassDB::bind_field(&{c.name}::{member}, "{fname}", "{type_spelling}");')
+        else:
+            emit(out, condition, f'\tClassDB::bind_field(&{c.name}::{member}, "{fname}");')
     for m in c.methods:
         acc = ACCESS_ENUM[m.access]
+        names_lit = _names_literal(m.param_names)
         if m.is_static:
-            emit(out, m.condition, f'\tClassDB::bind_static_method(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+            emit(out, m.condition,
+                 f'\tClassDB::bind_static_method(&{c.name}::{m.name}, "{m.bind_name}", {acc}, {names_lit});')
         else:
             bind = "bind_method" if m.strict else "bind_method_if_bindable"
-            emit(out, m.condition, f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc});')
+            is_virtual = "true" if m.is_virtual else "false"
+            emit(out, m.condition, f'\tClassDB::{bind}(&{c.name}::{m.name}, "{m.bind_name}", {acc}, '
+                 f'{names_lit}, {is_virtual});')
     ctx = EmitContext(dir_name=dir_name)
     for modifier, _arg in c.resolved_modifiers:
         for stmt in modifier.bind_members_lines(c, ctx):
@@ -984,7 +1122,8 @@ def topological_sort(classes: list) -> list:
     return result
 
 
-def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_emissions: list) -> str:
+def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_emissions: list,
+                           known_enums: dict) -> str:
     func = f"register_{subfolder}_types"
     ordered = topological_sort(classes)
     ctx = EmitContext(dir_name=subfolder)
@@ -1016,7 +1155,7 @@ def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_em
     lines += ["", "namespace feather {", ""]
 
     for c in ordered:
-        lines.extend(_bind_members_body(c, subfolder))
+        lines.extend(_bind_members_body(c, subfolder, known_enums))
         lines.append("")
         for modifier, _arg in c.resolved_modifiers:
             defs = modifier.register_cpp_definitions(c, ctx)
@@ -1025,7 +1164,7 @@ def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_em
                 lines.append("")
 
     lines.append(f"void {func}() {{")
-    if ordered:
+    if ordered or known_enums:
         for c in ordered:
             # A modifier may replace the default register_class/register_value_class
             # call entirely (e.g. singleton -> register_singleton_class); the first
@@ -1043,6 +1182,10 @@ def generate_register_cpp(subfolder: str, classes: list, core_path: Path, dir_em
                 stmts = [f"ClassDB::{reg}<{c.name}>();"]
             for stmt in stmts:
                 lines.append(f"\t{stmt}")
+        for enum_name in sorted(known_enums):
+            e = known_enums[enum_name]
+            vals = ", ".join(f'{{"{n}", {v}}}' for n, v in e.values)
+            lines.append(f'\tClassDB::register_enum("{enum_name}", VariantType::INT, {{ {vals} }});')
     else:
         lines.append("\t// No reflected classes found in this module.")
     lines += ["}", ""]
@@ -1134,7 +1277,7 @@ def scan_fclass_occurrences(text: str) -> list:
     return out
 
 
-def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str) -> list:
+def process_header(header: Path, project_root: Path, registry: Registry, dir_name: str) -> tuple:
     # newline="" disables universal-newline translation: on a CRLF checkout,
     # Path.read_text()'s "\r\n" -> "\n" translation would silently collapse
     # one byte per line, making offsets increasingly diverge from on-disk
@@ -1146,15 +1289,21 @@ def process_header(header: Path, project_root: Path, registry: Registry, dir_nam
     text = blank_comments_and_literals(raw)
     occ = scan_fclass_occurrences(text)
     if not occ:
-        return []
+        return [], []
 
+    class_spans = []
     classes = []
     for name, parent, tag, body_start, body_end, _decl_line in find_class_bodies(text):
+        class_spans.append((body_start, body_end))
         body = text[body_start:body_end]
         cls = build_class(name, parent, tag, body, header, occ, body_start, body_end, registry, dir_name)
         if cls is not None:
             classes.append(cls)
-    return classes
+    # A free enum (e.g. LightType next to Light) only gets picked up in a
+    # header that already has at least one FCLASS/FSTRUCT -- opt-in the same
+    # way properties/methods are, at the header granularity.
+    enums = scan_enum_occurrences(text, class_spans)
+    return classes, enums
 
 
 def find_headers(folder: Path):
@@ -1200,15 +1349,20 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
     registry = build_registry(dir_path, extra_extensions)
     classes_by_header: dict = {}
     all_classes: list = []
+    all_enums: list = []
     for header in find_headers(dir_path):
         try:
-            classes = process_header(header, project_root, registry, name)
+            classes, enums = process_header(header, project_root, registry, name)
         except ParseError as exc:  # an annotated declaration we couldn't parse -- fatal
             print(f"[ERROR] {exc}", file=sys.stderr)
             sys.exit(1)
         if classes:
             classes_by_header[header] = classes
             all_classes.extend(classes)
+        all_enums.extend(enums)
+    # Last one wins on a name collision across headers in the same directory --
+    # not expected in practice, not worth diagnosing specially.
+    known_enums = {e.name: e for e in all_enums}
 
     try:
         validate_hierarchy(all_classes)
@@ -1240,7 +1394,7 @@ def process_source_dir(dir_path: Path, name: str, include_base: Path, project_ro
     if write_if_changed(out_h, generate_register_header(name, dir_emissions)):
         changed += 1
         print(f"  [{name}] updated {out_h.name}")
-    if write_if_changed(out_cpp, generate_register_cpp(name, all_classes, include_base, dir_emissions)):
+    if write_if_changed(out_cpp, generate_register_cpp(name, all_classes, include_base, dir_emissions, known_enums)):
         changed += 1
         print(f"  [{name}] updated {out_cpp.name}")
     return changed

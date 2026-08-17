@@ -3,6 +3,7 @@
 #include "assert.h"
 #include "container_utils.h"
 #include "path.h"
+#include "static_string.hpp"
 #include "variant_array.h"
 
 #include "reflected.h"
@@ -93,6 +94,22 @@ consteval VariantType get_variant_type() {
 // Type trait to check if a type can be converted to Variant
 template <typename T>
 concept VariantCompatible = get_variant_type<T>() != VariantType::INVALID;
+
+// Static class name for an OBJECT-typed slot (Reflected-derived, by pointer,
+// reference, or value) -- "" for anything else. get_variant_type<T>() only
+// records the VariantType category (OBJECT), never which class; this is what
+// lets ClassDB::bind_method capture that e.g. an OBJECT return is really a
+// RenderScene, straight from the method's real C++ signature.
+template <class T>
+constexpr StaticString get_variant_class_name() {
+	using Bare = std::remove_cv_t<std::remove_pointer_t<std::remove_reference_t<T>>>;
+	if constexpr (std::is_base_of_v<Reflected, Bare>) {
+		return Bare::get_class_static();
+	}
+	else {
+		return ""_ss;
+	}
+}
 
 struct ClassInfo;
 

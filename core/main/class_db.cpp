@@ -1,5 +1,6 @@
 #include "class_db.h"
 #include "framework/reflected.h"
+#include <extension/feather_interface.h>
 #include <algorithm>
 #include <fstream>
 #include <iostream>
@@ -103,6 +104,23 @@ void ClassDB::register_extension_class(std::string_view name, std::string_view p
 
 ClassInfo* ClassDB::get_class_info(std::string_view name) {
 	return _get_class_info_internal(name);
+}
+
+void ClassDB::register_enum(std::string_view name, VariantType underlying,
+							std::vector<std::pair<std::string_view, int64_t>> values) {
+	EnumInfo info;
+	info.name = StaticString(name);
+	info.underlying = underlying;
+	info.values.reserve(values.size());
+	for (auto& [enumerator_name, value] : values) {
+		info.values.emplace_back(StaticString(enumerator_name), value);
+	}
+	get()->_enum_infos[StaticString(name)] = std::move(info);
+}
+
+const EnumInfo* ClassDB::get_enum_info(std::string_view name) {
+	auto it = get()->_enum_infos.find(name);
+	return it != get()->_enum_infos.end() ? &it->second : nullptr;
 }
 
 Reflected* ClassDB::create_object_unsafe(std::string_view name) {
@@ -244,8 +262,19 @@ void ClassDB::dump_api_json(const std::string& path) {
 	// runs and diffable, which the generator relies on (write_if_changed).
 	std::ranges::sort(classes, {}, [](const ClassInfo* ci) { return ci->name.str(); });
 
+	std::vector<const EnumInfo*> enums;
+	enums.reserve(get()->_enum_infos.size());
+	for (auto& [name, info] : get()->_enum_infos) {
+		enums.push_back(&info);
+	}
+	std::ranges::sort(enums, {}, [](const EnumInfo* ei) { return ei->name.str(); });
+
 	std::ostringstream buf;
-	buf << "{\n  \"classes\": [\n";
+	buf << "{\n";
+	buf << "  \"version\": { \"interface_major\": " << FEATHER_INTERFACE_VERSION_MAJOR
+		<< ", \"interface_minor\": " << FEATHER_INTERFACE_VERSION_MINOR << " },\n";
+
+	buf << "  \"classes\": [\n";
 	for (size_t ci = 0; ci < classes.size(); ++ci) {
 		const ClassInfo& info = *classes[ci];
 		buf << "    {\n      \"name\": ";
@@ -255,6 +284,10 @@ void ClassDB::dump_api_json(const std::string& path) {
 		buf << ",\n      \"is_abstract\": " << (info.is_abstract ? "true" : "false");
 		buf << ",\n      \"is_singleton\": " << (info.is_singleton ? "true" : "false");
 		buf << ",\n      \"is_value_type\": " << (info.is_value_type ? "true" : "false");
+		buf << ",\n      \"is_extensible\": " << (info.is_extensible ? "true" : "false");
+		buf << ",\n      \"has_factory\": " << (info.object_create_func ? "true" : "false");
+		buf << ",\n      \"size\": " << info.size;
+		buf << ",\n      \"align\": " << info.align;
 
 		buf << ",\n      \"properties\": [";
 		for (size_t i = 0; i < info.properties.size(); ++i) {
@@ -263,6 +296,8 @@ void ClassDB::dump_api_json(const std::string& path) {
 			buf << "          \"name\": ";
 			write_json_string(buf, prop.name.str());
 			buf << ",\n          \"type\": \"" << variant_type_name(prop.type) << "\"";
+			buf << ",\n          \"type_class\": ";
+			write_json_string(buf, prop.type_class.str());
 			buf << ",\n          \"has_getter\": " << (prop.getter ? "true" : "false");
 			buf << ",\n          \"has_setter\": " << (prop.setter ? "true" : "false");
 			buf << ",\n          \"getter_access\": \"" << access_level_name(prop.getter_access) << "\"";
@@ -270,6 +305,21 @@ void ClassDB::dump_api_json(const std::string& path) {
 			buf << "\n        }";
 		}
 		buf << (info.properties.empty() ? "]" : "\n      ]");
+
+		buf << ",\n      \"fields\": [";
+		for (size_t i = 0; i < info.fields.size(); ++i) {
+			const auto& f = info.fields[i];
+			buf << (i ? ",\n        {\n" : "\n        {\n");
+			buf << "          \"name\": ";
+			write_json_string(buf, f.name.str());
+			buf << ",\n          \"type\": \"" << variant_type_name(f.type) << "\"";
+			buf << ",\n          \"type_class\": ";
+			write_json_string(buf, f.type_class.str());
+			buf << ",\n          \"offset\": " << f.offset;
+			buf << ",\n          \"size\": " << f.size;
+			buf << "\n        }";
+		}
+		buf << (info.fields.empty() ? "]" : "\n      ]");
 
 		buf << ",\n      \"methods\": [";
 		for (size_t i = 0; i < info.methods.size(); ++i) {
@@ -279,10 +329,26 @@ void ClassDB::dump_api_json(const std::string& path) {
 			write_json_string(buf, method.name.str());
 			buf << ",\n          \"access\": \"" << access_level_name(method.access) << "\"";
 			buf << ",\n          \"is_static\": " << (method.is_static ? "true" : "false");
+			buf << ",\n          \"is_const\": " << (method.is_const ? "true" : "false");
+			buf << ",\n          \"is_virtual\": " << (method.is_virtual ? "true" : "false");
 			buf << ",\n          \"return_type\": \"" << variant_type_name(method.return_type) << "\"";
+			buf << ",\n          \"return_class\": ";
+			write_json_string(buf, method.return_class.str());
 			buf << ",\n          \"param_types\": [";
 			for (size_t p = 0; p < method.param_types.size(); ++p) {
 				buf << (p ? ", " : "") << "\"" << variant_type_name(method.param_types[p]) << "\"";
+			}
+			buf << "]";
+			buf << ",\n          \"param_classes\": [";
+			for (size_t p = 0; p < method.param_classes.size(); ++p) {
+				buf << (p ? ", " : "");
+				write_json_string(buf, method.param_classes[p].str());
+			}
+			buf << "]";
+			buf << ",\n          \"param_names\": [";
+			for (size_t p = 0; p < method.param_names.size(); ++p) {
+				buf << (p ? ", " : "");
+				write_json_string(buf, method.param_names[p].str());
 			}
 			buf << "]";
 			buf << "\n        }";
@@ -290,6 +356,26 @@ void ClassDB::dump_api_json(const std::string& path) {
 		buf << (info.methods.empty() ? "]" : "\n      ]");
 
 		buf << "\n    }" << (ci + 1 < classes.size() ? ",\n" : "\n");
+	}
+	buf << "  ],\n";
+
+	buf << "  \"enums\": [\n";
+	for (size_t ei = 0; ei < enums.size(); ++ei) {
+		const EnumInfo& info = *enums[ei];
+		buf << "    {\n      \"name\": ";
+		write_json_string(buf, info.name.str());
+		buf << ",\n      \"underlying\": \"" << variant_type_name(info.underlying) << "\"";
+		buf << ",\n      \"values\": [";
+		for (size_t i = 0; i < info.values.size(); ++i) {
+			const auto& [enumerator_name, value] = info.values[i];
+			buf << (i ? ",\n        {\n" : "\n        {\n");
+			buf << "          \"name\": ";
+			write_json_string(buf, enumerator_name.str());
+			buf << ",\n          \"value\": " << value;
+			buf << "\n        }";
+		}
+		buf << (info.values.empty() ? "]" : "\n      ]");
+		buf << "\n    }" << (ei + 1 < enums.size() ? ",\n" : "\n");
 	}
 	buf << "  ]\n}\n";
 

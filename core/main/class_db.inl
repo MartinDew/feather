@@ -8,6 +8,7 @@
 #include <framework/variant.h>
 
 #include <concepts>
+#include <cstdio>
 #include <print>
 #include <type_traits>
 
@@ -35,7 +36,7 @@ void ClassDB::register_class() {
 	else {
 		static_assert(std::is_default_constructible<T>(), "Trying to register class that is not default constructible");
 		static_assert(has_bind_method_v<T>, "Class doesn't have a static _bind_members function");
-		std::println("Registering class '{}' as {} object", T::get_class_static(), "implementation");
+		std::println(stderr, "Registering class '{}' as {} object", T::get_class_static(), "implementation");
 		ClassDB& instance = *get();
 
 		ClassInfo& info = instance._class_infos[T::get_class_static()];
@@ -43,6 +44,8 @@ void ClassDB::register_class() {
 		info.parent = T::get_parent_name();
 		info.is_abstract = false;
 		info.is_singleton = false;
+		info.size = sizeof(T);
+		info.align = alignof(T);
 		info.object_create_func = []() -> Variant { return new T(); };
 
 		instance._current_info = &info;
@@ -59,7 +62,7 @@ void ClassDB::register_class() {
 }
 
 template <is_reflected_class_type T> void ClassDB::register_abstract_class() {
-	std::println("Registering class '{}' as {} object", T::get_class_static(), "abstract");
+	std::println(stderr, "Registering class '{}' as {} object", T::get_class_static(), "abstract");
 
 	static_assert(is_reflected_class_type<T>, "Attempt to register a non reflected class type");
 	static_assert(has_bind_method_v<T>, "Class doesn't have a static _bind_members function");
@@ -70,6 +73,8 @@ template <is_reflected_class_type T> void ClassDB::register_abstract_class() {
 	info.parent = T::get_parent_name();
 	info.is_abstract = true;
 	info.is_singleton = false;
+	info.size = sizeof(T);
+	info.align = alignof(T);
 	info.object_create_func = nullptr;
 
 	instance._current_info = &info;
@@ -85,7 +90,7 @@ template <is_reflected_class_type T> void ClassDB::register_abstract_class() {
 }
 
 template <is_reflected_class_type T> void ClassDB::register_singleton_class() {
-	std::println("Registering class '{}' as {} object", T::get_class_static(), "singleton");
+	std::println(stderr, "Registering class '{}' as {} object", T::get_class_static(), "singleton");
 
 	static_assert(is_reflected_class_type<T>, "Attempt to register a non reflected class type");
 	static_assert(has_bind_method_v<T>, "Class doesn't have a static _bind_members function");
@@ -96,6 +101,8 @@ template <is_reflected_class_type T> void ClassDB::register_singleton_class() {
 	info.parent = T::get_parent_name();
 	info.is_abstract = false;
 	info.is_singleton = true;
+	info.size = sizeof(T);
+	info.align = alignof(T);
 	// Singletons are not created through the reflection factory; the engine owns
 	// the single instance and constructs it in its own flow. Reflection resolves
 	// live instances through T::get().
@@ -116,7 +123,7 @@ template <is_reflected_class_type T> void ClassDB::register_singleton_class() {
 template <is_reflected_value_type T>
 	requires(!std::is_base_of_v<Reflected, T>)
 void ClassDB::register_value_class() {
-	std::println("Registering class '{}' as {} object", T::get_class_static(), "value type");
+	std::println(stderr, "Registering class '{}' as {} object", T::get_class_static(), "value type");
 
 	static_assert(is_reflected_value_type<T>, "Attempt to register a non-value reflected class type");
 	static_assert(has_bind_method_v<T>, "Class doesn't have a static _bind_members function");
@@ -128,6 +135,8 @@ void ClassDB::register_value_class() {
 	info.is_abstract = false;
 	info.is_singleton = false;
 	info.is_value_type = true;
+	info.size = sizeof(T);
+	info.align = alignof(T);
 	// No Reflected base means no polymorphic factory -- Variant's pointer path
 	// requires std::is_base_of_v<Reflected, T>, which a value type never satisfies.
 	info.object_create_func = nullptr;
@@ -231,9 +240,115 @@ inline void ClassDB::bind_property_set(void (T::*setter)(TSet), std::string_view
 	get()->_current_info->properties.push_back(std::move(prop));
 }
 
+// Field binding -- raw layout for a value type, independent of whether the
+// member has (or could have) a Variant-marshalable Property.
+template <class T, class U>
+inline void ClassDB::bind_field(U T::* member, std::string_view name) {
+	if (!get()->_current_info) {
+		return;
+	}
+	ClassInfo::Field f;
+	f.name = StaticString(name);
+	f.type = get_variant_type<U>();
+	f.type_class = get_variant_class_name<U>();
+	f.offset = static_cast<uint32_t>(offset_of(member));
+	f.size = static_cast<uint32_t>(sizeof(U));
+	get()->_current_info->fields.push_back(std::move(f));
+}
+
+template <class T, class U>
+inline void ClassDB::bind_field(U T::* member, std::string_view name, std::string_view type_class_override) {
+	if (!get()->_current_info) {
+		return;
+	}
+	ClassInfo::Field f;
+	f.name = StaticString(name);
+	f.type = get_variant_type<U>();
+	f.type_class = StaticString(type_class_override);
+	f.offset = static_cast<uint32_t>(offset_of(member));
+	f.size = static_cast<uint32_t>(sizeof(U));
+	get()->_current_info->fields.push_back(std::move(f));
+}
+
+// Enum-typed property accessors: stored as the enum's underlying integer
+// (get_variant_type<enum>() is INVALID, so the plain bind_property_accessors_
+// if_bindable path silently no-ops) with type_class carrying the enum's name.
+template <class T, class TGet, class TSet>
+inline void ClassDB::bind_enum_property_accessors(TGet (T::*getter)() const,
+												  void (T::*setter)(TSet),
+												  std::string_view name,
+												  std::string_view enum_type_name,
+												  AccessLevel getter_access,
+												  AccessLevel setter_access) {
+	if (!get()->_current_info) {
+		return;
+	}
+	using EnumT = std::decay_t<TGet>;
+	static_assert(std::is_enum_v<EnumT>, "bind_enum_property_accessors requires an enum-typed getter");
+	using Under = std::underlying_type_t<EnumT>;
+
+	ClassInfo::Property prop { .name = StaticString(name),
+							  .type = get_variant_type<Under>(),
+							  .type_class = StaticString(enum_type_name),
+							  .getter_access = getter_access,
+							  .setter_access = setter_access };
+	prop.getter = [getter](void* obj_ptr) -> Variant {
+		return Variant(static_cast<Under>((static_cast<T*>(obj_ptr)->*getter)()));
+	};
+	prop.setter = [setter, name](void* obj_ptr, Variant val) {
+		auto result = val.as<Under>();
+		fassert(result.has_value(), std::format("Property '{}': setter called with incompatible Variant type", name));
+		(static_cast<T*>(obj_ptr)->*setter)(static_cast<std::decay_t<TSet>>(result.value()));
+	};
+	get()->_current_info->properties.push_back(std::move(prop));
+}
+
+template <class T, class TGet>
+inline void ClassDB::bind_enum_property_get(TGet (T::*getter)() const, std::string_view name,
+											std::string_view enum_type_name, AccessLevel access) {
+	if (!get()->_current_info) {
+		return;
+	}
+	using EnumT = std::decay_t<TGet>;
+	static_assert(std::is_enum_v<EnumT>, "bind_enum_property_get requires an enum-typed getter");
+	using Under = std::underlying_type_t<EnumT>;
+
+	ClassInfo::Property prop { .name = StaticString(name),
+							  .type = get_variant_type<Under>(),
+							  .type_class = StaticString(enum_type_name),
+							  .getter_access = access };
+	prop.getter = [getter](void* obj_ptr) -> Variant {
+		return Variant(static_cast<Under>((static_cast<T*>(obj_ptr)->*getter)()));
+	};
+	get()->_current_info->properties.push_back(std::move(prop));
+}
+
+template <class T, class TSet>
+inline void ClassDB::bind_enum_property_set(void (T::*setter)(TSet), std::string_view name,
+											std::string_view enum_type_name, AccessLevel access) {
+	if (!get()->_current_info) {
+		return;
+	}
+	using EnumT = std::decay_t<TSet>;
+	static_assert(std::is_enum_v<EnumT>, "bind_enum_property_set requires an enum-typed setter");
+	using Under = std::underlying_type_t<EnumT>;
+
+	ClassInfo::Property prop { .name = StaticString(name),
+							  .type = get_variant_type<Under>(),
+							  .type_class = StaticString(enum_type_name),
+							  .setter_access = access };
+	prop.setter = [setter, name](void* obj_ptr, Variant val) {
+		auto result = val.as<Under>();
+		fassert(result.has_value(), std::format("Property '{}': setter called with incompatible Variant type", name));
+		(static_cast<T*>(obj_ptr)->*setter)(static_cast<EnumT>(result.value()));
+	};
+	get()->_current_info->properties.push_back(std::move(prop));
+}
+
 // Method binding
 template <class T, class TRet, class... TArgs>
-inline void ClassDB::bind_method(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access) {
+inline void ClassDB::bind_method(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access,
+								 std::initializer_list<std::string_view> param_names, bool is_virtual) {
 	if (!get()->_current_info) {
 		return;
 	}
@@ -247,13 +362,20 @@ inline void ClassDB::bind_method(TRet (T::*method)(TArgs...), std::string_view n
 									.access = access,
 									.callable = Callable { func },
 									.return_type = get_variant_type<std::decay_t<TRet>>(),
-									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
+									.return_class = get_variant_class_name<TRet>(),
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... },
+									.param_classes = { get_variant_class_name<TArgs>()... },
+									.is_virtual = is_virtual };
+	for (auto n : param_names) {
+		method_info.param_names.emplace_back(n);
+	}
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
 
 template <class T, class TRet, class... TArgs>
-inline void ClassDB::bind_method(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access) {
+inline void ClassDB::bind_method(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access,
+								 std::initializer_list<std::string_view> param_names, bool is_virtual) {
 	if (!get()->_current_info) {
 		return;
 	}
@@ -267,13 +389,21 @@ inline void ClassDB::bind_method(TRet (T::*method)(TArgs...) const, std::string_
 									.access = access,
 									.callable = Callable { func },
 									.return_type = get_variant_type<std::decay_t<TRet>>(),
-									.param_types = { get_variant_type<std::decay_t<TArgs>>()... } };
+									.return_class = get_variant_class_name<TRet>(),
+									.param_types = { get_variant_type<std::decay_t<TArgs>>()... },
+									.param_classes = { get_variant_class_name<TArgs>()... },
+									.is_const = true,
+									.is_virtual = is_virtual };
+	for (auto n : param_names) {
+		method_info.param_names.emplace_back(n);
+	}
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
 
 template <class TRet, class... TArgs>
-inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_view name, AccessLevel access) {
+inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_view name, AccessLevel access,
+										std::initializer_list<std::string_view> param_names) {
 	if (!get()->_current_info) {
 		return;
 	}
@@ -285,8 +415,13 @@ inline void ClassDB::bind_static_method(TRet (*method)(TArgs...), std::string_vi
 									.access = access,
 									.callable = Callable { func },
 									.return_type = get_variant_type<std::decay_t<TRet>>(),
+									.return_class = get_variant_class_name<TRet>(),
 									.param_types = { get_variant_type<std::decay_t<TArgs>>()... },
+									.param_classes = { get_variant_class_name<TArgs>()... },
 									.is_static = true };
+	for (auto n : param_names) {
+		method_info.param_names.emplace_back(n);
+	}
 
 	get()->_current_info->methods.push_back(std::move(method_info));
 }
@@ -325,17 +460,19 @@ concept method_signature_bindable =
 		VariantCompatible<std::decay_t<TRet>> && (VariantCompatible<std::decay_t<TArgs>> && ...);
 
 template <class T, class TRet, class... TArgs>
-inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access) {
+inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...), std::string_view name, AccessLevel access,
+											 std::initializer_list<std::string_view> param_names, bool is_virtual) {
 	if constexpr (method_signature_bindable<TRet, TArgs...>) {
-		bind_method(method, name, access);
+		bind_method(method, name, access, param_names, is_virtual);
 	}
 }
 
 template <class T, class TRet, class... TArgs>
-inline void
-ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...) const, std::string_view name, AccessLevel access) {
+inline void ClassDB::bind_method_if_bindable(TRet (T::*method)(TArgs...) const, std::string_view name,
+											 AccessLevel access, std::initializer_list<std::string_view> param_names,
+											 bool is_virtual) {
 	if constexpr (method_signature_bindable<TRet, TArgs...>) {
-		bind_method(method, name, access);
+		bind_method(method, name, access, param_names, is_virtual);
 	}
 }
 
