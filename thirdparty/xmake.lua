@@ -37,6 +37,11 @@ if not is_plat("macosx") then
     add_requires("vex", {system = false, alias = "vex"})
 end
 
+-- Local package (packages/mrbind.lua): a Clang-based C++ binding generator.
+-- Host tool only, not linked into any target yet -- required here purely so
+-- it's built and its binaries are available as of `xmake f`.
+add_requires("mrbind", {system = false, alias = "mrbind"})
+
 -- DLLs deployed at runtime come from this xrepo package rather than Vex's internal
 -- CMake fetch. Version must track Vex's vendored DIRECTX_AGILITY_SDK_VERSION (618);
 -- xrepo doesn't carry the exact 1.618.4 patch Vex vendors, so use the closest 1.618.x.
