@@ -115,6 +115,17 @@ jobs:
           sudo mkdir -p /usr/lib/bfd-plugins
           sudo ln -sf /usr/lib/llvm-20/lib/LLVMgold.so /usr/lib/bfd-plugins/LLVMgold.so
 
+      # thirdparty/packages/mrbind.lua needs a real Clang compiler plus
+      # Clang's CMake package config (find_package(Clang)) to take its fast
+      # system-detected path instead of building LLVM+Clang from source via
+      # xrepo's libllvm package (~20+ min). llvm-20 above only pulls in
+      # libclang-cpp20 (the runtime .so), not the dev/cmake-config packages --
+      # these are exactly what mrbind's own docs/building_mrbind.md lists for
+      # Ubuntu.
+      - name: Install Clang dev packages for MRBind (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y clang-tools-20 libclang-20-dev
+
       # ── Windows toolchain ─────────────────────────────────────────────────
       - name: Setup MSVC
         if: runner.os == 'Windows'

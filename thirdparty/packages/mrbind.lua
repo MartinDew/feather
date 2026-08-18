@@ -12,9 +12,10 @@
 -- needs Clang 18+ dev libraries. Two paths, matching upstream's own
 -- docs/building_mrbind.md:
 --   * System Clang/LLVM already installed (Linux via llvm-config on PATH,
---     e.g. Arch's `clang`+`llvm` packages; macOS via Homebrew's `llvm`
---     keg, which isn't linked onto PATH by default so its bin dir is
---     probed explicitly): mrbind's CMakeLists links the large merged
+--     e.g. Arch's `clang`+`llvm` packages, or Debian/Ubuntu's versioned
+--     llvm-config-N when there's no bare symlink; macOS via Homebrew's
+--     `llvm` keg, which isn't linked onto PATH by default so its bin dir
+--     is probed explicitly): mrbind's CMakeLists links the large merged
 --     dylibs (`LLVM`, `clang-cpp`) in this mode, so MRBIND_STATIC_BUILD
 --     must stay OFF.
 --   * No system Clang/LLVM (always the case on Windows -- see below): fall
@@ -50,17 +51,35 @@ package("mrbind")
         -- baked path (also per building_mrbind.md) once libllvm is a known,
         -- fixed dependency -- which needs the fast path skipped here so
         -- that dependency reliably exists to patch.
-        local llvm_config
+        local llvm_config, suffix
         if not package:is_plat("windows") then
             llvm_config = find_tool("llvm-config", {
                 -- Homebrew's llvm is keg-only (not linked onto PATH by
                 -- default) precisely to avoid clobbering macOS's own clang.
                 paths = {"/opt/homebrew/opt/llvm/bin", "/usr/local/opt/llvm/bin"},
             })
+            suffix = ""
+            if not llvm_config then
+                -- Debian/Ubuntu ship only versioned llvm-config-N (no bare
+                -- "llvm-config" symlink) -- search newest-first for one
+                -- meeting mrbind's Clang 18+ floor, rather than silently
+                -- falling through to the much slower libllvm-from-source
+                -- path below with a perfectly good system Clang sitting
+                -- right there unversioned-only find_tool can't see.
+                for v = 30, 18, -1 do
+                    local candidate = find_tool("llvm-config", {program = "llvm-config-" .. v})
+                    if candidate then
+                        llvm_config = candidate
+                        suffix = "-" .. v
+                        break
+                    end
+                end
+            end
         end
 
         if llvm_config then
             package:data_set("llvm_config", llvm_config.program)
+            package:data_set("llvm_suffix", suffix)
         else
             package:add("deps", "libllvm", {configs = {shared = false, clang = true}})
         end
@@ -75,15 +94,27 @@ package("mrbind")
         local cc, cxx, clang_dir
         if llvm_config then
             -- System path: derive clang/clang++ from llvm-config's own bin
-            -- dir, so we use the matching compiler, not whatever xmake's
-            -- resolved toolchain happens to be (per building_mrbind.md:
-            -- "Use the same Clang compiler that provides the parsing
-            -- libraries"). Leave Clang_DIR unset -- CMake's default search
-            -- finds it fine when only one Clang/LLVM install is present,
-            -- same as upstream's own Arch instructions.
+            -- dir (same suffix, if any -- Debian/Ubuntu's clang-tools-N
+            -- package installs "clang-N"/"clang++-N" alongside
+            -- "llvm-config-N", all unsuffixed on Arch/Homebrew), so we use
+            -- the matching compiler, not whatever xmake's resolved
+            -- toolchain happens to be (per building_mrbind.md: "Use the
+            -- same Clang compiler that provides the parsing libraries").
+            local suffix = package:data("llvm_suffix") or ""
             local bindir = path.directory(llvm_config)
-            cc  = path.join(bindir, "clang")
-            cxx = path.join(bindir, "clang++")
+            cc  = path.join(bindir, "clang" .. suffix)
+            cxx = path.join(bindir, "clang++" .. suffix)
+
+            -- Ubuntu's docs/building_mrbind.md warns CMake can find the
+            -- wrong Clang_DIR when multiple versions coexist (common on
+            -- GitHub-hosted runner images) -- pin it explicitly using the
+            -- same versioned path its own Ubuntu instructions use. Bare
+            -- "llvm-config" (Arch/Homebrew) means a single unversioned
+            -- install, where CMake's default search is unambiguous, same
+            -- as upstream's own Arch instructions.
+            if suffix ~= "" and package:is_plat("linux") then
+                clang_dir = "/usr/lib/cmake/clang" .. suffix
+            end
         else
             local libllvm = package:dep("libllvm")
             local installdir = libllvm:installdir()
