@@ -160,6 +160,33 @@ package("mrbind")
             table.insert(configs, "-DClang_DIR=" .. clang_dir)
         end
 
+        if package:is_plat("windows") then
+            -- xmake's package.tools.cmake helper probes CMake's own
+            -- "default" CMAKE_C_FLAGS/CMAKE_CXX_FLAGS by test-configuring a
+            -- throwaway project against the PROJECT's own resolved compiler
+            -- (package:build_getenv("cc"), i.e. this repo's --toolchain=
+            -- clang-cl on Windows) -- entirely independent of the
+            -- CMAKE_C_COMPILER override above, which deliberately points at
+            -- a different, plain (non-clang-cl) clang.exe. It then force-
+            -- feeds those probed flags into the real build regardless. That
+            -- silently "works" on Linux (GCC's and Clang's default flags
+            -- are both -D-style), but on Windows it hands clang-cl's
+            -- MSVC-style "/DWIN32 /D_WINDOWS" flags to plain clang.exe,
+            -- which only understands "-D" and fails immediately on its own
+            -- compiler self-test. Pre-declaring the same keys here makes
+            -- xmake's "already user-specified" check skip its own (wrong)
+            -- injection; mrbind's CMakeLists appends everything it actually
+            -- needs on top regardless of this starting from empty.
+            table.insert(configs, "-DCMAKE_C_FLAGS=")
+            table.insert(configs, "-DCMAKE_CXX_FLAGS=")
+            -- Matches _get_cmake_buildtype()'s own mapping exactly -- the
+            -- suffix key it stores its (wrong) probed flags under.
+            local buildtype_map = {debug = "DEBUG", release = "RELEASE", releasedbg = "RELWITHDEBINFO"}
+            local buildtype = buildtype_map[package:mode()] or "RELEASE"
+            table.insert(configs, "-DCMAKE_C_FLAGS_" .. buildtype .. "=")
+            table.insert(configs, "-DCMAKE_CXX_FLAGS_" .. buildtype .. "=")
+        end
+
         local builddir = path.join(package:builddir(), ".cmake_build")
         cmake.build(package, configs, {builddir = builddir, cmake_generator = "Ninja"})
 
