@@ -48,8 +48,23 @@ jobs:
           python-version: "3.12"
 
       # ── Install xmake ─────────────────────────────────────────────────────
+      # package-cache: reuses built-from-source thirdparty packages (mrbind's
+      # libllvm fallback alone is ~20+ min, per thirdparty/packages/mrbind.lua's
+      # own comments) across runs instead of rebuilding them every time.
+      # build-cache: reuses xmake's own object/build cache (its ccache
+      # equivalent) across runs. Both keyed per matrix leg (OS + mode) so a
+      # Linux/debug run never restores a Windows or release cache -- the
+      # action's own project-path hashing already invalidates on package
+      # requirement changes, this just adds the extra axis it doesn't know
+      # about.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          package-cache: true
+          package-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
+          project-path: "."
+          build-cache: true
+          build-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
       - name: Setup cmake
@@ -149,8 +164,11 @@ jobs:
         run: chcp 65001
 
       # ── Configure ─────────────────────────────────────────────────────────
+      # xmake disables its build cache on CI by default; --policies=build.ccache:y
+      # turns it back on so the "Install xmake" step's build-cache actually has
+      # something to save/restore.
       - name: Configure
-        run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
+        run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} --policies=build.ccache:y -y
 
       # ── Dump failed package install logs (helps diagnose cmake build errors) ─
       - name: Dump failed package logs
