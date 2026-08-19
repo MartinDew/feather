@@ -120,13 +120,8 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
             cmake_generator = "Ninja",
         })
 
-        -- Collect runtime artifacts out of cmake's _deps for on_fetch()/deploy steps
         local deps = path.join(builddir, "_deps")
 
-        -- A FetchContent-named dir can shift between builds (see below), leaving a
-        -- stale copy from a prior incremental build sitting next to the current one.
-        -- Picking [1] off an unsorted glob would then be arbitrary; use the most
-        -- recently built match instead, and warn so a bad pick is at least visible.
         local function pick_latest_dir(pattern)
             local dirs = os.dirs(path.join(deps, pattern))
             if #dirs == 0 then
@@ -140,19 +135,6 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
             return dirs[1]
         end
 
-        -- Vex's cmake/VexSlang.cmake FetchContent_Declare()s slang under a name
-        -- that has changed at least once upstream -- plain "slang" until Vex
-        -- commit 00fbe3a ("Updated cmake slang to latest version and added
-        -- variable for the version", 2026-02-25), "slang_${SLANG_VERSION}"
-        -- (e.g. "slang_2026.7") since. CMake's FetchContent names the _deps
-        -- subdirectory after the declared target, so the on-disk directory
-        -- moved with it -- from _deps/slang-src to _deps/slang_2026.7-src.
-        -- Glob instead of hardcoding one name, so the NEXT such rename doesn't
-        -- silently skip this whole block again: an unmatched hardcoded path
-        -- doesn't error, it just leaves cmake's own bare install output (headers
-        -- nested one level deeper, at include/slang/include/*.h instead of
-        -- include/slang/*.h) as whatever ends up installed, which is exactly
-        -- what broke modules/vex_renderer's #include <slang-com-ptr.h>.
         local slang_src = pick_latest_dir("slang*-src")
         if slang_src and os.isdir(slang_src) then
             for _, dll in ipairs(os.files(path.join(slang_src, "**.dll"))) do
