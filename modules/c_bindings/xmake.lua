@@ -23,15 +23,27 @@ feather_module_target("c_bindings", os.scriptdir(), {}, {})
 -- feather_RID_Get_id()-style function (their only purpose is to be called
 -- from outside), so the linker's normal "only pull in archive members that
 -- resolve an existing undefined reference" behavior drops the entire
--- library from the final binary (confirmed empirically: symbols present in
--- libc_bindings.a, absent from `feather`). Forcing whole-archive linking for
--- just this one dependency keeps them in. xmake's gcc/clang toolchain module
--- is the only one implementing `whole` (-Wl,--whole-archive); on MSVC this
--- is a silent no-op today (would need /WHOLEARCHIVE:c_bindings.lib), same
--- unfinished-Windows-story as the engine's own .def-file export setup
--- elsewhere in xmake/engine.lua.
+-- library from the final binary (confirmed empirically on Linux: symbols
+-- present in libc_bindings.a, absent from `feather`). Forcing whole-archive
+-- linking for just this one dependency keeps them in.
+--
+-- xmake's gcc/clang toolchain module is the only one implementing `whole`
+-- (-Wl,--whole-archive) via add_linkgroups -- a silent no-op on MSVC/
+-- clang-cl. Confirmed empirically on a real Windows CI build: it compiles
+-- and links fine either way (this is what made it silent -- no error, just
+-- an exe that quietly never contains the generated code at all), but
+-- *zero* feather_* symbols end up in the exe's export table, because the
+-- object files genuinely never get pulled into the final link on that
+-- toolchain. /WHOLEARCHIVE:<lib> is the MSVC-compatible linker's equivalent
+-- (supported by both link.exe and lld-link, which is what clang-cl uses) --
+-- same unfinished-Windows-story as the engine's own .def-file export setup
+-- elsewhere in xmake/engine.lua, now finished for this one case.
 target("feather")
-    add_linkgroups("c_bindings", {whole = true})
+    if is_plat("windows") then
+        add_ldflags("/WHOLEARCHIVE:c_bindings.lib", {force = true})
+    else
+        add_linkgroups("c_bindings", {whole = true})
+    end
 target_end()
 
 target("c_bindings")
