@@ -168,6 +168,22 @@ jobs:
           echo "PATH=$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
+      # PATH filtering above doesn't stop CMake-based thirdparty package
+      # builds (assimp's CMakeLists auto-detects ccache via find_program if
+      # it exists ANYWHERE reachable, not just via this job's own PATH env)
+      # from finding and using the ccache.exe Strawberry Perl bundles.
+      # Confirmed via a real CI run: it mangles the cmcldeps.exe + rc.exe
+      # resource-compile command line ("clang-cl: error: no such file or
+      # directory: '/fo'"), breaking assimp's Windows resource build.
+      # Deleting the file outright sidesteps PATH-ordering entirely --
+      # nothing can find what doesn't exist. Pre-existing runner-image issue,
+      # unrelated to anything else in this workflow.
+      - name: Remove stray Strawberry Perl ccache.exe (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Remove-Item -Path "C:\Strawberry\c\bin\ccache.exe" -ErrorAction SilentlyContinue
+        shell: pwsh
+
       - name: Set UTF-8 Code Page (Windows)
         if: runner.os == 'Windows'
         run: chcp 65001
