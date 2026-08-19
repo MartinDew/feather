@@ -61,6 +61,20 @@ target("c_bindings")
     -- get tool(cxx) before target is loaded... call it in on_config()"),
     -- same constraint feather_flags.lua documents for apply_compile_flags.
     on_config(function (target)
+        -- c_bindings is a dependency of target("feather") (feather_module_target's
+        -- add_deps), so it configures/builds BEFORE feather's own before_build
+        -- (run_codegen in xmake/engine.lua) has generated core's *.gen.h --
+        -- confirmed on a genuinely fresh checkout (CI, and locally after
+        -- deleting all *.gen.h): core/main/simulation.h's own
+        -- #include "simulation.gen.h" fails since nothing has generated it
+        -- yet. Masked on a dev box with leftover .gen.h files from any
+        -- earlier build, which is why this wasn't caught locally at first.
+        -- Same problem vex_renderer already solved for reflection codegen
+        -- itself (see feather_codegen.lua's run_module_codegen comment) --
+        -- mirror that exact fix here.
+        import("feather_codegen")
+        feather_codegen.run_module_codegen(os.scriptdir(), {feather_root = FEATHER_ROOT})
+
         import("feather_bindings")
         local result = feather_bindings.run_c_pipeline(target, {
             feather_root = FEATHER_ROOT,
