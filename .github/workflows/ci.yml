@@ -50,21 +50,30 @@ jobs:
       # ── Install xmake ─────────────────────────────────────────────────────
       # package-cache: reuses built-from-source thirdparty packages (mrbind's
       # libllvm fallback alone is ~20+ min, per thirdparty/packages/mrbind.lua's
-      # own comments) across runs instead of rebuilding them every time.
-      # build-cache: reuses xmake's own object/build cache (its ccache
-      # equivalent) across runs. Both keyed per matrix leg (OS + mode) so a
-      # Linux/debug run never restores a Windows or release cache -- the
-      # action's own project-path hashing already invalidates on package
-      # requirement changes, this just adds the extra axis it doesn't know
-      # about.
+      # own comments) across runs instead of rebuilding them every time. Keyed
+      # per matrix leg (OS + mode) so a Linux/debug run never restores a
+      # Windows or release cache -- the action's own project-path hashing
+      # already invalidates on package requirement changes, this just adds
+      # the extra axis it doesn't know about.
+      #
+      # build-cache (xmake's own ccache-equivalent for its own targets) was
+      # tried too but reverted: turning it on makes xmake wrap CMake-based
+      # thirdparty package builds (not just its own targets) with a ccache
+      # binary as well, and it picked up a stray ccache.exe bundled with this
+      # runner image's Strawberry Perl install (despite the "Remove
+      # Strawberry Perl from PATH" step above) that mishandles the
+      # cmcldeps.exe + rc.exe resource-compile command line assimp's build
+      # uses, breaking it outright ("clang-cl: error: no such file or
+      # directory: '/fo'") -- confirmed via a real CI run, unrelated to
+      # anything else in this branch. package-cache alone (this package
+      # never needing to be *rebuilt* at all on a cache hit) gets most of the
+      # same time savings without going anywhere near that codepath.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           package-cache: true
           package-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
           project-path: "."
-          build-cache: true
-          build-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
       - name: Setup cmake
@@ -164,11 +173,8 @@ jobs:
         run: chcp 65001
 
       # ── Configure ─────────────────────────────────────────────────────────
-      # xmake disables its build cache on CI by default; --policies=build.ccache:y
-      # turns it back on so the "Install xmake" step's build-cache actually has
-      # something to save/restore.
       - name: Configure
-        run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} --policies=build.ccache:y -y
+        run: xmake f -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} -y
 
       # ── Dump failed package install logs (helps diagnose cmake build errors) ─
       - name: Dump failed package logs
