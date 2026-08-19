@@ -123,12 +123,72 @@ end
 
 -- Fully resolved include/define/std flags for `target` (feather_public_api,
 -- its packages, etc.) -- the same machinery behind this repo's
--- compile_commands.json rule -- spliced into the mrbind parse invocation
--- instead of re-deriving -I/-D flags by hand.
+-- compile_commands.json rule -- instead of re-deriving -I/-D flags by hand.
+-- Raw, NOT yet safe to pass to mrbind as-is: see
+-- sanitize_compflags_for_mrbind() below (confirmed empirically necessary on
+-- Windows/clang-cl).
 function resolve_compile_flags(target)
     import("core.tool.compiler")
     local inst = compiler.load("cxx", {target = target})
     return inst:compflags({target = target})
+end
+
+-- mrbind's own clang frontend always parses its argv in plain GNU dialect
+-- (it's built via a bare "clang"/"clang++", never "clang-cl" -- see
+-- thirdparty/packages/mrbind.lua), regardless of what dialect the PROJECT's
+-- configured toolchain uses. On a clang-cl-toolchain Windows build,
+-- resolve_compile_flags() returns MSVC-style flags (-Zi, -std:c++latest,
+-- -external:I<dir>, -Od, -MTd, -Fd<path>, ...) that mrbind rejects outright
+-- as "unknown argument" -- confirmed empirically: the malformed -std:
+-- flag gets silently dropped, clang falls back to an old default C++
+-- standard, and std::span/std::byte/std::source_location (etc.) then fail
+-- to resolve entirely, cascading into unrelated-looking parse errors.
+-- None of debug-info/PDB/runtime-library/optimization flags matter for a
+-- pure parse step anyway, so rather than translating each MSVC spelling
+-- 1:1, keep only -I/-D (identical in both dialects, in both their
+-- "-Ipath" and separate "-I" "path" token forms -- xmake emits both
+-- depending on which package's includedirs are being expressed) and any
+-- already-GNU-style -std=..., rewrite -external:I<dir> to -I<dir>, and
+-- drop everything else. -std=c++2c is only appended as a fallback when no
+-- usable -std= survived (i.e. only the MSVC -std:c++latest spelling was
+-- present) -- NOT unconditionally: confirmed empirically that forcing
+-- -std=c++2c on Linux, where the raw flags already carry a perfectly
+-- usable -std=c++23, makes mrbind's own AST consumer crash outright
+-- (untested standard revision, unlike c++23 which is known-working here).
+-- c++2c only used as the not-actually-tested-but-best-available Windows
+-- fallback since clang-cl's raw spelling can't be preserved as-is either.
+function sanitize_compflags_for_mrbind(flags)
+    local out = {}
+    local has_std = false
+    local i = 1
+    while i <= #flags do
+        local f = flags[i]
+        if f == "-I" or f == "-D" or f == "-isystem" then
+            -- -isystem <dir>: how compflags() expresses PUBLIC thirdparty
+            -- package include dirs (confirmed empirically -- distinct from
+            -- the plain "-I" <dir> pair used for taywee_args's own configs
+            -- and from "-I<dir>" concatenated for the project's own dirs).
+            -- A valid GNU-dialect flag mrbind's clang understands natively,
+            -- kept as-is rather than translated to plain -I.
+            table.insert(out, f)
+            if flags[i + 1] then
+                table.insert(out, flags[i + 1])
+                i = i + 1
+            end
+        elseif f:startswith("-I") or f:startswith("-D") then
+            table.insert(out, f)
+        elseif f:startswith("-std=") then
+            table.insert(out, f)
+            has_std = true
+        elseif f:startswith("-external:I") then
+            table.insert(out, "-I" .. f:sub(#"-external:I" + 1))
+        end
+        i = i + 1
+    end
+    if not has_std then
+        table.insert(out, "-std=c++2c")
+    end
+    return out
 end
 
 local function _mrbind_bin(mrbind_pkg, name)
@@ -160,7 +220,7 @@ function run_c_pipeline(target, opts)
         path.join(autogendir, "combined_input.h"), feather_root, dirs)
 
     local resource_dir = resolve_clang_resource_dir(target)
-    local compflags = resolve_compile_flags(target)
+    local compflags = sanitize_compflags_for_mrbind(resolve_compile_flags(target))
 
     local parsed_json = path.join(autogendir, "parsed.json")
     local parse_argv = {
