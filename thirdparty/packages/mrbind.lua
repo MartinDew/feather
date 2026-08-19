@@ -31,6 +31,19 @@ package("mrbind")
 
     add_urls("https://github.com/MeshInspector/mrbind.git", {branch = "master"})
 
+    -- mrbind's test/ fixtures include some pathologically long generated
+    -- filenames (e.g. test/output_csharp_fixed_typedefs_64_only/src/
+    -- std_tuple_const_..._64 chars of template params..._22dd.cs), which
+    -- blow past Windows' legacy 260-char MAX_PATH during git's checkout --
+    -- "Filename too long" -- on any machine that hasn't separately opted
+    -- into NTFS long-path support. GitHub-hosted Windows runners happen to
+    -- have `git config --system core.longpaths true` already set, which is
+    -- why CI never hit this; a fresh local Windows install typically
+    -- hasn't. This is xmake's own documented policy for exactly that gap
+    -- (see core/project/policy.lua's "platform.longpaths"), so set it here
+    -- rather than depend on the host's own git config.
+    set_policy("platform.longpaths", true)
+
     -- Ninja explicitly (per building_mrbind.md's own recommended invocation):
     -- the cmake module's default generator is per-config Visual Studio on
     -- Windows, which would put binaries under builddir/<Config>/ instead of
