@@ -36,3 +36,7 @@ logs/
 
 # Python bytecode from tools/codegen (also runs from downstream project builds)
 __pycache__/
+
+# MRBind-generated bindings (modules/*/.gen/ for generated implementation,
+# top-level .gen/bindings/<lang>/ for the public generated headers)
+**/.gen/
