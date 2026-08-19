@@ -175,6 +175,19 @@ target("c_bindings")
                 -- constexpr API for a codegen-only requirement.
                 "--ignore", "feather::RID::invalid",
                 "--skip-mentions-of", "feather::RID::invalid",
+                -- CowVector<T>::at() (both overloads) throws
+                -- std::out_of_range. This project's Windows/clang-cl build
+                -- disables C++ exceptions project-wide, so at() has simply
+                -- never been callable there -- normal engine code apparently
+                -- never calls it (uses operator[] instead), so it's never
+                -- been instantiated on that platform until the generated
+                -- bindings called it. Same "exhaustive bindings surface a
+                -- dormant pre-existing gap" pattern as the exclusions
+                -- above; not fixable by excluding a template arg (T-
+                -- independent), so excluded outright rather than platform-
+                -- gated, for consistency with the rest of this list.
+                "--ignore", "feather::CowVector::at",
+                "--skip-mentions-of", "feather::CowVector::at",
             },
         })
         for _, src in ipairs(result.sources) do
