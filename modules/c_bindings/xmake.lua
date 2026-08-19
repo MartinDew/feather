@@ -189,28 +189,15 @@ target("c_bindings")
                 -- constexpr API for a codegen-only requirement.
                 "--ignore", "feather::RID::invalid",
                 "--skip-mentions-of", "feather::RID::invalid",
-                -- CowVector<T>::at() (both overloads) throws
-                -- std::out_of_range. This project's Windows/clang-cl build
-                -- disables C++ exceptions project-wide, so at() has simply
-                -- never been callable there -- normal engine code apparently
-                -- never calls it (uses operator[] instead), so it's never
-                -- been instantiated on that platform until the generated
-                -- bindings called it. Same "exhaustive bindings surface a
-                -- dormant pre-existing gap" pattern as the exclusions
-                -- above.
-                --
-                -- A method-scoped "--ignore feather::CowVector::at" did NOT
-                -- work (confirmed: same error persisted) -- "final template
-                -- arguments can be omitted" apparently only applies to the
-                -- LAST segment of a qualified name, and CowVector<T> here is
-                -- an INTERMEDIATE segment (feather::CowVector<T>::at), not
-                -- the final one, so its <T> can't be omitted that way.
-                -- Ignoring the whole class instead, matching the proven
-                -- pattern used for Variant/VariantArray/ClassInfo/
-                -- EngineSettings/Delegate/StaticIndexedArray above.
-                "--ignore", "feather::CowVector",
-                "--skip-mentions-of", "feather::CowVector",
-                "--skip-mentions-of", "/feather::CowVector<.*>/",
+                -- (CowVector<T>::at()'s std::out_of_range throw,
+                -- StaticIndexedArray::remove()'s throw, ResolverSetting::set_key()'s
+                -- throw (engine_settings.h; a different class from EngineSettings
+                -- above, unrelated to its exclusion reason), and LaunchSettings's
+                -- throw were all fixed at the source instead of excluded here:
+                -- converted to fassert(), matching this engine's own established
+                -- assertion convention. See core/framework/cow_vector.h,
+                -- core/framework/static_indexed_array.h, core/main/engine_settings.h,
+                -- core/main/launch_settings.cpp.)
             },
         })
         for _, src in ipairs(result.sources) do

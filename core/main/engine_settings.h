@@ -60,7 +60,6 @@ void game_loop() {
 #include <framework/static_string.hpp>
 #include <functional>
 #include <memory>
-#include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
@@ -140,9 +139,7 @@ public:
 
 	// Set current key
 	void set_key(TKey key) {
-		if (!_storage->resolvers.contains(key)) {
-			throw std::invalid_argument("Key not registered");
-		}
+		fassert(_storage->resolvers.contains(key), "Key not registered");
 		_storage->current_key = std::move(key);
 	}
 

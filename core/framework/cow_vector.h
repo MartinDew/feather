@@ -1,11 +1,12 @@
 #pragma once
 
+#include "assert.h"
+
 #include <algorithm>
 #include <cstdlib>
 #include <initializer_list>
 #include <memory>
 #include <span>
-#include <stdexcept>
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 #include <malloc.h>
@@ -275,17 +276,13 @@ public:
 
 	// Element access
 	reference at(size_type pos) {
-		if (pos >= size()) {
-			throw std::out_of_range("cow_vector::at");
-		}
+		fassert(pos < size(), "cow_vector::at: index out of range");
 		ensure_unique();
 		return buf_->data[pos];
 	}
 
 	const_reference at(size_type pos) const {
-		if (pos >= size()) {
-			throw std::out_of_range("cow_vector::at");
-		}
+		fassert(pos < size(), "cow_vector::at: index out of range");
 		return buf_->data[pos];
 	}
 

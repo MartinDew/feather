@@ -146,8 +146,7 @@ size_t StaticIndexedArray<T>::add(const T& element) {
 
 template <class T>
 void StaticIndexedArray<T>::remove(size_t i) {
-	if (!_is_index_valid(i))
-		throw std::out_of_range { "No element at that index" };
+	fassert(_is_index_valid(i), "No element at that index");
 
 	_elements[i] = {};
 	_free_list.insert(std::lower_bound(_free_list.begin(), _free_list.end(), i), i);
