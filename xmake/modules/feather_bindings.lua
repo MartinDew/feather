@@ -73,29 +73,43 @@ function resolve_clang_resource_dir(target)
         local suffix = mrbind_pkg:data("llvm_suffix") or ""
         clang = path.join(path.directory(llvm_config), "clang" .. suffix)
     else
-        local tool = find_tool("llvm-config", {
-            -- Homebrew's llvm is keg-only; mirrors mrbind.lua's own search.
-            paths = {"/opt/homebrew/opt/llvm/bin", "/usr/local/opt/llvm/bin"},
-        })
+        -- mrbind.lua's own on_load skips the system llvm-config search
+        -- entirely on Windows, always using libllvm there -- mirror that
+        -- exactly rather than searching PATH for a tool that path never
+        -- takes on that platform.
+        local tool
         local suffix = ""
-        if not tool then
-            for v = 30, 18, -1 do
-                tool = find_tool("llvm-config", {program = "llvm-config-" .. v})
-                if tool then
-                    suffix = "-" .. v
-                    break
+        if not is_plat("windows") then
+            tool = find_tool("llvm-config", {
+                -- Homebrew's llvm is keg-only; mirrors mrbind.lua's own search.
+                paths = {"/opt/homebrew/opt/llvm/bin", "/usr/local/opt/llvm/bin"},
+            })
+            if not tool then
+                for v = 30, 18, -1 do
+                    tool = find_tool("llvm-config", {program = "llvm-config-" .. v})
+                    if tool then
+                        suffix = "-" .. v
+                        break
+                    end
                 end
             end
         end
         if tool then
             clang = path.join(path.directory(tool.program), "clang" .. suffix)
-        elseif mrbind_pkg and mrbind_pkg.dep then
-            -- mrbind fell back to building libllvm from source (no system
-            -- llvm-config found) -- find clang in that package's installdir,
-            -- same as mrbind.lua's on_install does for the static-build path.
-            local libllvm = mrbind_pkg:dep("libllvm")
-            if libllvm then
-                clang = path.join(libllvm:installdir(), "bin", "clang")
+        else
+            -- No system llvm-config -- mrbind fell back to building libllvm
+            -- from source (mrbind.lua's on_load; on Windows this path is
+            -- ALWAYS taken, never just a fallback). target:pkg("mrbind"):dep(
+            -- "libllvm") isn't readable from a consuming target (confirmed
+            -- empirically, same class of gap as :data() above), so this
+            -- target must directly add_packages("libllvm") itself (see
+            -- modules/c_bindings/xmake.lua's Windows branch and the matching
+            -- add_requires in thirdparty/xmake.lua) to get a working
+            -- target:pkg("libllvm") handle here.
+            local libllvm_pkg = target:pkg("libllvm")
+            if libllvm_pkg then
+                local bin = path.join(libllvm_pkg:installdir(), "bin", "clang")
+                clang = is_plat("windows") and (bin .. ".exe") or bin
             end
         end
     end

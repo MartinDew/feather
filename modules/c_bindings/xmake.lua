@@ -39,6 +39,12 @@ target("c_bindings")
     -- feather's -- deliberately not passed via feather_module_target's
     -- exe_packages.
     add_packages("mrbind")
+    -- Windows-only: mrbind was built against libllvm's clang there (see
+    -- thirdparty/xmake.lua), not any system clang -- needed directly so
+    -- resolve_clang_resource_dir() can find it via target:pkg("libllvm").
+    if is_plat("windows") then
+        add_packages("libllvm")
+    end
     -- Generated .cpp files #include their sibling generated header by quoted
     -- path; it lives in HEADER_OUTPUT_DIR, not colocated with the .cpp, so it
     -- must be on the include path (public: consumers of c_bindings need it
