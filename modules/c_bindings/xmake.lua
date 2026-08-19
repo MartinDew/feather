@@ -183,11 +183,20 @@ target("c_bindings")
                 -- been instantiated on that platform until the generated
                 -- bindings called it. Same "exhaustive bindings surface a
                 -- dormant pre-existing gap" pattern as the exclusions
-                -- above; not fixable by excluding a template arg (T-
-                -- independent), so excluded outright rather than platform-
-                -- gated, for consistency with the rest of this list.
-                "--ignore", "feather::CowVector::at",
-                "--skip-mentions-of", "feather::CowVector::at",
+                -- above.
+                --
+                -- A method-scoped "--ignore feather::CowVector::at" did NOT
+                -- work (confirmed: same error persisted) -- "final template
+                -- arguments can be omitted" apparently only applies to the
+                -- LAST segment of a qualified name, and CowVector<T> here is
+                -- an INTERMEDIATE segment (feather::CowVector<T>::at), not
+                -- the final one, so its <T> can't be omitted that way.
+                -- Ignoring the whole class instead, matching the proven
+                -- pattern used for Variant/VariantArray/ClassInfo/
+                -- EngineSettings/Delegate/StaticIndexedArray above.
+                "--ignore", "feather::CowVector",
+                "--skip-mentions-of", "feather::CowVector",
+                "--skip-mentions-of", "/feather::CowVector<.*>/",
             },
         })
         for _, src in ipairs(result.sources) do
