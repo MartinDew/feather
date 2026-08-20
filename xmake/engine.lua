@@ -141,6 +141,13 @@ target("feather")
         end
     end
 
+    -- mingw-w64's libstdc++ splits std::print's terminal-writing internals
+    -- (std::__open_terminal/__write_to_terminal) into a separate static
+    -- archive instead of the main libstdc++.
+    if is_plat("mingw") then
+        add_syslinks("stdc++exp")
+    end
+
     before_build(run_codegen)
 
     add_rules("feather.deploy_shaders")

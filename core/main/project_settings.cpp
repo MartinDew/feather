@@ -5,7 +5,7 @@
 #include <iostream>
 
 #if defined(_WIN32) || defined(_WIN64)
-#include <shlobj_core.h>
+#include <shlobj.h>
 #elif defined(__APPLE__) || defined(__linux__)
 #include <pwd.h>
 #include <sys/types.h>
