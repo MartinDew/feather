@@ -44,8 +44,6 @@ if is_plat("windows") then
     add_requires("directx12-agility 1.618.1", {system = false, alias = "directx12-agility"})
 end
 
--- Vex has no viable DX12 path under mingw (COM-ABI mismatches with MSVC-built
--- headers), so it's forced onto the Vulkan backend there instead (see vex.lua).
 if is_plat("mingw") then
     add_requires("vulkan-headers 1.4.335+0", {system = false, alias = "vulkan-headers"})
     add_requires("vulkan-loader 1.4.335+0", {system = false, alias = "vulkan-loader"})

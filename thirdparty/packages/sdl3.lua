@@ -49,9 +49,6 @@ package("sdl3_feather")
             info.links    = {"SDL3-static"}
             info.syslinks = {"user32", "gdi32", "winmm", "imm32", "ole32", "oleaut32", "version", "uuid", "advapi32", "setupapi", "shell32"}
         elseif package:is_plat("mingw") then
-            -- Same Win32 API surface as native windows above, needing the same
-            -- syslinks -- but SDL3's CMake names the static output "SDL3" (no
-            -- "-static" suffix) here, matching the "libSDL3.a" lib_check above.
             info.links    = {"SDL3"}
             info.syslinks = {"user32", "gdi32", "winmm", "imm32", "ole32", "oleaut32", "version", "uuid", "advapi32", "setupapi", "shell32"}
         else

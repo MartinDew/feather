@@ -141,25 +141,9 @@ target("feather")
         end
     end
 
-    -- mingw-w64's libstdc++ splits std::print's terminal-writing internals
-    -- (std::__open_terminal/__write_to_terminal) into a separate static
-    -- archive instead of the main libstdc++.
     if is_plat("mingw") then
         add_syslinks("stdc++exp")
 
-        -- set_runtimes("MT") a few lines up only affects MSVC; mingw-w64
-        -- defaults to dynamically linking its own runtime (libgcc_s_seh-1.dll,
-        -- libstdc++-6.dll, and -- since this toolchain uses the posix thread
-        -- model -- libwinpthread-1.dll too), none of which get deployed
-        -- alongside the exe, so the binary fails to even start on a real
-        -- Windows machine (or Wine) that doesn't happen to have mingw's
-        -- runtime DLLs on PATH. A bare "-static" is too blunt here: it also
-        -- forces vulkan-1/dxcompiler/slang to resolve as true static
-        -- archives, but those are only ever dynamic import libs (the real
-        -- loader/compiler DLLs are meant to stay DLLs, deployed at runtime).
-        -- Scope static linking to just the compiler runtime instead --
-        -- -Bstatic/-Bdynamic brackets only libwinpthread, leaving everything
-        -- else dynamic.
         add_ldflags("-static-libgcc", "-static-libstdc++",
             "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
             {force = true})

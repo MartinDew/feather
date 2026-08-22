@@ -8,9 +8,6 @@
 #include <stdexcept>
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
-// The Windows CRT (used by both MSVC and mingw-w64) has no conforming C11
-// aligned_alloc: its free() can't release _aligned_malloc'd blocks, so the
-// standard function is simply absent rather than mismatched.
 #include <malloc.h>
 #define aligned_alloc(align, size) _aligned_malloc(size, align)
 #define aligned_free _aligned_free

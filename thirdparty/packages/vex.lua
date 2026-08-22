@@ -27,13 +27,6 @@ package("vex")
             end
         end
 
-        -- Vex's PIX setup (cmake/VexDX12.cmake) points PIX_INCLUDE_DIR at
-        -- "${PIX_EVENTS_DIR}/include", but the WinPixEventRuntime nupkg
-        -- actually extracts headers to "Include" (capital I). NTFS is
-        -- case-insensitive so this is invisible building natively on
-        -- Windows, but breaks the imported target's
-        -- INTERFACE_INCLUDE_DIRECTORIES on any case-sensitive build host
-        -- (e.g. cross-compiling to Windows via mingw from Linux).
         local vexdx12 = path.join("cmake", "VexDX12.cmake")
         if os.isfile(vexdx12) then
             local content = io.readfile(vexdx12)
@@ -45,9 +38,6 @@ package("vex")
             end
         end
 
-        -- Same case-sensitivity class of bug as above: mingw-w64 ships this
-        -- Windows SDK header as lowercase unknwn.h. NTFS hides the mismatch
-        -- on native Windows builds.
         local dxc_compiler_h = path.join("src", "ShaderCompiler", "Compiler", "DXC", "DXCCompiler.h")
         if os.isfile(dxc_compiler_h) then
             local content = io.readfile(dxc_compiler_h)
@@ -58,11 +48,6 @@ package("vex")
             end
         end
 
-        -- These .cpp files use std::chrono::current_zone/std::memcpy/std::ranges::any_of
-        -- without including the header that declares them, relying on it arriving
-        -- transitively through some other header. That transitive path happens to
-        -- exist under MSVC's STL but not libstdc++ (mingw), so add the direct
-        -- include each is actually missing.
         local function ensure_include(relpath, header)
             if not os.isfile(relpath) then
                 return
@@ -101,17 +86,8 @@ package("vex")
             if cxx then table.insert(configs, "-DCMAKE_CXX_COMPILER=" .. cxx) end
         end
         if package:is_plat("mingw") then
-            -- Vex's CMake AUTO-selects DX12 for any Windows-target build, but DX12
-            -- under mingw hits real COM-ABI mismatches against MSVC-oriented headers
-            -- (e.g. ID3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart() won't
-            -- resolve). Force Vulkan instead -- already the proven, working backend
-            -- on Linux -- to sidestep that whole class of problem.
             table.insert(configs, "-DVEX_GRAPHICS_BACKEND=VULKAN")
 
-            -- Bypass find_package(Vulkan)'s own search heuristics (which assume a
-            -- native Windows install layout) and point it straight at our fetched
-            -- deps: vulkan-headers (plain, cross-target-safe C headers) and the
-            -- synthesized vulkan-1 import lib (thirdparty/packages/vulkan-loader.lua).
             local vk_headers = package:dep("vulkan-headers"):fetch()
             local vk_loader  = package:dep("vulkan-loader"):fetch()
             if vk_headers and vk_headers.includedirs and vk_headers.includedirs[1] then
@@ -121,24 +97,6 @@ package("vex")
                 table.insert(configs, "-DVulkan_LIBRARY=" .. path.join(vk_loader.linkdirs[1], "libvulkan-1.dll.a"))
             end
 
-            -- DXC's downloaded inc/dxcapi.h declares COM interfaces via plain
-            -- __declspec(uuid(...)), which MSVC turns into a working __uuidof()
-            -- but mingw's GCC doesn't wire up from that alone: mingw's __uuidof
-            -- is itself just a macro (see _mingw.h) expanding to
-            -- __mingw_uuidof<T>(), and only __CRT_UUID_DECL(...) actually
-            -- *defines* that template specialization -- __declspec(uuid())
-            -- alone leaves it declared-but-undefined, hence the link error.
-            -- (Trying to make mingw's own dxcapi.h -- which does call
-            -- __CRT_UUID_DECL -- win the #include <dxcapi.h> search instead
-            -- doesn't work: verified that whichever -I/-isystem dir is
-            -- positionally first in the actual compile command wins,
-            -- regardless of category, and CMAKE_CXX_FLAGS-injected -I always
-            -- lands after target_include_directories' -isystem in CMake's
-            -- generated command.) Simplest fix that doesn't fight that
-            -- ordering at all: force-include a tiny shim that calls
-            -- __CRT_UUID_DECL directly for exactly the interfaces
-            -- DXCCompiler.cpp uses, with GUIDs copied from dxcapi.h's own
-            -- CROSS_PLATFORM_UUIDOF(...) invocations.
             local uuid_shim = path.join(builddir, "mingw_dxc_uuidof_shim.h")
             os.mkdir(builddir)
             io.writefile(uuid_shim, [[
@@ -229,10 +187,6 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
         -- glob-matched for the same reason.
         local dxc_src = pick_latest_dir("dxc*-src")
         if dxc_src and os.isdir(dxc_src) then
-            -- DXC's bin/lib subdirs use MSVC-style arch names (x64/x86/arm64)
-            -- regardless of the building toolchain. package:arch() matches that
-            -- on "windows" plat, but returns GNU-style names ("x86_64") on
-            -- "mingw" -- map those back to the directory names DXC actually uses.
             local arch_map = {x86_64 = "x64", i386 = "x86", aarch64 = "arm64"}
             local arch = arch_map[package:arch()] or package:arch()
             local dxc_lib_dir = path.join(dxc_src, "lib", arch)
@@ -261,11 +215,6 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
             local pix_lib = path.join(deps, "PixEvents", "bin", "x64", "WinPixEventRuntime.lib")
             if os.isfile(pix_lib) then os.cp(pix_lib, libdir) end
         elseif package:is_plat("mingw") then
-            -- The Vulkan backend means no PIX/Agility SDK here (DX12-only, see
-            -- above). DXC/Slang are still prebuilt Windows binaries regardless of
-            -- graphics backend, and their .lib/.dll were already collected by the
-            -- slang_src/dxc_src blocks above (identical layout to native Windows) --
-            -- nothing platform-specific left to do here.
         else
             local libdir = package:installdir("lib")
             local runtimedir = package:installdir("runtime")
@@ -331,11 +280,6 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
                 },
             }
         elseif package:is_plat("mingw") then
-            -- Vulkan backend forced above; unlike native windows there's no PIX/
-            -- Agility SDK, and the Vex static lib uses mingw's GNU-ar naming
-            -- (libVex.a) rather than MSVC's (Vex.lib). slang/dxcompiler are still
-            -- prebuilt Windows .lib import libs though (mingw's ld accepts bare
-            -- NAME.lib alongside libNAME.a for PE/COFF targets).
             if not os.isfile(path.join(libdir, "libVex.a")) then
                 return nil
             end

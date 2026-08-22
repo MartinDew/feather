@@ -1,15 +1,3 @@
--- Vulkan loader, based on the official xmake-repo definition (packages/v/vulkan-loader),
--- extended with mingw support. Upstream's on_install only covers
--- "windows|x86", "windows|x64", "linux", "macosx" -- cross-compiling to Windows via
--- mingw from a Linux host isn't handled at all (only native MSYS2-hosted mingw
--- builds are, via a pacman extsource). We're not cross-compiling the actual
--- Vulkan-Loader C project here (that's a much bigger, riskier from-source mingw
--- build, on top of everything already patched in vex.lua); instead we synthesize
--- a minimal mingw import library directly from the loader's own published export
--- list (KhronosGroup/Vulkan-Loader's loader/vulkan-1.def), via dlltool. This is
--- link-time metadata only -- the real vulkan-1.dll is resolved at runtime same as
--- any other Vulkan app (bundled or from the GPU driver), so this needs no from-source
--- compilation and no external SDK download/extraction.
 package("vulkan-loader")
     set_homepage("https://github.com/KhronosGroup/Vulkan-Loader")
     set_description("This project provides the Khronos official Vulkan ICD desktop loader for Windows, Linux, and MacOS.")
@@ -63,7 +51,6 @@ package("vulkan-loader")
         local sdkver = package:version():split("%+")[1]
         package:add("deps", "vulkan-headers " .. sdkver)
         if package:is_plat("mingw") then
-            -- No from-source cross-build here; see the header comment.
             return
         end
         if not package.is_built or package:is_built() then
@@ -116,10 +103,6 @@ package("vulkan-loader")
     end)
 
     on_install("mingw", function (package)
-        -- Synthesize libvulkan-1.dll.a from the loader's own published .def
-        -- (see header comment) via mingw's dlltool -- link-time metadata only,
-        -- no compilation, and functionally identical to an import lib pulled
-        -- out of the real Windows SDK/installer.
         local def_url = "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Loader/main/loader/vulkan-1.def"
         local def_file = path.join(os.tmpdir(), "vulkan-1.def")
         import("net.http")
