@@ -7,7 +7,8 @@
 #include <span>
 #include <stdexcept>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
+#include <malloc.h>
 #define aligned_alloc(align, size) _aligned_malloc(size, align)
 #define aligned_free _aligned_free
 #elifdef __linux__

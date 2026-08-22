@@ -48,6 +48,9 @@ package("sdl3_feather")
         elseif package:is_plat("windows") then
             info.links    = {"SDL3-static"}
             info.syslinks = {"user32", "gdi32", "winmm", "imm32", "ole32", "oleaut32", "version", "uuid", "advapi32", "setupapi", "shell32"}
+        elseif package:is_plat("mingw") then
+            info.links    = {"SDL3"}
+            info.syslinks = {"user32", "gdi32", "winmm", "imm32", "ole32", "oleaut32", "version", "uuid", "advapi32", "setupapi", "shell32"}
         else
             info.links = {"SDL3"}
         end

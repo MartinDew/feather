@@ -12,6 +12,7 @@
 #include <core/world/components/light.h>
 #include <framework/assert.h>
 #include <framework/bytes.h>
+#include <SDL3/SDL_video.h>
 
 #include <raw_resources/shaders/depth_prepass.slang.gen.h>
 #include <raw_resources/shaders/pbr_forward.slang.gen.h>

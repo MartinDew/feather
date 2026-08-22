@@ -141,6 +141,14 @@ target("feather")
         end
     end
 
+    if is_plat("mingw") then
+        add_syslinks("stdc++exp")
+
+        add_ldflags("-static-libgcc", "-static-libstdc++",
+            "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
+            {force = true})
+    end
+
     before_build(run_codegen)
 
     add_rules("feather.deploy_shaders")
