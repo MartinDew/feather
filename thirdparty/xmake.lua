@@ -12,10 +12,14 @@ end
 -- Local package (packages/flecs.lua): builds flecs with default rather than
 -- hidden symbol visibility, so -rdynamic can re-export ecs_* to project DLLs.
 -- Stock xrepo flecs hides those symbols and crashes project DLLs on startup.
+--
+-- windows/mingw force shared regardless of static_deps: no -rdynamic there,
+-- so a static flecs would duplicate ecs_os_api per binary; shared avoids it.
+local FEATHER_FORCE_SHARED_DEPS = is_plat("windows", "mingw")
 add_requires("flecs 4.1.5", {
     system = false,
     alias  = "flecs",
-    configs = {shared = not has_config("static_deps")},
+    configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")},
 })
 
 -- Local package (packages/assimp.lua) builds assimp's bundled minizip instead of
@@ -31,7 +35,9 @@ add_requires("assimp 6.0.4", {
 })
 
 add_requires("directxmath_feather", {system = false, alias = "directxmath"})
-add_requires("sdl3_feather", {system = false, alias = "sdl3", configs = {shared = not has_config("static_deps")}})
+-- Same duplicate-global-state reasoning as flecs above (SDL3 owns
+-- process-global state too).
+add_requires("sdl3_feather", {system = false, alias = "sdl3", configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")}})
 
 if not is_plat("macosx") then
     add_requires("vex", {system = false, alias = "vex"})

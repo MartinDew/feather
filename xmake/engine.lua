@@ -115,6 +115,10 @@ target("feather")
     add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
     add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
 
+    -- Flips FEATHER_API to dllexport; consumer DLLs never define this, so
+    -- they get dllimport and resolve against this exe's import lib.
+    add_defines("FEATHER_BUILDING_ENGINE")
+
     -- BETA in debug + releasedbg (CMake Development), absent in release
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
@@ -132,26 +136,24 @@ target("feather")
         add_ldflags("-rdynamic", {force = true})
     end
 
-    -- Windows analog: needs a .def file (dumpbin /EXPORTS) to get a companion
-    -- import .lib. Not yet committed -- no-op until it exists.
-    if is_plat("windows") then
-        local def_file = path.join(FEATHER_ROOT, "tools", "feather.def")
-        if os.isfile(def_file) then
-            add_ldflags("/DEF:" .. def_file, {force = true})
-        end
-    end
+    -- Windows analog of -rdynamic: FEATHER_API dllexport makes link.exe/
+    -- lld-link auto-emit feather.lib -- no /DEF: step needed.
 
     if is_plat("mingw") then
         add_syslinks("stdc++exp")
 
         add_ldflags("-static-libgcc", "-static-libstdc++",
             "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
+            -- GNU ld needs --out-implib explicitly (link.exe does this
+            -- automatically); $(builddir) expansion matches set_targetdir() above.
+            "-Wl,--out-implib,$(builddir)/bin/libfeather.a",
             {force = true})
     end
 
     before_build(run_codegen)
 
     add_rules("feather.deploy_shaders")
+    add_rules("feather.deploy_shared_deps")
     
     on_config(apply_compile_flags)
 target_end()

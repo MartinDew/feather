@@ -24,6 +24,28 @@ rule("feather.deploy_shaders")
     end)
 rule_end()
 
+-- feather.deploy_shared_deps
+-- Copies flecs/sdl3's shared .dll next to feather.exe on windows/mingw --
+-- add_packages() only wires the import lib, not the runtime file itself.
+rule("feather.deploy_shared_deps")
+    after_build(function(target)
+        if not target:is_plat("windows", "mingw") then return end
+        for _, pkgname in ipairs({"flecs", "sdl3"}) do
+            local pkg = target:pkg(pkgname)
+            if pkg then
+                -- installdir(subpath) ignores the arg, returns the root --
+                -- join "bin" manually (same trap as vex_renderer.deploy_runtime).
+                local bindir = path.join(pkg:installdir(), "bin")
+                if os.isdir(bindir) then
+                    for _, f in ipairs(os.files(path.join(bindir, "*.dll"))) do
+                        os.cp(f, target:targetdir())
+                    end
+                end
+            end
+        end
+    end)
+rule_end()
+
 -- feather_module_target(name, module_dir, files, opts)
 --
 -- Creates a {name} static lib and re-opens the feather target to link it in.
@@ -62,6 +84,9 @@ function feather_module_target(name, module_dir, files, opts)
             add_files(path.join(module_dir, f), {always_added = true})
         end
         add_defines(name .. "_ENABLED", {public = true})
+        -- Flips FEATHER_API to dllexport; not {public=true} -- a consumer
+        -- must never see this define.
+        add_defines("FEATHER_BUILDING_ENGINE")
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end

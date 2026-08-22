@@ -21,8 +21,9 @@ target("feather_public_api")
     add_includedirs(path.join(FEATHER_ROOT, "thirdparty", "SimpleMath"), {public = true})
     add_packages("directxmath", {public = true})
     add_deps("simplemath", {public = true})
-    -- flecs/sdl3 export headers only off Windows -- see below.
-    if is_plat("windows") then
+    -- flecs/sdl3 link normally on windows/mingw (real shared libs there),
+    -- headers-only elsewhere -- see below.
+    if is_plat("windows", "mingw") then
         add_packages("flecs", {public = true})
         add_packages("sdl3", {public = true})
     else
@@ -32,9 +33,9 @@ target("feather_public_api")
     add_packages("taywee_args", {public = true})
 target_end()
 
--- Why flecs/sdl3 export without their archives (non-Windows): both own
+-- Why flecs/sdl3 export without their archives (Linux/macOS): both own
 -- process-global state a DLL's own static copy would duplicate uninitialized
 -- and segfault on first use, so the links are left out and -rdynamic binds
 -- them to the host exe instead. {links = {}}, not {links = false} (falsy in
--- Lua, silently falls through). Windows keeps the static copies and still
--- carries this bug -- its .def-based import lib isn't committed yet.
+-- Lua, silently falls through). windows/mingw take the opposite fix: both
+-- build flecs/sdl3 shared instead, so linking normally binds everyone to one copy.

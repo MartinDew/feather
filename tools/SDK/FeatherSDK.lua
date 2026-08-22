@@ -81,7 +81,7 @@ function feather_sdk_setup(target_name, opts)
         on_load(function(target)
             local bin = table.wrap(target:values("feather.engine_bin"))[1]
             local feather_root = table.wrap(target:values("feather.root"))[1]
-            assert(os.isfile(bin) or (is_plat("windows") and os.isfile(bin .. ".exe")),
+            assert(os.isfile(bin) or (is_plat("windows", "mingw") and os.isfile(bin .. ".exe")),
                 "[feather] engine binary not found: " .. bin ..
                 "\n[feather] Build FeatherEngine first (cd " .. feather_root .. " && xmake)," ..
                 "\n[feather] or point feather_sdk_setup's engine_bin_dir at your engine build dir.")
@@ -93,9 +93,19 @@ function feather_sdk_setup(target_name, opts)
             feather_flags.apply(target)
         end)
 
-        if is_plat("windows") then
+        if is_plat("windows", "mingw") then
+            -- mingw is a distinct is_plat() from "windows" but needs this
+            -- same link-time path, not the else branch's ELF dlopen() binding.
             add_linkdirs(bin_dir)
             add_links("feather")
+
+            if is_plat("mingw") then
+                -- mingw's libstdc++/libgcc aren't a Windows system component, so
+                -- static-link like the exe does; add_shflags (add_ldflags no-ops on shared kind).
+                add_shflags("-static-libgcc", "-static-libstdc++",
+                    "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
+                    {force = true})
+            end
         else
             -- No link target on ELF/Mach-O: undefined engine/flecs/SDL symbols
             -- bind to the host exe at dlopen() time (-rdynamic, {links = {}}).

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <framework/export_defs.h>
 #include <framework/reflected.h>
 #include <framework/reflection_macros.h>
 
@@ -11,7 +12,7 @@ namespace feather {
 
 class WorldSim;
 
-class EcsFeature : public Reflected {
+class FEATHER_API EcsFeature : public Reflected {
 	FCLASS();
 
 protected:

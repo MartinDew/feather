@@ -32,9 +32,22 @@ package("sdl3_feather")
         local libdir = package:installdir("lib")
         local inc    = package:installdir("include")
 
-        local lib_check = package:is_plat("windows")
-            and path.join(libdir, "SDL3-static.lib")
-            or  path.join(libdir, "libSDL3.a")
+        -- Static-artifact names only exist for a static build; a shared
+        -- build's import lib is named differently per platform, so branch on shared too.
+        local lib_check
+        if package:config("shared") then
+            if package:is_plat("windows") then
+                lib_check = path.join(libdir, "SDL3.lib")
+            elseif package:is_plat("mingw") then
+                lib_check = path.join(libdir, "libSDL3.dll.a")
+            else
+                lib_check = path.join(libdir, "libSDL3.so")
+            end
+        else
+            lib_check = package:is_plat("windows")
+                and path.join(libdir, "SDL3-static.lib")
+                or  path.join(libdir, "libSDL3.a")
+        end
         if not os.isfile(lib_check) then
             return nil
         end
