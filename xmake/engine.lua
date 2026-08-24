@@ -58,10 +58,10 @@ for _, p in ipairs({
     "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
     "core/world/ecs_module.cpp",
-    "core/world/rendering_world_feature.cpp",
-    "core/world/math_feature.cpp",
+    "core/world/rendering_world_module.cpp",
+    "core/world/math_module.cpp",
     "core/world/register_core_features.cpp",
-    "core/world/core_world_feature.cpp",
+    "core/world/core_world_module.cpp",
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))

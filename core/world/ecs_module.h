@@ -5,7 +5,7 @@
 #include <framework/reflection_macros.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
-#include "ecs_feature.gen.h"
+#include "ecs_module.gen.h"
 #endif
 
 namespace feather {

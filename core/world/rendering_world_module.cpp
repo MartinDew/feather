@@ -1,4 +1,4 @@
-#include "rendering_world_feature.h"
+#include "rendering_world_module.h"
 
 #include "components/scene.h"
 #include <main/world_sim.h>
@@ -20,7 +20,7 @@ inline void _update_meshes(Entity e, Transform transform, MeshInstance& mesh, Ma
 	RenderingServer::get()->add_entity({ transform, mesh.mesh->get_mesh_data(), mat ? mat->material : nullptr });
 }
 
-RenderingWorldFeature::RenderingWorldFeature(World world) {
+RenderingWorldModule::RenderingWorldModule(World world) {
 	std::println("importing module {} ", get_class_static());
 	world.module<Type>();
 

@@ -18,7 +18,7 @@ class EcsModuleModifier(Modifier):
     _import_module(WorldSim*) hook that WorldSim's constructor discovers via
     ClassDB::get_children_names("EcsModule") + get_static_method(child,
     "_import_module") (core/main/world_sim.cpp) — previously hand-written per
-    feature (see the old RenderingWorldFeature::_load_module)."""
+    feature (see the old RenderingWorldModule::_load_module)."""
     name = "EcsModule"
     targets = frozenset({"class"})
     value_type = False

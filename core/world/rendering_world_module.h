@@ -10,7 +10,7 @@
 #include <main/world_sim.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
-#include "rendering_world_feature.gen.h"
+#include "rendering_world_module.gen.h"
 #endif
 
 namespace feather {
@@ -30,12 +30,12 @@ struct MaterialInstance {
 	std::shared_ptr<Material> material; // todo: multiple materials
 };
 
-class FEATHER_API RenderingWorldFeature : public EcsModule {
+class FEATHER_API RenderingWorldModule : public EcsModule {
 	FCLASS(EcsModule);
 
 public:
-	RenderingWorldFeature() = default;
-	RenderingWorldFeature(World world);
+	RenderingWorldModule() = default;
+	RenderingWorldModule(World world);
 };
 
 } //namespace feather
