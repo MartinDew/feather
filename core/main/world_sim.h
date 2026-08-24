@@ -37,9 +37,9 @@ class FEATHER_API WorldSim final : public Simulation {
 	}
 
 protected:
-	template <std::derived_from<class EcsFeature> T>
+	template <std::derived_from<class EcsModule> T>
 	void _import_feature() {
-		_world.import<T>();
+		_world.import <T>();
 	}
 
 public:

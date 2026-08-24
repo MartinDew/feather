@@ -57,7 +57,7 @@ for _, p in ipairs({
     "core/resources/texture_format_loader.cpp",
     "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
-    "core/world/ecs_feature.cpp",
+    "core/world/ecs_module.cpp",
     "core/world/rendering_world_feature.cpp",
     "core/world/math_feature.cpp",
     "core/world/register_core_features.cpp",

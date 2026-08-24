@@ -12,11 +12,11 @@ namespace feather {
 
 class WorldSim;
 
-class FEATHER_API EcsFeature : public Reflected {
+class FEATHER_API EcsModule : public Reflected {
 	FCLASS();
 
 protected:
-	EcsFeature() = default;
+	EcsModule() = default;
 
 	static WorldSim* _get_world_sim();
 };

@@ -1,7 +1,7 @@
 #include "world_sim.h"
 
 #include "engine.h"
-#include "world/ecs_feature.h"
+#include "world/ecs_module.h"
 #include <world/components/scene.h>
 #include <world/register_core_features.h>
 #include <framework/static_string.hpp>
@@ -18,11 +18,11 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 }
 
 WorldSim::~WorldSim() {
-	ClassDB::unregister_subclass_delegate(EcsFeature::get_class_static(), _subclass_delegate_id);
+	ClassDB::unregister_subclass_delegate(EcsModule::get_class_static(), _subclass_delegate_id);
 }
 
 void WorldSim::init() {
-	// Every reflected Component registers before any EcsFeature imports
+	// Every reflected Component registers before any EcsModule imports
 	register_core_components(_world);
 
 	_scene_prefab = _world.prefab("Scene");
@@ -31,17 +31,19 @@ void WorldSim::init() {
 	set_active_scene(scene);
 
 	// Subscribed here, not in the ctor (which runs before index_project()):
-	// registering a class fires this immediately, so a DLL's EcsFeature would otherwise import reentrantly, before the world above exists.
+	// registering a class fires this immediately, so a DLL's EcsFeature would otherwise import reentrantly, before the
+	// world above exists.
 	_subclass_delegate_id = ClassDB::on_subclass_registered(
-			EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
+			EcsModule::get_class_static(), [world_sim = this](std::string_view class_name) {
 				if (world_sim) {
 					ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
 				}
-			});
+			}
+	);
 
-	// Picks up EcsFeature subclasses from core, from built-in modules, and --
+	// Picks up EcsModule subclasses from core, from built-in modules, and --
 	// because this runs after index_project() -- from loaded project DLLs.
-	auto children = ClassDB::get_children_names(EcsFeature::get_class_static());
+	auto children = ClassDB::get_children_names(EcsModule::get_class_static());
 	for (auto& child : children) {
 		ClassDB::get_static_method(child, "_import_module").call(this);
 	}
