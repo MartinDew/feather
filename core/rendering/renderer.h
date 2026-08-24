@@ -3,6 +3,7 @@
 #include "mesh_data.h"
 #include "render_scene.h"
 
+#include <framework/export_defs.h>
 #include <framework/reflected.h>
 #include <framework/reflection_macros.h>
 #include <main/engine_settings.h>
@@ -18,7 +19,7 @@ namespace feather {
 class Shader;
 class Window;
 
-class Renderer : public Reflected {
+class FEATHER_API Renderer : public Reflected {
 	FCLASS();
 	friend class RenderingServer;
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "ecs_defs.h"
 #include "ecs_feature.h"
+#include <framework/export_defs.h>
 
 // WorldSim must be a complete type here (not just the forward decl from
 // ecs_feature.h): the generated register_world_types.gen.cpp binds
@@ -29,7 +30,7 @@ struct MaterialInstance {
 	std::shared_ptr<Material> material; // todo: multiple materials
 };
 
-class RenderingWorldFeature : public EcsFeature {
+class FEATHER_API RenderingWorldFeature : public EcsFeature {
 	FCLASS(EcsModule);
 
 public:

@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "ecs_defs.h"
 #include "ecs_feature.h"
+#include <framework/export_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "math_feature.gen.h"
@@ -8,7 +9,7 @@
 
 namespace feather {
 
-class MathWorldFeature final : public EcsFeature {
+class FEATHER_API MathWorldFeature final : public EcsFeature {
 	FCLASS(EcsModule);
 
 public:

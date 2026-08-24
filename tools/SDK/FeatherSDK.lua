@@ -105,6 +105,9 @@ function feather_sdk_setup(target_name, opts)
                 add_shflags("-static-libgcc", "-static-libstdc++",
                     "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
                     {force = true})
+                -- Same as xmake/engine.lua: mingw-w64's libstdc++ splits std::print's
+                -- terminal-writing internals into a separate libstdc++exp.a archive.
+                add_syslinks("stdc++exp")
             end
         else
             -- No link target on ELF/Mach-O: undefined engine/flecs/SDL symbols

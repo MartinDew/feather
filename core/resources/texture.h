@@ -1,6 +1,7 @@
 #pragma once
 
 #include "resource.h"
+#include <framework/export_defs.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -25,7 +26,7 @@ enum class TextureFormat : uint8_t {
 	RGBA32_FLOAT,
 };
 
-class Texture : public Resource {
+class FEATHER_API Texture : public Resource {
 	FCLASS();
 
 protected:

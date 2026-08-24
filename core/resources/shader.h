@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "resource.h"
+#include <framework/export_defs.h>
 
 #include <filesystem>
 
@@ -11,7 +12,7 @@ namespace feather {
 
 class RenderingServer;
 
-class Shader : public Resource {
+class FEATHER_API Shader : public Resource {
 	FCLASS();
 	friend RenderingServer;
 
