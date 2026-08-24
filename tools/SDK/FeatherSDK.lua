@@ -40,6 +40,10 @@ function feather_sdk_setup(target_name, opts)
 
     target(target_name)
         add_deps("feather_public_api")
+        -- Direct, not just via feather_public_api: an object-kind dep's .o
+        -- files don't propagate across a second headeronly hop (see
+        -- xmake/public_api.lua).
+        add_deps("simplemath")
 
         -- before_build/on_load closures run sandboxed and can't see this
         -- function's locals or resolve os.scriptdir() to this file across a

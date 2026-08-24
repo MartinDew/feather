@@ -20,6 +20,11 @@ target("feather_public_api")
     -- across a headeronly dep boundary (simplemath -> feather_public_api -> exes)
     add_includedirs(path.join(FEATHER_ROOT, "thirdparty", "SimpleMath"), {public = true})
     add_packages("directxmath", {public = true})
+    -- add_deps("simplemath") here too, for its own public defines/packages,
+    -- but that alone doesn't get simplemath's object files into a final
+    -- link -- an object-kind dep's .o files don't propagate across a second
+    -- headeronly hop the way a static lib's archive reference would, so
+    -- every actual binary target below also deps on it directly.
     add_deps("simplemath", {public = true})
     -- flecs/sdl3 link normally on windows/mingw (real shared libs there),
     -- headers-only elsewhere -- see below.

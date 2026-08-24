@@ -1,5 +1,10 @@
 target("simplemath")
-    set_kind("static")
+    -- object, not static: a single-TU archive is exactly the shape that hits
+    -- MSVC's per-lib RuntimeLibrary metadata / LNK2038 mismatches (and, on
+    -- any linker, an archive can drop a TU with no directly-referenced
+    -- symbol) -- object files get embedded directly into whatever links
+    -- this dep, sidestepping both.
+    set_kind("object")
     set_warnings("none")
     -- Linked into downstream project DLLs (shared) as well as the engine's
     -- own executables; a non-PIC static archive can't go into a shared
