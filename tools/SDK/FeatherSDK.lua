@@ -46,6 +46,17 @@ function feather_sdk_setup(target_name, opts)
         -- cross-repo includes(), so hand the engine root over as a target value.
         set_values("feather.root", FEATHER_ROOT)
 
+        -- Belt and suspenders with the file-scope set_runtimes() above: that
+        -- alone fixed thirdparty/SimpleMath's target but left THIS target on
+        -- the default runtime (confirmed the LNK2038 direction flipped) --
+        -- unclear why given both are plain description-scope calls, but this
+        -- target is also reopened later (consumer's own xmake.lua sets its
+        -- kind there), so setting it again here, closest to declaration, is
+        -- the safest bet without a real MSVC toolchain to verify against.
+        if has_config("production") or has_config("static_cpp") then
+            set_runtimes(is_mode("debug") and "MTd" or "MT")
+        end
+
         -- Must mirror root xmake.lua's per-mode defines, or engine headers
         -- compiled into both the exe and this DLL disagree on #if BETA/PRODUCTION.
         if is_mode("debug", "releasedbg") then
