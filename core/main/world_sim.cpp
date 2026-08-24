@@ -15,13 +15,6 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 #if BETA
 	_world.set<Ecs::Rest>({});
 #endif
-
-	_subclass_delegate_id = ClassDB::on_subclass_registered(
-			EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
-				if (world_sim) {
-					ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
-				}
-			});
 }
 
 WorldSim::~WorldSim() {
@@ -36,6 +29,20 @@ void WorldSim::init() {
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());
 	set_active_scene(scene);
+
+	// Subscribed here, not in the constructor: registering a class fires this
+	// delegate immediately (see _fire_subclass_delegates), and the ctor runs
+	// well before index_project() -- a project DLL's own EcsFeature subclass
+	// would otherwise get _import_module called on it reentrantly, from
+	// inside index_project()'s own directory scan, before the world above is
+	// even set up. Subscribing here instead means nothing can fire until
+	// this point is reached.
+	_subclass_delegate_id = ClassDB::on_subclass_registered(
+			EcsFeature::get_class_static(), [world_sim = this](std::string_view class_name) {
+				if (world_sim) {
+					ClassDB::get_static_method(class_name, "_import_module").call(world_sim);
+				}
+			});
 
 	// Picks up EcsFeature subclasses from core, from built-in modules, and --
 	// because this runs after index_project() -- from loaded project DLLs.
