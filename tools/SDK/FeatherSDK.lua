@@ -38,6 +38,15 @@ function feather_sdk_setup(target_name, opts)
         -- cross-repo includes(), so hand the engine root over as a target value.
         set_values("feather.root", FEATHER_ROOT)
 
+        -- Must mirror root xmake.lua's MSVC runtime choice too, or a
+        -- std::string/STL object crossing the exe/DLL boundary by value
+        -- (e.g. WorldSim::create_scene(std::string)) straddles two
+        -- different CRT instances -- corrupts on destruction, not
+        -- construction, so it looks like a crash deep in ~basic_string.
+        if has_config("production") or has_config("static_cpp") then
+            set_runtimes(is_mode("debug") and "MTd" or "MT")
+        end
+
         -- Must mirror root xmake.lua's per-mode defines, or engine headers
         -- compiled into both the exe and this DLL disagree on #if BETA/PRODUCTION.
         if is_mode("debug", "releasedbg") then
