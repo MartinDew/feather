@@ -139,6 +139,16 @@ target("feather")
     -- Windows analog of -rdynamic: FEATHER_API dllexport makes link.exe/
     -- lld-link auto-emit feather.lib -- no /DEF: step needed.
 
+    if is_plat("windows", "mingw") then
+        -- project_settings.cpp calls SHGetFolderPathA (shlobj.h) directly --
+        -- was only ever linking by riding along on sdl3's own syslinks list
+        -- (thirdparty/packages/sdl3.lua), which the engine's own code has no
+        -- business depending on; broke the moment sdl3 became shared there
+        -- (shared build's syslinks list is empty) and native Windows doesn't
+        -- share mingw's implicit default-link behavior that papered over it.
+        add_syslinks("shell32")
+    end
+
     if is_plat("mingw") then
         add_syslinks("stdc++exp")
 
