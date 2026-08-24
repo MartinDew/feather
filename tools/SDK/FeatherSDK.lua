@@ -10,6 +10,14 @@ add_moduledirs(path.join(FEATHER_ROOT, "xmake", "modules"))
 -- Matches root xmake.lua's include order so package configs hash-match the
 -- engine's own xrepo cache instead of building a second variant.
 includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
+
+-- Must mirror root xmake.lua's MSVC runtime choice, project-wide and before
+-- the includes() below -- per-target here left simplemath's own target
+-- (declared inside thirdparty/xmake.lua) on the default runtime, LNK2038.
+if has_config("production") or has_config("static_cpp") then
+    set_runtimes(is_mode("debug") and "MTd" or "MT")
+end
+
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
@@ -37,15 +45,6 @@ function feather_sdk_setup(target_name, opts)
         -- function's locals or resolve os.scriptdir() to this file across a
         -- cross-repo includes(), so hand the engine root over as a target value.
         set_values("feather.root", FEATHER_ROOT)
-
-        -- Must mirror root xmake.lua's MSVC runtime choice too, or a
-        -- std::string/STL object crossing the exe/DLL boundary by value
-        -- (e.g. WorldSim::create_scene(std::string)) straddles two
-        -- different CRT instances -- corrupts on destruction, not
-        -- construction, so it looks like a crash deep in ~basic_string.
-        if has_config("production") or has_config("static_cpp") then
-            set_runtimes(is_mode("debug") and "MTd" or "MT")
-        end
 
         -- Must mirror root xmake.lua's per-mode defines, or engine headers
         -- compiled into both the exe and this DLL disagree on #if BETA/PRODUCTION.
