@@ -14,11 +14,11 @@ from modifier_api import DirEmission, Modifier
 
 
 class EcsModuleModifier(Modifier):
-    """FCLASS(EcsModule) on an EcsFeature subclass. Generates the static
+    """FCLASS(EcsModule) on an EcsModule subclass. Generates the static
     _import_module(WorldSim*) hook that WorldSim's constructor discovers via
-    ClassDB::get_children_names("EcsFeature") + get_static_method(child,
+    ClassDB::get_children_names("EcsModule") + get_static_method(child,
     "_import_module") (core/main/world_sim.cpp) — previously hand-written per
-    feature (see the old RenderingWorldFeature::_load_module)."""
+    feature (see the old RenderingWorldModule::_load_module)."""
     name = "EcsModule"
     targets = frozenset({"class"})
     value_type = False
@@ -31,9 +31,9 @@ class EcsModuleModifier(Modifier):
 
     def register_cpp_includes(self, cls, ctx):
         # The definition below needs a complete WorldSim, but the class's own
-        # header only ever forward-declares it (see ecs_feature.h) so that
+        # header only ever forward-declares it (see ecs_module.h) so that
         # WorldSim doesn't have to be complete in every feature header that
-        # just wants to derive from EcsFeature. Keeping the #include here,
+        # just wants to derive from EcsModule. Keeping the #include here,
         # not in gen_body_lines' declaration, is what preserves that.
         return ["main/world_sim.h"]
 

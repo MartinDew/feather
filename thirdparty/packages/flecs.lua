@@ -1,9 +1,6 @@
--- flecs, built with DEFAULT symbol visibility instead of hidden: project
--- DLLs rely on -rdynamic re-exporting the host exe's ecs_* symbols (see
--- xmake/public_api.lua), but stock flecs's cmake forces
--- C_VISIBILITY_PRESET hidden at the target level, which no -D override can
--- beat. This package patches that cmake file. Otherwise a copy of
--- xmake-repo's packages/f/flecs/xmake.lua; keep in sync when bumping.
+-- flecs, built with DEFAULT symbol visibility instead of hidden, so
+-- -rdynamic can re-export ecs_* to project DLLs. Otherwise a copy of
+-- xmake-repo's packages/f/flecs/xmake.lua.
 package("flecs")
     set_homepage("https://github.com/SanderMertens/flecs")
     set_description("A fast entity component system (ECS) for C & C++, built with default symbol visibility")
@@ -12,7 +9,7 @@ package("flecs")
     add_urls("https://github.com/SanderMertens/flecs/archive/refs/tags/$(version).tar.gz",
              "https://github.com/SanderMertens/flecs.git")
 
-    -- Only the version the engine pins, to force a check that the patch below still applies on a bump.
+    -- Only the version the engine pins, forcing a check the patch below still applies on a bump.
     add_versions("v4.1.5", "8b94f56dfdda0b3c86110f651a4e0ec1c59030db43bb4810ae296a0630682ab9")
 
     add_deps("cmake")
@@ -38,8 +35,7 @@ package("flecs")
             "C_VISIBILITY_PRESET hidden",
             "C_VISIBILITY_PRESET default",
             {plain = true})
-        -- Fail loudly: a no-op patch here silently reintroduces the
-        -- project-DLL startup crash (see file header).
+        -- Fail loudly: a no-op patch here silently reintroduces the project-DLL startup crash.
         assert(io.readfile(visibility_cmake) ~= before,
             "flecs no longer sets 'C_VISIBILITY_PRESET hidden' in " .. visibility_cmake ..
             "; re-check how ecs_* symbols get exported before removing this patch")
@@ -49,8 +45,6 @@ package("flecs")
         table.insert(configs, "-DFLECS_STATIC=" .. (package:config("shared") and "OFF" or "ON"))
         table.insert(configs, "-DFLECS_SHARED=" .. (package:config("shared") and "ON" or "OFF"))
         table.insert(configs, "-DFLECS_PIC=" .. (package:config("pic") and "ON" or "OFF"))
-        -- Belt and braces: doesn't override the target property (that's the
-        -- patch's job), but covers anything flecs adds later without one.
         table.insert(configs, "-DCMAKE_C_VISIBILITY_PRESET=default")
         table.insert(configs, "-DCMAKE_CXX_VISIBILITY_PRESET=default")
         table.insert(configs, "-DCMAKE_VISIBILITY_INLINES_HIDDEN=OFF")

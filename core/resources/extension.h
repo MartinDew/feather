@@ -1,5 +1,6 @@
 #pragma once
 #include "resource.h"
+#include <framework/export_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "extension.gen.h"
@@ -10,7 +11,7 @@ namespace feather {
 class SharedLibrary;
 class ExtensionFormatLoader;
 
-class Extension final : public Resource {
+class FEATHER_API Extension final : public Resource {
 	FCLASS();
 
 	friend class ExtensionFormatLoader;

@@ -38,7 +38,9 @@ Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(arg
 	unregister_modules();
 }
 
-Main::~Main() = default;
+Main::~Main() {
+	ClassDB::clear();
+}
 
 void Main::setup_db() {
 	register_framework_types();

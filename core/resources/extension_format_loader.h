@@ -1,6 +1,7 @@
 #pragma once
 
 #include "resource_format_loader.h"
+#include <framework/export_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "extension_format_loader.gen.h"
@@ -8,7 +9,7 @@
 
 namespace feather {
 
-class ExtensionFormatLoader : public ResourceFormatLoader {
+class FEATHER_API ExtensionFormatLoader : public ResourceFormatLoader {
 	FCLASS();
 
 protected:

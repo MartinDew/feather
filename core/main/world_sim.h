@@ -3,6 +3,7 @@
 #include "simulation.h"
 
 #include <framework/delegate.h>
+#include <framework/export_defs.h>
 #include <framework/reflection_macros.h>
 #include <world/components/scene.h>
 #include <world/ecs_defs.h>
@@ -16,7 +17,7 @@
 
 namespace feather {
 
-class WorldSim final : public Simulation {
+class FEATHER_API WorldSim final : public Simulation {
 	FCLASS(singleton);
 
 	World _world;
@@ -36,9 +37,9 @@ class WorldSim final : public Simulation {
 	}
 
 protected:
-	template <std::derived_from<class EcsFeature> T>
+	template <std::derived_from<class EcsModule> T>
 	void _import_feature() {
-		_world.import<T>();
+		_world.import <T>();
 	}
 
 public:
@@ -54,12 +55,12 @@ public:
 	[[nodiscard]] Entity& get_current_scene() { return _current_scene; }
 
 	[[nodiscard]]
-	Entity create_scene(std::string name) const;
+	Entity create_scene(const std::string& name) const;
 
 	[[nodiscard]]
-	Entity create_entity(std::string name = "") const;
+	Entity create_entity(const std::string& name = "") const;
 	[[nodiscard]]
-	Entity create_entity(const Entity& parent_entity, std::string name = "") const;
+	Entity create_entity(const Entity& parent_entity, const std::string& name = "") const;
 
 	// get low level world impl
 	[[nodiscard]] World* get_world() { return &_world; }

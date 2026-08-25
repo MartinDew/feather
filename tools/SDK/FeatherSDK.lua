@@ -1,7 +1,6 @@
 -- FeatherSDK.lua: replaces tools/generate_export.cmake. Usage: see
 -- tools/templates/consumer_xmake_template.lua. Public API surface comes
--- entirely from feather_public_api via add_deps(), so a new engine
--- dependency needs no edits here.
+-- entirely from feather_public_api via add_deps().
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 
 -- Lets a consumer import() feather_codegen/feather_flags from its own project.
@@ -10,13 +9,19 @@ add_moduledirs(path.join(FEATHER_ROOT, "xmake", "modules"))
 -- Matches root xmake.lua's include order so package configs hash-match the
 -- engine's own xrepo cache instead of building a second variant.
 includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
+
+-- Must mirror root xmake.lua's MSVC runtime choice, project-wide and before
+-- the includes() below, or simplemath's own target is left on the default runtime.
+if has_config("production") or has_config("static_cpp") then
+    set_runtimes(is_mode("debug") and "MTd" or "MT")
+end
+
 includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
 -- This DLL must be built in the same xmake configure as the engine binary
--- it's loading into, so EDITOR_BUILD (from feather_public_api via add_deps
--- below) matches the already-built feather binary's value -- see
--- xmake/public_api.lua's comment on why that has to be one shared define.
+-- it's loading into, so EDITOR_BUILD matches the already-built binary's
+-- value (see xmake/public_api.lua).
 --
 -- opts.codegen_dirs: dirs to run reflection codegen over (default {"src"}); pass {} to opt out.
 -- opts.codegen_extensions: project modifier extensions, scoped to codegen_dirs.
@@ -32,11 +37,23 @@ function feather_sdk_setup(target_name, opts)
 
     target(target_name)
         add_deps("feather_public_api")
+        -- Direct, not just via feather_public_api: see xmake/public_api.lua.
+        add_deps("simplemath")
 
-        -- before_build/on_load closures run sandboxed and can't see this
-        -- function's locals or resolve os.scriptdir() to this file across a
-        -- cross-repo includes(), so hand the engine root over as a target value.
+        -- Every consumer needs its own compiled copy of the global operator
+        -- new/delete overrides so its own new/delete route through the
+        -- engine's heap too.
+        add_files(path.join(FEATHER_ROOT, "core", "framework", "alloc.cpp"))
+
+        -- before_build/on_load closures can't resolve os.scriptdir() to this
+        -- file across a cross-repo includes(), so store the root explicitly.
         set_values("feather.root", FEATHER_ROOT)
+
+        -- Also set per-target: this target is reopened later by the
+        -- consumer's own xmake.lua, which can leave it on the default runtime.
+        if has_config("production") or has_config("static_cpp") then
+            set_runtimes(is_mode("debug") and "MTd" or "MT")
+        end
 
         -- Must mirror root xmake.lua's per-mode defines, or engine headers
         -- compiled into both the exe and this DLL disagree on #if BETA/PRODUCTION.
@@ -81,7 +98,7 @@ function feather_sdk_setup(target_name, opts)
         on_load(function(target)
             local bin = table.wrap(target:values("feather.engine_bin"))[1]
             local feather_root = table.wrap(target:values("feather.root"))[1]
-            assert(os.isfile(bin) or (is_plat("windows") and os.isfile(bin .. ".exe")),
+            assert(os.isfile(bin) or (is_plat("windows", "mingw") and os.isfile(bin .. ".exe")),
                 "[feather] engine binary not found: " .. bin ..
                 "\n[feather] Build FeatherEngine first (cd " .. feather_root .. " && xmake)," ..
                 "\n[feather] or point feather_sdk_setup's engine_bin_dir at your engine build dir.")
@@ -93,9 +110,22 @@ function feather_sdk_setup(target_name, opts)
             feather_flags.apply(target)
         end)
 
-        if is_plat("windows") then
+        if is_plat("windows", "mingw") then
+            -- mingw is a distinct is_plat() from "windows" but needs this
+            -- same link-time path, not the else branch's ELF dlopen() binding.
             add_linkdirs(bin_dir)
             add_links("feather")
+
+            if is_plat("mingw") then
+                -- mingw's libstdc++/libgcc aren't a Windows system component, so
+                -- static-link like the exe does; add_shflags (add_ldflags no-ops on shared kind).
+                add_shflags("-static-libgcc", "-static-libstdc++",
+                    "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
+                    {force = true})
+                -- Same as xmake/engine.lua: mingw-w64's libstdc++ splits std::print's
+                -- terminal-writing internals into a separate libstdc++exp.a archive.
+                add_syslinks("stdc++exp")
+            end
         else
             -- No link target on ELF/Mach-O: undefined engine/flecs/SDL symbols
             -- bind to the host exe at dlopen() time (-rdynamic, {links = {}}).

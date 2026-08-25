@@ -15,6 +15,16 @@ ClassDB::ClassDB() {
 	_class_infos.insert(std::make_pair("Reflected", ClassInfo { .name = "Reflected"_ss, .parent = ""_ss }));
 }
 
+ClassDB::~ClassDB() {
+	clear();
+}
+
+void ClassDB::clear() {
+	_instance->_class_infos.clear();
+	_instance->_subclass_delegates.clear();
+	_instance->_current_info = nullptr;
+}
+
 Reflected* ClassDB::create_object_unsafe(std::string_view name) {
 	auto object_info_it = _instance->_class_infos.find(name);
 	if (object_info_it != _instance->_class_infos.end()) {
@@ -63,9 +73,10 @@ std::string ClassDB::get_children_names_string(StaticString object_name, bool ex
 	return children_str;
 }
 
-Delegate<std::string_view>::id_t
-ClassDB::on_subclass_registered(std::string_view base_class_name,
-								const Delegate<std::string_view>::DelegateFuncType& callback) {
+Delegate<std::string_view>::id_t ClassDB::on_subclass_registered(
+		std::string_view base_class_name,
+		const Delegate<std::string_view>::DelegateFuncType& callback
+) {
 	return get()->_subclass_delegates[StaticString(base_class_name)].subscribe(callback);
 }
 
@@ -117,8 +128,9 @@ Callable ClassDB::get_static_method(const StaticString& class_name, std::string_
 	auto ci = _get_class_info_internal(class_name);
 	if (!ci)
 		return {};
-	auto it = std::find_if(
-			ci->methods.begin(), ci->methods.end(), [&func_name](ClassInfo::Method& m) { return m.name == func_name; });
+	auto it = std::find_if(ci->methods.begin(), ci->methods.end(), [&func_name](ClassInfo::Method& m) {
+		return m.name == func_name;
+	});
 
 	if (it != ci->methods.end()) {
 		return it->callable;

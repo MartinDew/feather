@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "framework/export_defs.h"
 #include "framework/reflected.h"
 #include "framework/reflection_macros.h"
 
@@ -10,7 +11,7 @@ namespace feather {
 
 // class that runs the engine main loop.
 // It manages the main logic for execution of entities, components and such.
-class Simulation : public Reflected {
+class FEATHER_API Simulation : public Reflected {
 	FCLASS();
 
 protected:

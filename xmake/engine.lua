@@ -1,28 +1,19 @@
--- xmake/engine.lua: engine target declarations (the feather executable, its
--- core sources, codegen wiring, and modules) -- kept out of the root
--- xmake.lua so it can eventually be includes()'d cross-repo -- e.g. by a
--- consumer building a fully static shipping executable (see
--- tools/SDK/FeatherSDK.lua) -- without dragging in set_project()/set_version()/
--- etc, which only make sense once, at the true top level. Thirdparty
--- packages and feather_public_api still need to be includes()'d by the
--- caller first; this file only owns the target declarations.
+-- Engine target declarations, kept out of root xmake.lua so this file can be
+-- includes()'d cross-repo without dragging in set_project()/set_version().
+-- Thirdparty packages and feather_public_api must be includes()'d first.
 --
--- Rooted at os.scriptdir() rather than $(projectdir)/os.projectdir(), same
--- reasoning as xmake/public_api.lua: those resolve to whichever project is
--- top-level for the current invocation, which would be a CONSUMER's repo if
--- this file were ever includes()'d cross-repo. FEATHER_ROOT is captured once
--- here as a description-scope local and closed over by every callback below
--- (before_build/on_config).
+-- os.scriptdir(), not os.projectdir(): the latter would resolve to a
+-- CONSUMER's repo if this file were ever includes()'d cross-repo.
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 -- ---- Core source files ----------------------------------------------------
--- add_files() resolves a relative path against the CALLING script's own directory (this
--- file's, i.e. xmake/) -- not the engine root -- so every entry is joined
--- with FEATHER_ROOT explicitly rather than left bare.
+-- add_files() resolves relative paths against this file's own directory, not
+-- the engine root, so every entry is joined with FEATHER_ROOT explicitly.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
 local CORE_SOURCES = {}
 for _, p in ipairs({
+    "core/framework/alloc.cpp",
     "core/framework/callable.cpp",
     "core/framework/reflected.cpp",
     "core/framework/shared_library.cpp",
@@ -57,11 +48,11 @@ for _, p in ipairs({
     "core/resources/texture_format_loader.cpp",
     "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
-    "core/world/ecs_feature.cpp",
-    "core/world/rendering_world_feature.cpp",
-    "core/world/math_feature.cpp",
+    "core/world/ecs_module.cpp",
+    "core/world/rendering_world_module.cpp",
+    "core/world/math_module.cpp",
     "core/world/register_core_features.cpp",
-    "core/world/core_world_feature.cpp",
+    "core/world/core_world_module.cpp",
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))
@@ -115,7 +106,10 @@ target("feather")
     add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
     add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
 
-    -- BETA in debug + releasedbg (CMake Development), absent in release
+    -- Flips FEATHER_API to dllexport; consumer DLLs never define this, so
+    -- they get dllimport and resolve against this exe's import lib.
+    add_defines("FEATHER_BUILDING_ENGINE")
+
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
     end
@@ -124,6 +118,8 @@ target("feather")
     end
 
     add_deps("feather_public_api")
+    -- Direct, not just via feather_public_api: see public_api.lua.
+    add_deps("simplemath")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
 
     if is_plat("linux") then
@@ -132,13 +128,10 @@ target("feather")
         add_ldflags("-rdynamic", {force = true})
     end
 
-    -- Windows analog: needs a .def file (dumpbin /EXPORTS) to get a companion
-    -- import .lib. Not yet committed -- no-op until it exists.
-    if is_plat("windows") then
-        local def_file = path.join(FEATHER_ROOT, "tools", "feather.def")
-        if os.isfile(def_file) then
-            add_ldflags("/DEF:" .. def_file, {force = true})
-        end
+    if is_plat("windows", "mingw") then
+        -- project_settings.cpp calls SHGetFolderPathA directly; was only
+        -- linking via sdl3's syslinks list, which broke once sdl3 went shared.
+        add_syslinks("shell32")
     end
 
     if is_plat("mingw") then
@@ -146,17 +139,19 @@ target("feather")
 
         add_ldflags("-static-libgcc", "-static-libstdc++",
             "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
+            -- GNU ld needs --out-implib explicitly (link.exe does this automatically).
+            "-Wl,--out-implib,$(builddir)/bin/libfeather.a",
             {force = true})
     end
 
     before_build(run_codegen)
 
     add_rules("feather.deploy_shaders")
+    add_rules("feather.deploy_shared_deps")
     
     on_config(apply_compile_flags)
 target_end()
 
 -- ---- Modules (auto-discovered; re-opens the feather target) -------------
--- Must come after the executable target so feather_module_target() can
--- re-open it to add_deps().
+-- Must come after the executable target so feather_module_target() can re-open it.
 includes(path.join(FEATHER_ROOT, "modules", "xmake.lua"))

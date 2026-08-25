@@ -3,6 +3,7 @@
 #include "framework/variant_array.h"
 #include "math/math_defs.h"
 #include "resource.h"
+#include <core/framework/export_defs.h>
 #include <core/framework/reflection_macros.h>
 #include <core/rendering/mesh_data.h>
 
@@ -15,7 +16,7 @@
 
 namespace feather {
 
-class Mesh : public Resource {
+class FEATHER_API Mesh : public Resource {
 	FCLASS();
 
 protected:
@@ -33,7 +34,7 @@ public:
 };
 
 // Mesh using raw vertices and indices data
-class ComplexMesh : public Mesh {
+class FEATHER_API ComplexMesh : public Mesh {
 	FCLASS();
 
 public:
@@ -52,7 +53,7 @@ public:
 	void set_mesh_data(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
 };
 
-class BoxMesh : public Mesh {
+class FEATHER_API BoxMesh : public Mesh {
 	FCLASS();
 
 public:
