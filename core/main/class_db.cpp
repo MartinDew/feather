@@ -15,6 +15,12 @@ ClassDB::ClassDB() {
 	_class_infos.insert(std::make_pair("Reflected", ClassInfo { .name = "Reflected"_ss, .parent = ""_ss }));
 }
 
+void ClassDB::clear() {
+	_instance->_class_infos.clear();
+	_instance->_subclass_delegates.clear();
+	_instance->_current_info = nullptr;
+}
+
 Reflected* ClassDB::create_object_unsafe(std::string_view name) {
 	auto object_info_it = _instance->_class_infos.find(name);
 	if (object_info_it != _instance->_class_infos.end()) {

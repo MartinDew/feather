@@ -48,6 +48,10 @@ private:
 public:
 	void print_db();
 
+	// Empties the class registry. Must run before any extension DLL that
+	// registered classes gets unloaded -- see Main::~Main().
+	static void clear();
+
 	static Callable get_static_method(const StaticString& class_name, std::string_view func_name);
 
 	template <is_reflected_class_type T>
