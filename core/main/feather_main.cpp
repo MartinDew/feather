@@ -39,16 +39,10 @@ Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(arg
 }
 
 Main::~Main() {
-	// Runs before any member destructs -- they still follow, in reverse
-	// declaration order, once this body returns. Must clear ClassDB's
-	// registry here, before _resource_loader's implicit destructor drops the
-	// last reference to any loaded extension and unloads its DLL
-	// (SharedLibrary::unload() -> SDL_UnloadObject()). bind_method/
-	// bind_static_method are header templates, instantiated wherever a class
-	// registers -- for a DLL-registered class that's inside the DLL itself,
-	// so a stored Callable's std::function vtable can point into that DLL's
-	// own compiled code. Destroying it after the DLL unloads calls through a
-	// dangling vtable pointer into now-unmapped memory.
+	// Must run before _resource_loader's implicit destructor unloads any
+	// extension DLL -- a stored Callable's std::function vtable can point
+	// into that DLL's own code, so destroying it after unload dereferences
+	// unmapped memory.
 	ClassDB::clear();
 }
 

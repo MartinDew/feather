@@ -24,9 +24,9 @@ std::shared_ptr<Resource> ExtensionFormatLoader::instantiate(const Path& path) {
 		return nullptr;
 	}
 
-	// The extension object is `new`'d inside the DLL's own CRT heap, so it must
-	// be `delete`d there too -- each binary has its own private static-CRT heap
-	// on Windows (/MT), and freeing across that boundary corrupts the heap.
+	// The extension is `new`'d in the DLL's own CRT heap, so it must be
+	// `delete`d there too -- static CRT linking gives each binary its own
+	// private heap on Windows, and freeing across that boundary corrupts it.
 	using DestroyExtensionFn = void (*)(Extension*);
 	auto destroy_fn = lib->get_typed_symbol<DestroyExtensionFn>("_destroy_extension");
 	if (!destroy_fn) {
@@ -44,9 +44,7 @@ std::shared_ptr<Resource> ExtensionFormatLoader::instantiate(const Path& path) {
 	// Capture `lib` in the deleter so the library stays mapped for the full
 	// duration of destroy_fn's call -- ext_raw's own destructor drops its
 	// _library_handle reference as part of running inside destroy_fn.
-	std::shared_ptr<Extension> ext(ext_raw, [destroy_fn, lib](Extension* p) {
-		destroy_fn(p);
-	});
+	std::shared_ptr<Extension> ext(ext_raw, [destroy_fn, lib](Extension* p) { destroy_fn(p); });
 	ext->_library_handle = lib;
 	ext->set_path(path);
 	return ext;

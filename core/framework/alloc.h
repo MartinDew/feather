@@ -1,25 +1,17 @@
 #pragma once
 
-// Routes every `new`/`delete` in every binary (the engine exe and every
-// consumer DLL) through the engine's own feather_alloc/feather_free, whose
-// only real implementation lives in feather.exe. This makes the Windows
-// static-CRT-per-binary heap mismatch structurally impossible: no matter
-// which binary's compiled code runs a `new` or `delete` expression, the
-// actual malloc()/free() call always executes inside the engine's own CRT
-// heap.
+// Routes every `new`/`delete` in every binary (engine + every consumer DLL)
+// through feather_alloc/feather_free, whose only real implementation lives
+// in feather.exe -- avoids the Windows static-CRT-per-binary heap mismatch,
+// since the actual malloc()/free() always runs inside the engine's heap
+// regardless of which binary's code triggered the call.
 //
-// The global operator new/delete overrides themselves are defined in
-// alloc.cpp, NOT here as inline functions -- replaceable global allocation
-// functions must not be declared `inline` (clang/MSVC both reject it; this
-// isn't the ordinary-overload C++17 relaxation). Because they're resolved by
-// the linker against the well-known global symbol, not by textual visibility
-// in each TU, no source file needs to #include this header for the override
-// to take effect -- alloc.cpp just needs to be compiled into every binary
-// (xmake/engine.lua's CORE_SOURCES, tools/SDK/FeatherSDK.lua's
-// feather_sdk_setup) exactly once each.
-//
-// extern "C" so a caller with a different name-mangling scheme (or no C++
-// at all) can still resolve these symbols by name.
+// The operator new/delete overrides are defined in alloc.cpp, not here:
+// replaceable global allocation functions must not be `inline` (unlike
+// ordinary overloads, C++17 didn't relax that for them). They're resolved
+// by the linker against a well-known global symbol, not by textual
+// visibility, so no file needs to #include this header for the override to
+// apply -- alloc.cpp just needs to be compiled into each binary once.
 
 #include "export_defs.h"
 

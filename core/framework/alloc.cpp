@@ -7,14 +7,8 @@
 #include <malloc.h>
 #endif
 
-// The real feather_alloc/feather_free bodies exist in exactly one binary:
-// feather.exe. Every consumer DLL only ever sees these as dllimport (see
-// export_defs.h) and calls through to this same implementation -- guarding
-// on FEATHER_BUILDING_ENGINE keeps a consumer from trying to *define* a
-// symbol it only has a dllimport declaration for, which doesn't compile.
-//
-// Plain malloc/free -- deliberately not `new`/`delete`, to avoid any
-// question about interacting with the operator overrides below.
+// Guarded on FEATHER_BUILDING_ENGINE: a consumer only has the dllimport
+// declaration for these, and defining them there wouldn't compile.
 #if defined(FEATHER_BUILDING_ENGINE)
 
 extern "C" void* feather_alloc(std::size_t size) {
@@ -46,15 +40,9 @@ extern "C" void feather_free_aligned(void* ptr, std::size_t alignment) noexcept 
 
 #endif // FEATHER_BUILDING_ENGINE
 
-// Global operator new/delete overrides. Compiled into every binary -- the
-// engine (xmake/engine.lua's CORE_SOURCES) and every consumer DLL
-// (tools/SDK/FeatherSDK.lua's feather_sdk_setup) each add this same
-// alloc.cpp to their own sources, so each binary gets exactly one
-// definition, resolved by the linker against the standard global-allocation
-// symbol regardless of which TU in that binary actually calls `new`/`delete`
-// -- no header inclusion required at any of those call sites. Must NOT be
-// `inline`: replaceable global allocation/deallocation functions are
-// required to be non-inline (both clang and MSVC diagnose this).
+// Not `inline` -- replaceable global allocation/deallocation functions
+// aren't allowed to be. Each binary (engine + every consumer DLL) compiles
+// this file once, giving it exactly one definition per link unit.
 
 void* operator new(std::size_t size) {
 	if (void* ptr = feather_alloc(size)) {
