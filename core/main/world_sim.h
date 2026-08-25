@@ -55,12 +55,12 @@ public:
 	[[nodiscard]] Entity& get_current_scene() { return _current_scene; }
 
 	[[nodiscard]]
-	Entity create_scene(std::string name) const;
+	Entity create_scene(const std::string& name) const;
 
 	[[nodiscard]]
-	Entity create_entity(std::string name = "") const;
+	Entity create_entity(const std::string& name = "") const;
 	[[nodiscard]]
-	Entity create_entity(const Entity& parent_entity, std::string name = "") const;
+	Entity create_entity(const Entity& parent_entity, const std::string& name = "") const;
 
 	// get low level world impl
 	[[nodiscard]] World* get_world() { return &_world; }

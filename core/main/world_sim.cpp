@@ -55,16 +55,16 @@ void WorldSim::update(double delta) {
 	bool result = _world.progress(/*delta*/);
 }
 
-Entity WorldSim::create_scene(std::string name) const {
+Entity WorldSim::create_scene(const std::string& name) const {
 	Scene s { { name } };
 	return _world.entity(name.c_str()).is_a(_scene_prefab).set<Scene>(s);
 }
 
-Entity WorldSim::create_entity(std::string name) const {
+Entity WorldSim::create_entity(const std::string& name) const {
 	return _world.entity(name.c_str());
 }
 
-Entity WorldSim::create_entity(const Entity& parent_entity, std::string name) const {
+Entity WorldSim::create_entity(const Entity& parent_entity, const std::string& name) const {
 	return _world.entity(name.c_str()).child_of(parent_entity);
 }
 
