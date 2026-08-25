@@ -168,8 +168,6 @@ bool Engine::run() {
 
 	_rendering_server.stop();
 
-	ResourceLoader::get()->unload();
-
 	return true;
 }
 
