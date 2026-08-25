@@ -12,21 +12,6 @@ function apply(target)
     local function is_clang()    return target:has_tool("cxx", "clang", "clangxx", "clang-cl") end
     local function is_clang_cl() return target:has_tool("cxx", "clang_cl") end
 
-    -- Force every TU (engine + every consumer, since this module is shared
-    -- between xmake/engine.lua and tools/SDK/FeatherSDK.lua) to see alloc.h's
-    -- global operator new/delete overrides, so no source file can opt out of
-    -- routing allocations through the engine's own heap -- see alloc.h.
-    -- os.scriptdir() anchors to this file's own location (xmake/modules/)
-    -- regardless of which project imported it, same reasoning as FEATHER_ROOT
-    -- in xmake/engine.lua and tools/SDK/FeatherSDK.lua.
-    local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
-    local alloc_header = path.join(FEATHER_ROOT, "core", "framework", "alloc.h")
-    if is_msvc() then
-        target:add("cxflags", "/FI\"" .. alloc_header .. "\"", {force = true})
-    else
-        target:add("cxflags", "-include", alloc_header, {force = true})
-    end
-
     if want_lto and not is_msvc() then
         target:add("cxflags", "-flto=thin", {force = true})
         target:add("ldflags", "-flto=thin", {force = true})

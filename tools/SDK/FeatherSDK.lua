@@ -45,6 +45,15 @@ function feather_sdk_setup(target_name, opts)
         -- xmake/public_api.lua).
         add_deps("simplemath")
 
+        -- Every consumer DLL needs its own compiled copy of the global
+        -- operator new/delete overrides (see core/framework/alloc.h) so that
+        -- new/delete inside THIS binary route through the engine's heap too
+        -- -- mirrors xmake/engine.lua adding the same file to CORE_SOURCES.
+        -- FEATHER_BUILDING_ENGINE is never defined here, so only the
+        -- override definitions compile, not feather_alloc/feather_free's
+        -- bodies (those stay engine-only, dllimport'd here).
+        add_files(path.join(FEATHER_ROOT, "core", "framework", "alloc.cpp"))
+
         -- before_build/on_load closures run sandboxed and can't see this
         -- function's locals or resolve os.scriptdir() to this file across a
         -- cross-repo includes(), so hand the engine root over as a target value.
