@@ -1,26 +1,22 @@
 -- Reflection-codegen helpers shared between the top-level xmake.lua
 -- (run_core_codegen) and module xmake.lua files. Must be an import()-able
--- module, not plain xmake.lua globals: on_load/before_build sandboxes can't
--- see description-scope globals.
+-- module: on_load/before_build sandboxes can't see xmake.lua globals.
 
--- Per-import()-instance list; add_extension() and its matching
--- run_*_codegen() call must happen in the same script closure. Pass an
--- explicit {extensions = {...}} to run_*_codegen otherwise.
+-- Per-import()-instance; add_extension() and its matching run_*_codegen()
+-- call must happen in the same script closure.
 local _pending_extensions = {}
 
 local function _resolve_extension(ext)
-    -- Relative paths resolve against the caller's root: os.scriptdir()
-    -- inside an imported module resolves to this file, not the caller's.
+    -- os.scriptdir() inside an imported module resolves to this file, not
+    -- the caller's, so relative paths resolve against os.projectdir() instead.
     if type(ext) == "string" then
         return {path = path.absolute(ext, os.projectdir())}
     end
     return {path = path.absolute(ext.path, os.projectdir()), scope = ext.scope}
 end
 
--- Registers a modifier extension (see tools/codegen/modifier_api.py), scoped
--- to whatever non-core dir(s) the next run_*_codegen call processes (core is
--- never a default scope). Don't call directly -- pass codegen_extensions to
--- feather_sdk_setup() instead, to keep this in the same closure as required above.
+-- Registers a modifier extension (see tools/codegen/modifier_api.py). Don't
+-- call directly -- pass codegen_extensions to feather_sdk_setup() instead.
 function add_extension(ext_path, opts)
     opts = opts or {}
     table.insert(_pending_extensions, _resolve_extension({path = ext_path, scope = opts.scope}))
@@ -41,8 +37,7 @@ local function _extension_argv(extensions, default_dirs)
 end
 
 -- extensions_opt: nil to use whatever add_extension() recorded in this
--- import() instance, or an explicit list for a caller that'd rather not
--- rely on same-closure state.
+-- import() instance, or an explicit list otherwise.
 local function _resolve_extensions(extensions_opt)
     if extensions_opt == nil then
         return _pending_extensions
@@ -80,25 +75,21 @@ function run_core_codegen(module_dirs, opts)
         table.insert(extra, "--module-path")
         table.insert(extra, dir)
     end
-    -- Scope defaults to module_dirs only, never core.
     for _, a in ipairs(_extension_argv(extensions, module_dirs)) do
         table.insert(extra, a)
     end
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py")
-    -- opts.feather_root (not a bare os.projectdir()) when given: this function
-    -- may run from a before_build includes()'d cross-repo, where
-    -- os.projectdir() resolves to the CONSUMER, not the engine. Falls back to
-    -- os.projectdir() for a caller that hasn't passed one -- same default
-    -- common_argv uses.
+    -- opts.feather_root, not a bare os.projectdir(): this may run from a
+    -- before_build includes()'d cross-repo, where os.projectdir() resolves
+    -- to the CONSUMER, not the engine.
     os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
--- Runs generate_reflection.py for core/ AND a single module dir -- for a
--- *module's own* before_build, since it builds before the depending exe's
--- before_build (run_core_codegen) would otherwise generate core's .gen.h
--- first. write_if_changed makes the redundant later pass cheap.
+-- Runs generate_reflection.py for core/ AND a single module dir, for a
+-- module's own before_build (which runs before run_core_codegen would
+-- otherwise generate core's .gen.h first).
 function run_module_codegen(module_dir, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)
@@ -110,13 +101,11 @@ function run_module_codegen(module_dir, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
-    -- See the matching comment in run_core_codegen above.
     os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
 -- Runs generate_reflection.py for a downstream "project DLL" repo: only its
--- own source dirs, never core (--skip-core) -- a consumer must never write
--- into the engine checkout, so the engine must already be built first.
+-- own source dirs, never core (--skip-core).
 --
 -- dirs: plain path strings, "name=dir" strings, or {dir=..., name=...};
 -- name overrides the generated register_<name>_types symbol.

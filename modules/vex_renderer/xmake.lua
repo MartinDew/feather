@@ -8,9 +8,8 @@ if (is_plat("macosx")) then
 end
 
 if has_config("enable_vex_renderer") then
-    -- Owns everything the executable needs for Vex's runtime deploy step, so
-    -- the feather target below never redefines on_load/after_build directly
-    -- (rules stack; those closures don't — see xmake/helper.lua).
+    -- Rules stack across a target; on_load/after_build closures don't (see
+    -- xmake/helper.lua), so Vex's runtime deploy step lives in a rule instead.
     rule("vex_renderer.deploy_runtime")
         on_load(function(target)
             -- D3D12 reads D3D12SDKVersion/D3D12SDKPath from the main exe at
@@ -37,8 +36,7 @@ if has_config("enable_vex_renderer") then
                 tdir = path.join(tdir, "runtime")
                 os.mkdir(tdir)
             end
-            -- target:pkg("vex"):installdir(subpath) ignores subpath args and
-            -- always returns the package root, so join subpaths manually.
+            -- installdir(subpath) ignores subpath args, returns the package root.
             local root = vex:installdir()
 
             local runtime_dir = path.join(root, "runtime")
@@ -81,9 +79,8 @@ if has_config("enable_vex_renderer") then
         exe_packages = {"vex"},
         exe_packages_windows = {"directx12-agility"},
         exe_rules = {"vex_renderer.deploy_runtime"},
-        -- Produced by generate_reflection.py --module-path (see run_codegen in
-        -- xmake/engine.lua): the module's _bind_members() definitions,
-        -- generated the same way core/*/register_<sub>_types.gen.cpp are.
+        -- The module's _bind_members() definitions, produced by
+        -- generate_reflection.py --module-path (see run_codegen in xmake/engine.lua).
         generated_files = {"register_vex_renderer_types.gen.cpp"},
     })
 

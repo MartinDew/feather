@@ -1,24 +1,14 @@
--- xmake/engine.lua: engine target declarations (the feather executable, its
--- core sources, codegen wiring, and modules) -- kept out of the root
--- xmake.lua so it can eventually be includes()'d cross-repo -- e.g. by a
--- consumer building a fully static shipping executable (see
--- tools/SDK/FeatherSDK.lua) -- without dragging in set_project()/set_version()/
--- etc, which only make sense once, at the true top level. Thirdparty
--- packages and feather_public_api still need to be includes()'d by the
--- caller first; this file only owns the target declarations.
+-- Engine target declarations, kept out of root xmake.lua so this file can be
+-- includes()'d cross-repo without dragging in set_project()/set_version().
+-- Thirdparty packages and feather_public_api must be includes()'d first.
 --
--- Rooted at os.scriptdir() rather than $(projectdir)/os.projectdir(), same
--- reasoning as xmake/public_api.lua: those resolve to whichever project is
--- top-level for the current invocation, which would be a CONSUMER's repo if
--- this file were ever includes()'d cross-repo. FEATHER_ROOT is captured once
--- here as a description-scope local and closed over by every callback below
--- (before_build/on_config).
+-- os.scriptdir(), not os.projectdir(): the latter would resolve to a
+-- CONSUMER's repo if this file were ever includes()'d cross-repo.
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 -- ---- Core source files ----------------------------------------------------
--- add_files() resolves a relative path against the CALLING script's own directory (this
--- file's, i.e. xmake/) -- not the engine root -- so every entry is joined
--- with FEATHER_ROOT explicitly rather than left bare.
+-- add_files() resolves relative paths against this file's own directory, not
+-- the engine root, so every entry is joined with FEATHER_ROOT explicitly.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
 local CORE_SOURCES = {}
@@ -120,7 +110,6 @@ target("feather")
     -- they get dllimport and resolve against this exe's import lib.
     add_defines("FEATHER_BUILDING_ENGINE")
 
-    -- BETA in debug + releasedbg (CMake Development), absent in release
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
     end
@@ -129,8 +118,7 @@ target("feather")
     end
 
     add_deps("feather_public_api")
-    -- Direct, not just via feather_public_api: an object-kind dep's .o files
-    -- don't propagate across a second headeronly hop (see public_api.lua).
+    -- Direct, not just via feather_public_api: see public_api.lua.
     add_deps("simplemath")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
 
@@ -139,9 +127,6 @@ target("feather")
         -- Lets a dlopen'd project DLL resolve engine symbols at runtime.
         add_ldflags("-rdynamic", {force = true})
     end
-
-    -- Windows analog of -rdynamic: FEATHER_API dllexport makes link.exe/
-    -- lld-link auto-emit feather.lib -- no /DEF: step needed.
 
     if is_plat("windows", "mingw") then
         -- project_settings.cpp calls SHGetFolderPathA directly; was only
@@ -154,8 +139,7 @@ target("feather")
 
         add_ldflags("-static-libgcc", "-static-libstdc++",
             "-Wl,-Bstatic,--whole-archive", "-lwinpthread", "-Wl,--no-whole-archive,-Bdynamic",
-            -- GNU ld needs --out-implib explicitly (link.exe does this
-            -- automatically); $(builddir) expansion matches set_targetdir() above.
+            -- GNU ld needs --out-implib explicitly (link.exe does this automatically).
             "-Wl,--out-implib,$(builddir)/bin/libfeather.a",
             {force = true})
     end
@@ -169,6 +153,5 @@ target("feather")
 target_end()
 
 -- ---- Modules (auto-discovered; re-opens the feather target) -------------
--- Must come after the executable target so feather_module_target() can
--- re-open it to add_deps().
+-- Must come after the executable target so feather_module_target() can re-open it.
 includes(path.join(FEATHER_ROOT, "modules", "xmake.lua"))

@@ -1,15 +1,10 @@
 target("simplemath")
-    -- object, not static: a single-TU archive is exactly the shape that hits
-    -- MSVC's per-lib RuntimeLibrary metadata / LNK2038 mismatches (and, on
-    -- any linker, an archive can drop a TU with no directly-referenced
-    -- symbol) -- object files get embedded directly into whatever links
-    -- this dep, sidestepping both.
+    -- object, not static: avoids MSVC's per-lib RuntimeLibrary/LNK2038
+    -- mismatches, and a linker dropping a TU with no directly-referenced symbol.
     set_kind("object")
     set_warnings("none")
-    -- Linked into downstream project DLLs (shared) as well as the engine's
-    -- own executables; a non-PIC static archive can't go into a shared
-    -- object on ELF (ld: "relocation ... can not be used when making a
-    -- shared object").
+    -- Linked into shared project DLLs too; a non-PIC static archive can't go
+    -- into a shared object on ELF.
     if not is_plat("windows") then
         add_cxflags("-fPIC")
     end

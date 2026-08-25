@@ -1,7 +1,6 @@
 -- FeatherSDK.lua: replaces tools/generate_export.cmake. Usage: see
 -- tools/templates/consumer_xmake_template.lua. Public API surface comes
--- entirely from feather_public_api via add_deps(), so a new engine
--- dependency needs no edits here.
+-- entirely from feather_public_api via add_deps().
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 
 -- Lets a consumer import() feather_codegen/feather_flags from its own project.
@@ -12,8 +11,7 @@ add_moduledirs(path.join(FEATHER_ROOT, "xmake", "modules"))
 includes(path.join(FEATHER_ROOT, "xmake", "options.lua"))
 
 -- Must mirror root xmake.lua's MSVC runtime choice, project-wide and before
--- the includes() below -- per-target here left simplemath's own target
--- (declared inside thirdparty/xmake.lua) on the default runtime, LNK2038.
+-- the includes() below, or simplemath's own target is left on the default runtime.
 if has_config("production") or has_config("static_cpp") then
     set_runtimes(is_mode("debug") and "MTd" or "MT")
 end
@@ -22,9 +20,8 @@ includes(path.join(FEATHER_ROOT, "thirdparty", "xmake.lua"))
 includes(path.join(FEATHER_ROOT, "xmake", "public_api.lua"))
 
 -- This DLL must be built in the same xmake configure as the engine binary
--- it's loading into, so EDITOR_BUILD (from feather_public_api via add_deps
--- below) matches the already-built feather binary's value -- see
--- xmake/public_api.lua's comment on why that has to be one shared define.
+-- it's loading into, so EDITOR_BUILD matches the already-built binary's
+-- value (see xmake/public_api.lua).
 --
 -- opts.codegen_dirs: dirs to run reflection codegen over (default {"src"}); pass {} to opt out.
 -- opts.codegen_extensions: project modifier extensions, scoped to codegen_dirs.
@@ -40,28 +37,20 @@ function feather_sdk_setup(target_name, opts)
 
     target(target_name)
         add_deps("feather_public_api")
-        -- Direct, not just via feather_public_api: an object-kind dep's .o
-        -- files don't propagate across a second headeronly hop (see
-        -- xmake/public_api.lua).
+        -- Direct, not just via feather_public_api: see xmake/public_api.lua.
         add_deps("simplemath")
 
         -- Every consumer needs its own compiled copy of the global operator
-        -- new/delete overrides (core/framework/alloc.h) so its own new/
-        -- delete route through the engine's heap too.
+        -- new/delete overrides so its own new/delete route through the
+        -- engine's heap too.
         add_files(path.join(FEATHER_ROOT, "core", "framework", "alloc.cpp"))
 
-        -- before_build/on_load closures run sandboxed and can't see this
-        -- function's locals or resolve os.scriptdir() to this file across a
-        -- cross-repo includes(), so hand the engine root over as a target value.
+        -- before_build/on_load closures can't resolve os.scriptdir() to this
+        -- file across a cross-repo includes(), so store the root explicitly.
         set_values("feather.root", FEATHER_ROOT)
 
-        -- Belt and suspenders with the file-scope set_runtimes() above: that
-        -- alone fixed thirdparty/SimpleMath's target but left THIS target on
-        -- the default runtime (confirmed the LNK2038 direction flipped) --
-        -- unclear why given both are plain description-scope calls, but this
-        -- target is also reopened later (consumer's own xmake.lua sets its
-        -- kind there), so setting it again here, closest to declaration, is
-        -- the safest bet without a real MSVC toolchain to verify against.
+        -- Also set per-target: this target is reopened later by the
+        -- consumer's own xmake.lua, which can leave it on the default runtime.
         if has_config("production") or has_config("static_cpp") then
             set_runtimes(is_mode("debug") and "MTd" or "MT")
         end
