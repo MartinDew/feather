@@ -23,6 +23,7 @@ local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
 local CORE_SOURCES = {}
 for _, p in ipairs({
+    "core/framework/alloc.cpp",
     "core/framework/callable.cpp",
     "core/framework/reflected.cpp",
     "core/framework/shared_library.cpp",
