@@ -39,10 +39,6 @@ Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(arg
 }
 
 Main::~Main() {
-	// Must run before _resource_loader's implicit destructor unloads any
-	// extension DLL -- a stored Callable's std::function vtable can point
-	// into that DLL's own code, so destroying it after unload dereferences
-	// unmapped memory.
 	ClassDB::clear();
 }
 
