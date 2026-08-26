@@ -1,5 +1,6 @@
 #pragma once
 
+#include "framework/export_defs.h"
 #include "framework/spinlock.h"
 #include "main/launch_settings.h"
 #include "render_scene.h"
@@ -19,7 +20,7 @@ namespace feather {
 class Renderer;
 class Shader;
 
-class RenderingServer {
+class FEATHER_API RenderingServer {
 	static RenderingServer* _instance;
 
 	std::unique_ptr<Renderer> _renderer = nullptr;

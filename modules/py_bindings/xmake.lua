@@ -85,6 +85,27 @@ target("py_bindings")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
     add_linkgroups("feather_core", {whole = true})
 
+    -- Without this, the link fails at import time with "undefined symbol:
+    -- EcsScopeClose" (or an assimp/SDL3 equivalent): a plain (non-whole-
+    -- archive) static library is only scanned for members that resolve an
+    -- undefined symbol already pending *at that point* in the link line, and
+    -- these packages' -l flags land before feather_core's whole-archive
+    -- block -- so when the linker reaches them, nothing has referenced them
+    -- yet. Whole-archiving feather_core afterwards forces in the objects
+    -- that call them, but by then the linker has already moved past their
+    -- archives and won't revisit them. A .so link doesn't fail outright on
+    -- this the way an executable would -- it only surfaces one symbol at a
+    -- time, whichever dlopen happens to resolve first -- so every package
+    -- whose archive precedes the whole-archive block gets the same ordering
+    -- fix rather than waiting to discover each one via a separate failure.
+    -- This says the linkgroup has to come before each one, giving the linker
+    -- a second, later look at the archive once those references actually
+    -- exist.
+    add_linkorders("linkgroup::feather_core", "flecs_static")
+    add_linkorders("linkgroup::feather_core", "assimp")
+    add_linkorders("linkgroup::feather_core", "minizip")
+    add_linkorders("linkgroup::feather_core", "SDL3")
+
     -- No add_deps("simplemath") here, unlike the engine's other targets:
     -- simplemath is an object library, so its objects are already archived
     -- into libfeather_core.a, and whole-archive brings every one of them in.

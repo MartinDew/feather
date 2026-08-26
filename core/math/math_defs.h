@@ -3,6 +3,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <framework/export_defs.h>
+
 #include <DirectXMath.h>
 #include <SimpleMath.h>
 
@@ -71,13 +73,13 @@ struct AABB {
 };
 
 // Helper Functions
-float deg_to_rad(float degrees);
-float rad_to_deg(float radians);
+FEATHER_API float deg_to_rad(float degrees);
+FEATHER_API float rad_to_deg(float radians);
 
-Vector3 deg_to_rad(const Vector3& degrees);
-Vector3 rad_to_deg(const Vector3& radians);
+FEATHER_API Vector3 deg_to_rad(const Vector3& degrees);
+FEATHER_API Vector3 rad_to_deg(const Vector3& radians);
 
-uint32_t round_up_to_next_pow_2(uint32_t x);
+FEATHER_API uint32_t round_up_to_next_pow_2(uint32_t x);
 
 template <class T>
 	requires std::is_integral_v<T>

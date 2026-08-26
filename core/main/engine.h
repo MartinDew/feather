@@ -3,6 +3,7 @@
 #include "window.h"
 #include "world_sim.h"
 
+#include <framework/export_defs.h>
 #include <rendering/rendering_server.h>
 
 #include <chrono>
@@ -14,7 +15,7 @@ using TimePoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
 struct Main;
 
-class Engine {
+class FEATHER_API Engine {
 	friend Main;
 	static Engine* _instance;
 

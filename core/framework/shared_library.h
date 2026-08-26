@@ -1,6 +1,7 @@
 #pragma once
 
 #include "callable.h"
+#include "export_defs.h"
 
 #include <SDL3/SDL_loadso.h>
 #include <memory>
@@ -8,7 +9,7 @@
 
 namespace feather {
 
-class SharedLibrary {
+class FEATHER_API SharedLibrary {
 	SDL_SharedObject* _handle;
 
 public:
