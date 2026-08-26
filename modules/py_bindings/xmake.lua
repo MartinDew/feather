@@ -31,9 +31,11 @@ end
 -- The platform check lives here rather than in the option's default, where
 -- is_plat() reads as false whatever the platform is (see xmake/options.lua).
 if is_plat("windows", "mingw") then
-    cprint("${yellow}[py_bindings]${reset} skipped: the module has to be built by a Clang in"
-        .. " MSVC-compatible mode against the official Python's ABI, which this repo's Windows"
-        .. " toolchain setup doesn't cover yet")
+    -- print(), not cprint(): only script scope (on_load, on_config, ...) has
+    -- the colour-printing interface.
+    print("[py_bindings] skipped: the module has to be built by a Clang in MSVC-compatible mode"
+        .. " against the official Python's ABI, which this repo's Windows toolchain setup"
+        .. " doesn't cover yet")
     return
 end
 

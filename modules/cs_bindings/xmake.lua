@@ -17,8 +17,9 @@ end
 -- C# these produce calls the C bindings at runtime. A note rather than an
 -- error, since both options default on and turning one off is a deliberate act.
 if not has_config("enable_c_bindings") then
-    cprint("${yellow}[cs_bindings]${reset} skipped: C# bindings are generated from the C ones,"
-        .. " and enable_c_bindings is off")
+    -- print(), not cprint(): only script scope (on_load, on_config, ...) has
+    -- the colour-printing interface.
+    print("[cs_bindings] skipped: C# bindings are generated from the C ones, and enable_c_bindings is off")
     return
 end
 
