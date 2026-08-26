@@ -13,9 +13,13 @@ if not has_config("enable_cs_bindings") then
     return
 end
 
+-- Nothing to generate from: the C generator's descriptor is the input, and the
+-- C# these produce calls the C bindings at runtime. A note rather than an
+-- error, since both options default on and turning one off is a deliberate act.
 if not has_config("enable_c_bindings") then
-    -- Nothing to generate from: the C generator's descriptor is the input.
-    raise("enable_cs_bindings requires enable_c_bindings (C# bindings call the C ones)")
+    cprint("${yellow}[cs_bindings]${reset} skipped: C# bindings are generated from the C ones,"
+        .. " and enable_c_bindings is off")
+    return
 end
 
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
