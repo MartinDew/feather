@@ -51,7 +51,7 @@ package("mrbind")
         local llvm_config = package:data("llvm_config")
         local static_build = llvm_config == nil
 
-        local cc, cxx, clang_dir
+        local cc, cxx, clang_dir, llvm_dir
         if llvm_config then
 
             local suffix = package:data("llvm_suffix") or ""
@@ -59,8 +59,23 @@ package("mrbind")
             cc  = path.join(bindir, "clang" .. suffix)
             cxx = path.join(bindir, "clang++" .. suffix)
 
-            if suffix ~= "" and package:is_plat("linux") then
-                clang_dir = "/usr/lib/cmake/clang" .. suffix
+            -- mrbind's find_package(Clang) needs Clang's CMake config, and
+            -- ClangConfig.cmake in turn does its own find_package(LLVM) -- both
+            -- have to be pointed at explicitly, since a versioned install (the
+            -- usual case on Linux) puts neither on CMake's default search path.
+            -- Asking llvm-config where they are beats guessing a distro's
+            -- layout from the tool's version suffix: the suffix is empty
+            -- whenever an unversioned llvm-config exists, even when the CMake
+            -- configs themselves live in a versioned directory.
+            llvm_dir = try { function () return os.iorunv(llvm_config, {"--cmakedir"}):trim() end }
+            if llvm_dir and os.isdir(llvm_dir) then
+                -- Clang installs alongside LLVM, as a sibling of its cmake dir.
+                local candidate = path.join(path.directory(llvm_dir), "clang")
+                if os.isdir(candidate) then
+                    clang_dir = candidate
+                end
+            else
+                llvm_dir = nil
             end
         else
             local libllvm = package:dep("libllvm")
@@ -69,6 +84,7 @@ package("mrbind")
             cc  = path.join(bindir, "clang")
             cxx = path.join(bindir, "clang++")
             clang_dir = path.join(installdir, "lib", "cmake", "clang")
+            llvm_dir = path.join(installdir, "lib", "cmake", "llvm")
 
             if package:is_plat("windows") then
                 cc  = cc  .. ".exe"
@@ -98,6 +114,9 @@ package("mrbind")
         }
         if clang_dir then
             table.insert(configs, "-DClang_DIR=" .. clang_dir)
+        end
+        if llvm_dir then
+            table.insert(configs, "-DLLVM_DIR=" .. llvm_dir)
         end
 
         if package:is_plat("windows") then

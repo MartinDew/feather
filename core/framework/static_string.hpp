@@ -76,7 +76,9 @@ struct StaticString {
 	constexpr StaticString(StaticString&& str) = default;
 	explicit constexpr StaticString(const char* str, const size_t len) : _view { str, len }, _hash { crc32(_view) } {}
 	constexpr StaticString(const std::string_view str) : _view { str }, _hash { crc32(_view) } {}
-	constexpr StaticString& operator=(StaticString& str) {
+	// const&, so assigning from a const StaticString works -- and with it
+	// anything that copy-assigns through one, such as std::vector's resize().
+	constexpr StaticString& operator=(const StaticString& str) {
 		_view = str._view;
 		_hash = str._hash;
 		return *this;
