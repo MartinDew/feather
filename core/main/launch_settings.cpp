@@ -21,8 +21,7 @@ LaunchSettings::LaunchSettings()
 }
 
 LaunchSettings::LaunchSettings(int argc, char* argv[]) : LaunchSettings() {
-	if (_instance)
-		throw std::runtime_error("LaunchSettings instance already exists!");
+	fassert(!_instance, "LaunchSettings instance already exists!");
 
 	_instance = this;
 

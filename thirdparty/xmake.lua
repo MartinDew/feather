@@ -49,4 +49,25 @@ if is_plat("mingw") then
     add_requires("vulkan-loader 1.4.335+0", {system = false, alias = "vulkan-loader"})
 end
 
+-- Local package (packages/mrbind.lua): a Clang-based C++ parser and binding
+-- generator, a host tool nothing links against. Required here so it's built
+-- at `xmake f` time -- but only when a bindings module actually needs it,
+-- since without a system Clang install the package builds LLVM from source.
+if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
+    add_requires("mrbind", {system = false, alias = "mrbind"})
+
+    -- Windows always takes mrbind's libllvm path (see packages/mrbind.lua's
+    -- on_load). Required directly, not just transitively, so the bindings
+    -- modules get a usable target:pkg("libllvm") handle for resolving the
+    -- clang mrbind was built with (see xmake/modules/feather_bindings.lua).
+    if is_plat("windows") then
+        add_requires("libllvm", {system = false, alias = "libllvm", configs = {shared = false, clang = true}})
+    end
+end
+
+-- Header-only; the generated Python module's macro TU compiles against it.
+if has_config("enable_py_bindings") then
+    add_requires("pybind11", {system = false, alias = "pybind11"})
+end
+
 includes(path.join(os.scriptdir(), "SimpleMath", "xmake.lua"))
