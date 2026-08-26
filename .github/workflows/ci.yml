@@ -48,17 +48,12 @@ jobs:
           python-version: "3.12"
 
       # ── Install xmake ─────────────────────────────────────────────────────
-      # package-cache: the bindings modules require the mrbind package, which
-      # is built from source. On Windows that means building LLVM with it (see
-      # thirdparty/packages/mrbind.lua), so without a cache every run pays for
-      # it. Keyed per matrix leg, since the action's own hashing doesn't know
-      # about the OS/mode axis.
+      # Deliberately without package-cache. It would save real time -- the
+      # bindings modules add the mrbind package, which is built from source --
+      # but it was turning Windows package installs red, and the engine's
+      # thirdparty builds working is worth more than the minutes.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
-        with:
-          package-cache: true
-          package-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
-          project-path: "."
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
       - name: Setup cmake
@@ -177,12 +172,16 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          # Windows keeps xmake's cache under AppData rather than ~/.xmake.
+          # Windows keeps xmake's cache under AppData rather than ~/.xmake, so
+          # one of these two never exists. `|| true`: the step runs under
+          # `set -e -o pipefail`, where find's non-zero exit for a missing
+          # directory would abort it before printing anything.
           for root in ~/.xmake/cache/packages ~/AppData/Local/.xmake/cache/packages; do
+            [ -d "$root" ] || continue
             find "$root" -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read f; do
               echo "========== $f =========="
               tail -300 "$f"
-            done
+            done || true
           done
 
       # ── Build ──────────────────────────────────────────────────────────────
