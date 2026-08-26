@@ -69,10 +69,18 @@ target("py_bindings")
     add_deps("bindings_api")
     add_packages("mrbind", "pybind11")
 
-    -- The engine, linked whole: a static library only gives up the members
-    -- something already references, and the engine's type registration is
-    -- called from its own main(), which feather_core leaves out. Without this
-    -- the module would import with an empty ClassDB.
+    -- The engine, linked whole: a static library only hands over the members
+    -- something already references, so anything reached indirectly (a virtual
+    -- override, a factory registered from a static initializer) would be
+    -- dropped from a module whose only references are the generated bindings.
+    --
+    -- What this does NOT do is populate the ClassDB: the register_*_types()
+    -- calls run from Main::setup_db() in feather_main.cpp, which feather_core
+    -- deliberately leaves out, and ClassDB's constructor is private to Main.
+    -- So an imported module exposes the C++ API but starts with no reflection
+    -- registry. Giving an embedder its own way in needs an engine-side entry
+    -- point that doesn't exist yet -- a separate change from generating these
+    -- bindings.
     add_deps("feather_core")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
     add_linkgroups("feather_core", {whole = true})
