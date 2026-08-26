@@ -74,9 +74,14 @@ target("py_bindings")
     -- called from its own main(), which feather_core leaves out. Without this
     -- the module would import with an empty ClassDB.
     add_deps("feather_core")
-    add_deps("simplemath")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
     add_linkgroups("feather_core", {whole = true})
+
+    -- No add_deps("simplemath") here, unlike the engine's other targets:
+    -- simplemath is an object library, so its objects are already archived
+    -- into libfeather_core.a, and whole-archive brings every one of them in.
+    -- Depending on it as well would put the same objects in the link twice,
+    -- which the linker rejects as multiple definitions.
 
     -- Same defines the engine compiles itself with: the bindings call into it
     -- directly, so their view of its headers has to match.
