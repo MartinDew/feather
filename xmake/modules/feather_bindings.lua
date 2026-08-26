@@ -94,14 +94,19 @@ function outputs_are_stale(outputs, dirs)
     return false
 end
 
--- The clang MRBind itself was built with. Parsing needs that exact clang's
--- -resource-dir or it fails with cryptic errors (mrbind's docs/running_parser.md),
--- and the Python module has to be compiled by it too (docs/generating_python.md).
--- Mirrors thirdparty/packages/mrbind.lua's own on_load clang resolution:
--- primary path reads the data it stashed on the package instance, with an
--- independent fallback since cross-package package:data() readability from a
--- *consuming* target isn't guaranteed.
-function resolve_clang(target)
+-- The clang (or clang++) MRBind itself was built with, named `binname`
+-- ("clang" or "clang++"). Parsing needs plain clang's -resource-dir or it
+-- fails with cryptic errors (mrbind's docs/running_parser.md); the Python
+-- module has to be *compiled and linked* by the same install
+-- (docs/generating_python.md) -- linking needs clang++ specifically, so that
+-- the driver auto-links the C++ runtime library even though the link step's
+-- only inputs are pre-compiled .o files (see configure_python_target).
+-- Mirrors thirdparty/packages/mrbind.lua's own on_load clang resolution,
+-- which builds the same "clang"/"clang++" pair from the same llvm_config or
+-- libllvm data: primary path reads the data mrbind.lua stashed on the
+-- package instance, with an independent fallback since cross-package
+-- package:data() readability from a *consuming* target isn't guaranteed.
+function _resolve_clang_binary(target, binname)
     import("lib.detect.find_tool")
 
     local mrbind_pkg = target:pkg("mrbind")
@@ -114,7 +119,7 @@ function resolve_clang(target)
     local llvm_config = mrbind_pkg and mrbind_pkg.data and mrbind_pkg:data("llvm_config")
     if llvm_config then
         local suffix = mrbind_pkg:data("llvm_suffix") or ""
-        clang = path.join(path.directory(llvm_config), "clang" .. suffix)
+        clang = path.join(path.directory(llvm_config), binname .. suffix)
     else
         -- mrbind.lua's on_load skips the system llvm-config search entirely on
         -- Windows, always using libllvm there -- mirror that exactly rather
@@ -137,7 +142,7 @@ function resolve_clang(target)
             end
         end
         if tool then
-            clang = path.join(path.directory(tool.program), "clang" .. suffix)
+            clang = path.join(path.directory(tool.program), binname .. suffix)
         else
             -- No system llvm-config: mrbind fell back to building libllvm from
             -- source (always the case on Windows). target:pkg("mrbind"):dep("libllvm")
@@ -146,15 +151,23 @@ function resolve_clang(target)
             -- a usable handle here.
             local libllvm_pkg = target:pkg("libllvm")
             if libllvm_pkg then
-                local bin = path.join(libllvm_pkg:installdir(), "bin", "clang")
+                local bin = path.join(libllvm_pkg:installdir(), "bin", binname)
                 clang = is_plat("windows") and (bin .. ".exe") or bin
             end
         end
     end
 
     assert(clang and os.isfile(clang),
-        "feather_bindings: could not resolve the clang mrbind was built with")
+        "feather_bindings: could not resolve the " .. binname .. " mrbind was built with")
     return clang
+end
+
+function resolve_clang(target)
+    return _resolve_clang_binary(target, "clang")
+end
+
+function resolve_clangxx(target)
+    return _resolve_clang_binary(target, "clang++")
 end
 
 function resolve_clang_resource_dir(target)
@@ -405,6 +418,38 @@ function c_desc_json_path()
     return path.join(output_dir("c"), "desc.json")
 end
 
+-- mrbind_gen_c's exception-relaying helper (__mrbind_c_details.cpp) calls
+-- typeid() but doesn't include <typeinfo> for it -- <exception> happens to
+-- drag it in transitively under libstdc++, so this only surfaces under
+-- clang-cl on Windows ("member access into incomplete type 'const
+-- type_info'"). Patching the generator's own output rather than adding a
+-- force-include to the target: the force-include would apply to every
+-- generated source, and this bug is specific to the one file mrbind writes it
+-- into.
+function _fixup_missing_typeinfo_include(source_dir)
+    local details_cpp = path.join(source_dir, "__mrbind_c_details.cpp")
+    if not os.isfile(details_cpp) then
+        return
+    end
+    local content = io.readfile(details_cpp)
+    if content:find("#include <typeinfo>", 1, true) then
+        return
+    end
+    -- Prefer anchoring next to <exception>, the header whose absence this is
+    -- actually working around; fall back to right after the file's own
+    -- generated header include, which every version of this file starts with.
+    local patched, n = content:gsub("(#include <exception>)", "%1\n#include <typeinfo>", 1)
+    if n == 0 then
+        patched, n = content:gsub("(#include \"__mrbind_c_details%.h\")", "%1\n#include <typeinfo>", 1)
+    end
+    if n > 0 then
+        io.writefile(details_cpp, patched)
+    else
+        cprint("${yellow}[c_bindings]${reset} could not patch missing <typeinfo> include into %s"
+            .. " -- mrbind's generated file layout may have changed", details_cpp)
+    end
+end
+
 -- Generates the C bindings from api.json into opts.header_dir/opts.source_dir,
 -- and returns every generated implementation file.
 function run_gen_c(target, opts)
@@ -456,6 +501,7 @@ function run_gen_c(target, opts)
 
     cprint("${cyan}[c_bindings]${reset} mrbind_gen_c -> %s", path.relative(header_dir, os.projectdir()))
     os.vrunv(mrbind_bin(target, "mrbind_gen_c"), argv)
+    _fixup_missing_typeinfo_include(source_dir)
 
     local sources = os.files(path.join(source_dir, "**.cpp"))
     if #sources == 0 then
@@ -580,12 +626,19 @@ function configure_python_target(target, opts)
     local module_name = opts.module_name or "feather"
 
     -- The generated code only compiles with the Clang that built MRBind,
-    -- whatever the project's own toolchain is.
+    -- whatever the project's own toolchain is. Linking has to go through the
+    -- clang++ driver specifically, not clang: the link step's only inputs are
+    -- pre-compiled .o files, and plain clang has no source file in the
+    -- command line to infer a C++ link from, so it silently skips linking the
+    -- C++ runtime library -- the module then fails to import with an
+    -- undefined libstdc++ RTTI symbol (__si_class_type_info's vtable).
+    -- clang++ always links it, regardless of input file types.
     local clang = resolve_clang(target)
+    local clangxx = resolve_clangxx(target)
     target:set("toolset", "cc", clang)
-    target:set("toolset", "cxx", clang)
-    target:set("toolset", "ld", clang)
-    target:set("toolset", "sh", clang)
+    target:set("toolset", "cxx", clangxx)
+    target:set("toolset", "ld", clangxx)
+    target:set("toolset", "sh", clangxx)
 
     for _, dir in ipairs(_python_include_dirs()) do
         target:add("includedirs", dir)
