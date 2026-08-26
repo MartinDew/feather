@@ -43,8 +43,10 @@ rule("feather.mrbind_api")
         end
         feather_codegen.run_core_codegen(module_dirs, {feather_root = FEATHER_ROOT})
 
+        -- Absolute: autogendir() is relative to the project directory, and the
+        -- parser's macro output embeds this path in an #include of its own.
         local combined_header, header_list_changed = feather_bindings.generate_combined_header(
-            path.join(target:autogendir(), "combined_input.h"), FEATHER_ROOT, API_DIRS)
+            path.absolute(path.join(target:autogendir(), "combined_input.h")), FEATHER_ROOT, API_DIRS)
 
         -- A changed header list means a header was added or removed, which an
         -- mtime comparison alone can miss (removing one leaves every remaining
