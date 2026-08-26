@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "init_level.h"
 #include "launch_settings.h"
 #include "project_settings.h"
 #include "resources/resource_loader.h"
@@ -9,8 +10,6 @@
 #include <rendering/register_rendering_types.gen.h>
 #include <resources/register_resources_types.gen.h>
 #include <world/register_world_types.gen.h>
-
-#include <modules/modules.gen.h>
 
 namespace feather {
 
@@ -35,7 +34,7 @@ Main::Main(int argc, char* argv[]) : _class_db(), _launch_settings(std::move(arg
 
 	engine.run();
 
-	unregister_modules();
+	exit_all_init_levels();
 }
 
 Main::~Main() {
@@ -50,8 +49,9 @@ void Main::setup_db() {
 	register_world_types();
 	register_main_types();
 
-	// then register module types
-	register_modules();
+	// then everything registering at the level core's own types just filled:
+	// built-in modules, and any extension loaded later (caught up on load).
+	enter_init_level(InitLevel::Core);
 }
 
 } //namespace feather

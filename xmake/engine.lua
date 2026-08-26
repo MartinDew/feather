@@ -23,6 +23,7 @@ for _, p in ipairs({
     "core/main/engine.cpp",
     "core/main/engine_settings.cpp",
     "core/main/feather_main.cpp",
+    "core/main/init_level.cpp",
     "core/main/launch_settings.cpp",
     "core/main/project_settings.cpp",
     "core/main/window.cpp",

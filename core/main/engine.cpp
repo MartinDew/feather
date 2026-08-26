@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "init_level.h"
 #include "launch_settings.h"
 #include "world/components/light.h"
 #include "world/rendering_world_module.h"
@@ -35,10 +36,12 @@ Engine::Engine() {
 
 	_instance = this;
 	_rendering_server.init();
+
+	enter_init_level(InitLevel::Servers);
 }
 
 Engine::~Engine() {
-	// unregister_modules();
+	// Levels are left by Main, after run() returns -- see feather_main.cpp.
 }
 
 #if BETA
@@ -129,7 +132,16 @@ bool Engine::run() {
 	}
 #endif
 
+	// Before init(), not after: the flecs world already exists (WorldSim owns
+	// it from construction), and init() imports every EcsModule subclass
+	// registered by this point -- including the ones registered right here.
+	enter_init_level(InitLevel::World);
+
 	_world_sim.init();
+
+	if (is_editor()) {
+		enter_init_level(InitLevel::Editor);
+	}
 
 #if BETA
 	if (LaunchSettings::get().demo_mode.Get()) {

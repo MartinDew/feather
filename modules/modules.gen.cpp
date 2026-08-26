@@ -2,31 +2,25 @@
 
 #include "modules.gen.h"
 
-#include <framework/assert.h>
-
 #if vex_renderer_ENABLED
 #include <modules/vex_renderer/register_module.h>
 #endif
 
 namespace feather {
 
-static bool registered = false;
-
-void register_modules() {
-	fassert(!registered, "modules already registered but register_modules was called!");
+// Called once per level the engine enters; each module decides which levels it
+// has anything to do at. Entering a level twice or out of order is caught in
+// enter_init_level() (core/main/init_level.cpp), not here.
+void register_modules(InitLevel level) {
 #if vex_renderer_ENABLED
-	register_vex_renderer();
+	register_vex_renderer(level);
 #endif
-
-	registered = true;
 }
 
-void unregister_modules() {
-	fassert(registered, "modules not registered but unregister was called!");
+void unregister_modules(InitLevel level) {
 #if vex_renderer_ENABLED
-	unregister_vex_renderer();
+	unregister_vex_renderer(level);
 #endif
-	registered = false;
 }
 
 } //namespace feather

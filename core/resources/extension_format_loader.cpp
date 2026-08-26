@@ -2,6 +2,7 @@
 #include "extension.h"
 #include <framework/shared_library.h>
 #include <iostream>
+#include <main/init_level.h>
 
 namespace feather {
 
@@ -52,15 +53,22 @@ std::shared_ptr<Resource> ExtensionFormatLoader::instantiate(const Path& path) {
 
 void ExtensionFormatLoader::load(std::shared_ptr<Resource> resource, const Path& path) {
 	auto ext = std::static_pointer_cast<Extension>(resource);
-	Callable entry_fn = ext->_library_handle->get_symbol(ext->get_entry_point());
-	if (entry_fn.is_valid()) {
-		entry_fn.call();
-		std::println(std::cout, "ExtensionFormatLoader: Loaded extension '{}' from {}", ext->get_name(), path.string());
-	}
-	else {
+
+	// Resolved as a typed pointer rather than through Callable: the entry
+	// point takes an InitLevel, and Callable only carries the signature it was
+	// built from -- SharedLibrary::get_symbol() builds one for `void()`.
+	auto entry_fn = ext->_library_handle->get_typed_symbol<ExtensionEntryFn>(ext->get_entry_point());
+	if (!entry_fn) {
 		std::cerr << "ExtensionFormatLoader: Entry point '" << ext->get_entry_point()
 				  << "' not found in extension: " << path << std::endl;
+		return;
 	}
+
+	// Calls the entry point once per level already entered, and leaves it
+	// registered for the levels still to come.
+	register_extension_entry(ext, entry_fn);
+
+	std::println(std::cout, "ExtensionFormatLoader: Loaded extension '{}' from {}", ext->get_name(), path.string());
 }
 
 } // namespace feather

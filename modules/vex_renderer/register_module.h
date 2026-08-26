@@ -1,7 +1,9 @@
 #pragma once
 
-namespace feather {
-void register_vex_renderer();
+#include <main/init_level.h>
 
-void unregister_vex_renderer();
+namespace feather {
+void register_vex_renderer(InitLevel level);
+
+void unregister_vex_renderer(InitLevel level);
 } //namespace feather
