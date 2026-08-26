@@ -53,6 +53,14 @@ includes("thirdparty/xmake.lua")
 -- truth for downstream consumers via tools/SDK/FeatherSDK.lua.
 includes("xmake/public_api.lua")
 
+-- ---- Bindings API ---------------------------------------------------------
+-- The shared MRBind parse (build/bindings/api.json) that modules/*_bindings
+-- generate from. Before the engine targets: they depend on it, and a target's
+-- dependencies must already be defined.
+if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
+    includes("xmake/bindings.lua")
+end
+
 -- ---- Engine targets -------------------------------------------------------
 -- The feather executable, its core sources, codegen wiring, and modules.
 -- Split out so it can be includes()'d cross-repo without dragging along
