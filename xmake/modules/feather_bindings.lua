@@ -342,6 +342,32 @@ function api_parser_flags()
     }
 end
 
+-- Exclusions that apply only to the Python parse. Pybind11 has opinions the C
+-- backend doesn't, and since Python is parsed separately anyway (it needs the
+-- macro format), these cost nothing to keep out of the shared set -- the C and
+-- C# bindings keep everything here.
+function python_parser_flags()
+    return {
+        -- StaticString's conversion operators to std::string and
+        -- std::string_view. Pybind11 converts both of those to Python str
+        -- through built-in casters rather than binding them as classes, and
+        -- refuses to register a class for a type it already casts.
+        "--ignore", "/nassimp::StaticString::operator .*/",
+        -- LaunchSettings' constructor and init() take a `char **` argv, which
+        -- has no Python representation -- and no purpose there either, since
+        -- the interpreter owns the process's arguments.
+        "--skip-mentions-of", "/char \\*\\*/",
+        -- EntityRender holds its mesh and material in const members, so its
+        -- copy assignment is deleted -- and pybind11's mutable sequence
+        -- protocol, which MRBind binds CowVector<EntityRender> through, needs
+        -- to assign elements. Deliberate immutability on the engine's side
+        -- rather than something to fix, and a renderer's per-entity draw data
+        -- is not a scripting surface.
+        "--ignore", "feather::RenderScene::EntityRender",
+        "--skip-mentions-of", "feather::RenderScene::EntityRender",
+    }
+end
+
 -- Parses the combined header into `opts.output`. `opts.format` is "json" (the
 -- API dump every generator but Python reads) or "macros" (what the Python
 -- backend compiles). Returns the output path.
@@ -353,6 +379,9 @@ function run_parse(target, opts)
 
     local argv = {combined_header, "-o", output, "--format=" .. format}
     for _, f in ipairs(api_parser_flags()) do
+        table.insert(argv, f)
+    end
+    for _, f in ipairs(opts.extra_parser_flags or {}) do
         table.insert(argv, f)
     end
 
@@ -505,101 +534,83 @@ print(sys.version_info[0], sys.version_info[1], sep='')
     return {includes = includes, libdir = lines[3], version = lines[4]}
 end
 
--- Where a given build's fragment objects live. Named separately from the
--- compile so the target can declare them as files at config time, before
--- they've been built.
-function python_fragment_objects(target, opts)
-    local module_name = opts.module_name or "feather"
-    local objdir = assert(opts.objdir, "python_fragment_objects: opts.objdir required")
-
-    local objects = {}
-    for i = 0, (opts.num_fragments or 4) - 1 do
-        table.insert(objects, path.join(objdir, module_name .. "_" .. i .. ".o"))
-    end
-    return objects
-end
-
--- Compiles the parser's macro output into the object files that make up the
--- Python module, and returns them. Linking is left to xmake, which knows what
--- else the module needs; only this compile has to be done by hand, because it
--- has to use the Clang that MRBind was built with (see
--- modules/py_bindings/xmake.lua).
-function compile_python_fragments(target, opts)
+-- Writes one small .cpp per fragment. Each sets its own MB_FRAGMENT and
+-- includes the parser's macro output, which is what lets xmake compile and
+-- link them as ordinary source files (see modules/py_bindings/xmake.lua).
+function write_python_fragments(target, opts)
     opts = opts or {}
-    local module_name = opts.module_name or "feather"
+    local fragment_dir = assert(opts.fragment_dir, "write_python_fragments: opts.fragment_dir required")
     local num_fragments = opts.num_fragments or 4
-    local objdir = assert(opts.objdir, "compile_python_fragments: opts.objdir required")
 
     local macros_cpp = api_macros_path()
     assert(os.isfile(macros_cpp),
         "feather_bindings: " .. macros_cpp .. " is missing -- the parser must run first")
 
-    local objects = python_fragment_objects(target, opts)
-
-    -- Recompiling this takes minutes, so skip it when nothing it reads has
-    -- changed. The macro file is the only input that isn't a header the parse
-    -- already depends on.
-    local up_to_date = true
-    for _, obj in ipairs(objects) do
-        if not os.isfile(obj) or os.mtime(obj) < os.mtime(macros_cpp) then
-            up_to_date = false
-            break
-        end
-    end
-    if up_to_date then
-        return objects
-    end
-
-    local clang = resolve_clang(target)
-    local python = _python_config()
-
-    local pybind11 = assert(target:pkg("pybind11"),
-        "compile_python_fragments: target must add_packages(\"pybind11\")")
-
-    local common = {
-        "-std=c++23",
-        "-fPIC",
-        "-O1",
-        -- The generated code does `#include __FILE__` at one point, so its own
-        -- directory has to be searched.
-        "-I" .. path.directory(macros_cpp),
-        "-I" .. mrbind_includedir(target),
-        "-DMRBIND_HEADER=<mrbind/targets/pybind11.h>",
-        "-DMB_PB11_MODULE_NAME=" .. module_name,
-        -- pybind11 shares internal state between modules built by the same
-        -- compiler and ABI. Naming ours keeps that sharing to our own modules,
-        -- which is what upstream recommends.
-        "-DPYBIND11_COMPILER_TYPE=\"_feather\"",
-        "-DPYBIND11_BUILD_ABI=\"_feather\"",
-        "-DMB_NUM_FRAGMENTS=" .. num_fragments,
-        -- Nothing here is worth reporting: it's all macro expansion.
-        "-w",
-    }
-    for _, dir in ipairs(pybind11:get("includedirs") or {}) do
-        table.insert(common, "-I" .. dir)
-    end
-    for _, dir in ipairs(python.includes) do
-        table.insert(common, "-I" .. dir)
-    end
-    -- The engine's own include dirs and defines, exactly as its headers were
-    -- parsed (see sanitize_compflags_for_mrbind for why they're filtered).
-    for _, f in ipairs(sanitize_compflags_for_mrbind(resolve_compile_flags(target))) do
-        table.insert(common, f)
-    end
-
-    os.mkdir(objdir)
-    for i, obj in ipairs(objects) do
-        local fragment = i - 1
-        local argv = table.join(common, {"-DMB_FRAGMENT=" .. fragment})
-        if fragment == 0 then
+    os.mkdir(fragment_dir)
+    for i = 0, num_fragments - 1 do
+        local lines = {
+            "// Generated by feather_bindings.write_python_fragments. Do not edit.",
+            "#define MB_NUM_FRAGMENTS " .. num_fragments,
+            "#define MB_FRAGMENT " .. i,
+        }
+        if i == 0 then
             -- Exactly one fragment carries the shared implementation.
-            table.insert(argv, "-DMB_DEFINE_IMPLEMENTATION")
+            table.insert(lines, "#define MB_DEFINE_IMPLEMENTATION")
         end
-        argv = table.join(argv, {"-c", macros_cpp, "-o", obj})
+        -- Absolute, so the fragment doesn't depend on the include path.
+        table.insert(lines, "#include \"" .. macros_cpp .. "\"")
 
-        cprint("${cyan}[py_bindings]${reset} compiling fragment %d/%d", i, num_fragments)
-        os.vrunv(clang, argv)
+        local content = table.concat(lines, "\n") .. "\n"
+        local fragment = path.join(fragment_dir, "fragment_" .. i .. ".cpp")
+        -- Write-if-changed: rewriting would touch the mtime and force a
+        -- recompile of a translation unit that takes minutes.
+        if not os.isfile(fragment) or io.readfile(fragment) ~= content then
+            io.writefile(fragment, content)
+        end
+    end
+end
+
+-- Points `target` at the Clang MRBind was built with and adds the flags the
+-- generated pybind11 code needs. Called from the Python module's on_config,
+-- which is the earliest point a toolset can be resolved.
+function configure_python_target(target, opts)
+    opts = opts or {}
+    local module_name = opts.module_name or "feather"
+
+    -- The generated code only compiles with the Clang that built MRBind,
+    -- whatever the project's own toolchain is.
+    local clang = resolve_clang(target)
+    target:set("toolset", "cc", clang)
+    target:set("toolset", "cxx", clang)
+    target:set("toolset", "ld", clang)
+    target:set("toolset", "sh", clang)
+
+    local python = _python_config()
+    for _, dir in ipairs(python.includes) do
+        target:add("includedirs", dir)
+    end
+    -- Python itself is deliberately not linked on ELF or Mach-O: a module's
+    -- Python symbols resolve against the interpreter that loads it, which is
+    -- what lets one module work with both a static and a shared libpython.
+    -- Windows has no such thing and must link the import library.
+    if is_plat("windows") then
+        assert(python.libdir ~= "", "feather_bindings: Python reported no LIBDIR to link against")
+        target:add("linkdirs", path.join(python.libdir, "libs"))
+        target:add("links", "python" .. python.version)
+    elseif is_plat("macosx") then
+        target:add("shflags", "-Wl,-undefined,dynamic_lookup", {force = true})
     end
 
-    return objects
+    target:add("includedirs", mrbind_includedir(target))
+    target:add("defines", "MRBIND_HEADER=<mrbind/targets/pybind11.h>")
+    target:add("defines", "MB_PB11_MODULE_NAME=" .. module_name)
+    -- Pybind11 shares internal state between modules built by the same
+    -- compiler and ABI. Naming ours keeps that sharing to our own modules,
+    -- which is what upstream recommends.
+    target:add("defines", "PYBIND11_COMPILER_TYPE=\"_feather\"")
+    target:add("defines", "PYBIND11_BUILD_ABI=\"_feather\"")
+
+    -- Higher optimization makes this translation unit take considerably longer
+    -- to compile for no meaningful gain: it's registration calls, not hot code.
+    target:add("cxflags", "-O1", {force = true})
 end

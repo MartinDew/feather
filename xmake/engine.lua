@@ -11,7 +11,12 @@ local FEATHER_ROOT = path.directory(os.scriptdir())
 -- the engine root, so every entry is joined with FEATHER_ROOT explicitly.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
+-- feather_main.cpp is core's entry point (main()), so it's the one file a
+-- library form of core leaves out -- see feather_core below.
+local CORE_MAIN = "core/main/feather_main.cpp"
+
 local CORE_SOURCES = {}
+local CORE_SOURCES_NO_MAIN = {}
 for _, p in ipairs({
     "core/framework/alloc.cpp",
     "core/framework/callable.cpp",
@@ -57,6 +62,9 @@ for _, p in ipairs({
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))
+    if p ~= CORE_MAIN then
+        table.insert(CORE_SOURCES_NO_MAIN, core_path(p))
+    end
 end
 
 local GENERATED_SOURCE = {}
@@ -94,6 +102,48 @@ end
 local function apply_compile_flags(target)
     import("feather_flags")
     feather_flags.apply(target)
+end
+
+-- ---- Engine core, as a library --------------------------------------------
+-- Everything the executable is made of except its entry point, so something
+-- other than feather's own main() can host the engine. The Python extension
+-- module is the one consumer today (modules/py_bindings): a .so can't link
+-- against an executable, and its bindings call engine code directly.
+--
+-- The executable deliberately keeps compiling its own sources rather than
+-- linking this: its link line is delicate on mingw/Windows (see below), and
+-- routing it through a static library is a change worth making on its own
+-- rather than as a side effect of adding bindings. The cost is compiling core
+-- twice when this target is enabled.
+if has_config("enable_py_bindings") then
+    target("feather_core")
+        set_kind("static")
+        add_files(CORE_SOURCES_NO_MAIN)
+        add_files(GENERATED_SOURCE, {always_added = true})
+        add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
+        add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
+
+        add_defines("FEATHER_BUILDING_ENGINE")
+        if is_mode("debug", "releasedbg") then
+            add_defines("BETA")
+        end
+        if is_mode("release") then
+            add_defines("PRODUCTION")
+        end
+
+        add_deps("feather_public_api")
+        add_deps("simplemath")
+        add_packages("flecs", "assimp", "sdl3", "taywee_args")
+
+        -- Linked into a shared library, so every object has to be position
+        -- independent -- not the default for a static library's objects.
+        if not is_plat("windows") then
+            add_cxflags("-fPIC", {force = true})
+        end
+
+        before_build(run_codegen)
+        on_config(apply_compile_flags)
+    target_end()
 end
 
 -- ---- Main executable ------------------------------------------------------

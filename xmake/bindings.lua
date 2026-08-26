@@ -67,6 +67,10 @@ rule("feather.mrbind_api")
                 combined_header = combined_header,
                 output = feather_bindings.api_macros_path(),
                 format = "macros",
+                -- A separate parse anyway, so the handful of things only
+                -- pybind11 objects to are dropped here rather than from the
+                -- shared set the C and C# bindings read.
+                extra_parser_flags = feather_bindings.python_parser_flags(),
             })
         end
     end)
