@@ -552,8 +552,12 @@ function write_python_fragments(target, opts)
             "#define MB_FRAGMENT " .. i,
         }
         if i == 0 then
-            -- Exactly one fragment carries the shared implementation.
-            table.insert(lines, "#define MB_DEFINE_IMPLEMENTATION")
+            -- Exactly one fragment carries the shared implementation. The
+            -- value matters: MRBind tests this with #if, and a macro defined
+            -- to nothing makes that an empty expression ("expected value in
+            -- expression"). -DMB_DEFINE_IMPLEMENTATION on a command line would
+            -- have been 1 implicitly; written out, it has to say so.
+            table.insert(lines, "#define MB_DEFINE_IMPLEMENTATION 1")
         end
         -- Absolute, so the fragment doesn't depend on the include path.
         table.insert(lines, "#include \"" .. macros_cpp .. "\"")
