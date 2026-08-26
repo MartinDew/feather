@@ -33,7 +33,7 @@ using Vector4i = DirectX::XMINT4;
 using Vector3i = DirectX::XMINT3;
 using Vector2i = DirectX::XMINT2;
 
-struct Vertex {
+struct FEATHER_API Vertex {
 	Vector3 position;
 	Vector3 normal;
 	Vector2 uv;
@@ -52,7 +52,7 @@ struct Vertex {
 	bool operator==(const Vertex&) const;
 };
 
-struct AABB {
+struct FEATHER_API AABB {
 	Vector3 min;
 	Vector3 max;
 
