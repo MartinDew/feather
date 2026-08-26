@@ -152,6 +152,18 @@ jobs:
           echo "PATH=$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
+      # Filtering PATH above isn't enough: assimp's CMakeLists finds ccache
+      # with find_program, which searches beyond this job's PATH, and then sets
+      # it as a compiler launcher. Strawberry Perl bundles a ccache that
+      # mangles the cmcldeps.exe + rc.exe command line assimp's resource build
+      # uses ("clang-cl: error: no such file or directory: '/fo'"), taking
+      # sdl3 and vex down with it. Deleting the file sidesteps the search
+      # entirely -- nothing finds what isn't there.
+      - name: Remove stray Strawberry Perl ccache.exe (Windows)
+        if: runner.os == 'Windows'
+        run: Remove-Item -Path "C:\Strawberry\c\bin\ccache.exe" -ErrorAction SilentlyContinue
+        shell: pwsh
+
       - name: Set UTF-8 Code Page (Windows)
         if: runner.os == 'Windows'
         run: chcp 65001
@@ -162,11 +174,15 @@ jobs:
 
       # ── Dump failed package install logs (helps diagnose cmake build errors) ─
       - name: Dump failed package logs
-        if: failure() && runner.os == 'Linux'
+        if: failure()
+        shell: bash
         run: |
-          find ~/.xmake/cache/packages -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read f; do
-            echo "========== $f =========="
-            tail -300 "$f"
+          # Windows keeps xmake's cache under AppData rather than ~/.xmake.
+          for root in ~/.xmake/cache/packages ~/AppData/Local/.xmake/cache/packages; do
+            find "$root" -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read f; do
+              echo "========== $f =========="
+              tail -300 "$f"
+            done
           done
 
       # ── Build ──────────────────────────────────────────────────────────────
