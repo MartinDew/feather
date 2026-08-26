@@ -48,8 +48,17 @@ jobs:
           python-version: "3.12"
 
       # ── Install xmake ─────────────────────────────────────────────────────
+      # package-cache: the bindings modules require the mrbind package, which
+      # is built from source. On Windows that means building LLVM with it (see
+      # thirdparty/packages/mrbind.lua), so without a cache every run pays for
+      # it. Keyed per matrix leg, since the action's own hashing doesn't know
+      # about the OS/mode axis.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          package-cache: true
+          package-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
+          project-path: "."
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
       - name: Setup cmake
@@ -104,6 +113,16 @@ jobs:
           libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev  \
           libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
 
+      # MRBind is a Clang tool: it needs a Clang install plus LLVM's and
+      # Clang's CMake config packages (find_package(Clang) in turn does its own
+      # find_package(LLVM)). With them, the package builds against this Clang;
+      # without them it falls back to building LLVM from source, which takes
+      # over twenty minutes. The runtime llvm-20 package below carries neither
+      # config, so both -dev packages are required here.
+      - name: Install Clang/LLVM development packages for MRBind (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y clang-20 llvm-20-dev libclang-20-dev
+
       - name: Install LLVM Gold Plugin (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -154,11 +173,45 @@ jobs:
       - name: Build
         run: xmake build -v
 
+      # ── Bindings ───────────────────────────────────────────────────────────
+      # Everything a consumer project needs is supposed to land under
+      # build/bindings; a silently empty directory would be easy to miss, since
+      # generation failing doesn't necessarily fail the engine's own build.
+      - name: Check bindings output
+        shell: bash
+        run: |
+          set -e
+          check() {
+            if [ ! -e "$1" ]; then echo "missing: $1"; exit 1; fi
+            echo "ok: $1"
+          }
+          check build/bindings/api.json
+          check build/bindings/c/include
+          check build/bindings/c/desc.json
+          check build/bindings/csharp
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            check build/bindings/python/feather.so
+          fi
+
+      # The C bindings are checked by the fact that they compile; the C# ones
+      # are only source here. Importing the Python module actually runs it.
+      - name: Import the Python module
+        if: runner.os != 'Windows'
+        run: PYTHONPATH=build/bindings/python python3 -c "import feather; print(feather.__doc__ or 'imported')"
+
       # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: feather-${{ matrix.config.name }}-${{ matrix.mode }}
           path: build/bin/*
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.config.name }}-${{ matrix.mode }}
+          path: build/bindings/*
           if-no-files-found: warn
           retention-days: 7
