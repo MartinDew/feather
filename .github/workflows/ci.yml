@@ -48,12 +48,19 @@ jobs:
           python-version: "3.12"
 
       # ── Install xmake ─────────────────────────────────────────────────────
-      # Deliberately without package-cache. It would save real time -- the
-      # bindings modules add the mrbind package, which is built from source --
-      # but it was turning Windows package installs red, and the engine's
-      # thirdparty builds working is worth more than the minutes.
+      # Package cache on Linux only. The bindings modules add the mrbind
+      # package, which is built from source, and the Python module compiles
+      # four large translation units on top -- without a cache a Linux leg
+      # doesn't finish in a sensible time. It stays off on Windows, where
+      # enabling it coincided with thirdparty package installs going red and
+      # master is green without it; the minutes there are worth less than
+      # those builds working.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          package-cache: ${{ runner.os == 'Linux' }}
+          package-cache-key: ${{ matrix.config.name }}-${{ matrix.mode }}
+          project-path: "."
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
       - name: Setup cmake
