@@ -505,27 +505,61 @@ print(sys.version_info[0], sys.version_info[1], sep='')
     return {includes = includes, libdir = lines[3], version = lines[4]}
 end
 
--- Compiles the parser's macro output into an importable Python extension
--- module at opts.output_file. See modules/py_bindings/xmake.lua for why this
--- drives the compiler directly instead of declaring a normal target.
-function build_python_module(target, opts)
+-- Where a given build's fragment objects live. Named separately from the
+-- compile so the target can declare them as files at config time, before
+-- they've been built.
+function python_fragment_objects(target, opts)
+    local module_name = opts.module_name or "feather"
+    local objdir = assert(opts.objdir, "python_fragment_objects: opts.objdir required")
+
+    local objects = {}
+    for i = 0, (opts.num_fragments or 4) - 1 do
+        table.insert(objects, path.join(objdir, module_name .. "_" .. i .. ".o"))
+    end
+    return objects
+end
+
+-- Compiles the parser's macro output into the object files that make up the
+-- Python module, and returns them. Linking is left to xmake, which knows what
+-- else the module needs; only this compile has to be done by hand, because it
+-- has to use the Clang that MRBind was built with (see
+-- modules/py_bindings/xmake.lua).
+function compile_python_fragments(target, opts)
     opts = opts or {}
-    local macros_cpp = assert(opts.macros_cpp, "build_python_module: opts.macros_cpp required")
-    local output_file = assert(opts.output_file, "build_python_module: opts.output_file required")
     local module_name = opts.module_name or "feather"
     local num_fragments = opts.num_fragments or 4
-    local objdir = assert(opts.objdir, "build_python_module: opts.objdir required")
+    local objdir = assert(opts.objdir, "compile_python_fragments: opts.objdir required")
+
+    local macros_cpp = api_macros_path()
+    assert(os.isfile(macros_cpp),
+        "feather_bindings: " .. macros_cpp .. " is missing -- the parser must run first")
+
+    local objects = python_fragment_objects(target, opts)
+
+    -- Recompiling this takes minutes, so skip it when nothing it reads has
+    -- changed. The macro file is the only input that isn't a header the parse
+    -- already depends on.
+    local up_to_date = true
+    for _, obj in ipairs(objects) do
+        if not os.isfile(obj) or os.mtime(obj) < os.mtime(macros_cpp) then
+            up_to_date = false
+            break
+        end
+    end
+    if up_to_date then
+        return objects
+    end
 
     local clang = resolve_clang(target)
     local python = _python_config()
 
     local pybind11 = assert(target:pkg("pybind11"),
-        "build_python_module: target must add_packages(\"pybind11\")")
+        "compile_python_fragments: target must add_packages(\"pybind11\")")
 
     local common = {
         "-std=c++23",
         "-fPIC",
-        "-O2",
+        "-O1",
         -- The generated code does `#include __FILE__` at one point, so its own
         -- directory has to be searched.
         "-I" .. path.directory(macros_cpp),
@@ -554,43 +588,18 @@ function build_python_module(target, opts)
     end
 
     os.mkdir(objdir)
-    local objects = {}
-    for i = 0, num_fragments - 1 do
-        local obj = path.join(objdir, module_name .. "_" .. i .. ".o")
-        local argv = table.join(common, {"-DMB_FRAGMENT=" .. i})
-        if i == 0 then
+    for i, obj in ipairs(objects) do
+        local fragment = i - 1
+        local argv = table.join(common, {"-DMB_FRAGMENT=" .. fragment})
+        if fragment == 0 then
             -- Exactly one fragment carries the shared implementation.
             table.insert(argv, "-DMB_DEFINE_IMPLEMENTATION")
         end
         argv = table.join(argv, {"-c", macros_cpp, "-o", obj})
-        cprint("${cyan}[py_bindings]${reset} compiling fragment %d/%d", i + 1, num_fragments)
+
+        cprint("${cyan}[py_bindings]${reset} compiling fragment %d/%d", i, num_fragments)
         os.vrunv(clang, argv)
-        table.insert(objects, obj)
     end
 
-    os.mkdir(path.directory(output_file))
-
-    local link_argv = table.join({"-shared", "-o", output_file}, objects)
-    -- The engine itself: the bindings call straight into it.
-    for _, dep_target in ipairs({target:dep("feather_core")}) do
-        if dep_target then
-            table.insert(link_argv, dep_target:targetfile())
-        end
-    end
-    -- Python itself is deliberately not linked on ELF: the module's Python
-    -- symbols resolve against the interpreter that loads it, which is the only
-    -- way one module works with both a static and a shared libpython. Windows
-    -- has no such thing and must link the import library.
-    if is_plat("windows") then
-        assert(python.libdir ~= "", "feather_bindings: Python reported no LIBDIR to link against")
-        table.insert(link_argv, "-L" .. path.join(python.libdir, "libs"))
-        table.insert(link_argv, "-lpython" .. python.version)
-    elseif is_plat("macosx") then
-        -- Mach-O rejects undefined symbols in a dylib by default.
-        table.insert(link_argv, "-Wl,-undefined,dynamic_lookup")
-    end
-
-    cprint("${cyan}[py_bindings]${reset} linking %s", path.relative(output_file, os.projectdir()))
-    os.vrunv(clang, link_argv)
-    return output_file
+    return objects
 end
