@@ -66,7 +66,9 @@ if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") t
 end
 
 -- Header-only; the generated Python module's macro TU compiles against it.
-if has_config("enable_py_bindings") then
+-- The platform check is here rather than in the option's default: is_plat()
+-- reads as false inside an option scope (see xmake/options.lua).
+if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
     add_requires("pybind11", {system = false, alias = "pybind11"})
 end
 

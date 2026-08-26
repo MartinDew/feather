@@ -115,7 +115,9 @@ end
 -- routing it through a static library is a change worth making on its own
 -- rather than as a side effect of adding bindings. The cost is compiling core
 -- twice when this target is enabled.
-if has_config("enable_py_bindings") then
+-- not is_plat(...): the option itself can't carry the platform check, since
+-- is_plat() reads as false inside an option scope (see xmake/options.lua).
+if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
     target("feather_core")
         set_kind("static")
         add_files(CORE_SOURCES_NO_MAIN)

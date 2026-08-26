@@ -49,12 +49,15 @@ option("enable_cs_bindings")
     set_description("Generate C# bindings from the C bindings' descriptor (build/bindings/csharp)")
 option_end()
 
--- Off on windows/mingw: the module must be built by a Clang in MSVC-compatible
--- mode against the official Python's ABI, which this repo's Windows toolchain
--- setup doesn't cover yet (see modules/py_bindings/xmake.lua).
+-- Ignored on windows/mingw, where it's treated as off: the module must be
+-- built by a Clang in MSVC-compatible mode against the official Python's ABI,
+-- which this repo's Windows toolchain setup doesn't cover yet (see
+-- modules/py_bindings/xmake.lua). The platform check can't live in
+-- set_default() -- is_plat() reads as false inside an option scope, whatever
+-- the real platform is, which silently turns the option off everywhere.
 option("enable_py_bindings")
-    set_default(is_plat("linux", "macosx"))
-    set_description("Build the pybind11 Python extension module (build/bindings/python)")
+    set_default(true)
+    set_description("Build the pybind11 Python extension module (build/bindings/python); ignored on Windows")
 option_end()
 
 -- Toolchain selection is done via CLI flags, not options:

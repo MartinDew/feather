@@ -501,24 +501,22 @@ function run_gen_csharp(target, opts)
     return output_dir
 end
 
--- Where the Python that will import this module keeps its headers and import
--- library. Asked of the interpreter itself rather than of python3-config,
--- which is a separate binary that can belong to a different installation
--- entirely: a pybind11 module built against one minor version won't import
--- into another, so the two must not be allowed to disagree.
-local function _python_config()
+-- Where the Python that will import this module keeps its headers. Asked of
+-- the interpreter itself rather than of python3-config, which is a separate
+-- binary that can belong to a different installation entirely: a pybind11
+-- module built against one minor version won't import into another, so the two
+-- must not be allowed to disagree.
+local function _python_include_dirs()
     import("lib.detect.find_tool")
 
     local tool = assert(find_tool("python3") or find_tool("python"),
         "feather_bindings: no python3 on PATH")
 
     local script = [[
-import sysconfig, sys
+import sysconfig
 p = sysconfig.get_paths()
 print(p['include'])
 print(p['platinclude'])
-print(sysconfig.get_config_var('LIBDIR') or '')
-print(sys.version_info[0], sys.version_info[1], sep='')
 ]]
     local out = os.iorunv(tool.program, {"-c", script})
     local lines = out:trim():split("\n", {strict = true})
@@ -531,7 +529,7 @@ print(sys.version_info[0], sys.version_info[1], sep='')
         "feather_bindings: Python.h not found under " .. includes[1]
         .. " -- Python's development headers are required (python3-dev on Debian/Ubuntu)")
 
-    return {includes = includes, libdir = lines[3], version = lines[4]}
+    return includes
 end
 
 -- Writes one small .cpp per fragment. Each sets its own MB_FRAGMENT and
@@ -585,19 +583,16 @@ function configure_python_target(target, opts)
     target:set("toolset", "ld", clang)
     target:set("toolset", "sh", clang)
 
-    local python = _python_config()
-    for _, dir in ipairs(python.includes) do
+    for _, dir in ipairs(_python_include_dirs()) do
         target:add("includedirs", dir)
     end
-    -- Python itself is deliberately not linked on ELF or Mach-O: a module's
-    -- Python symbols resolve against the interpreter that loads it, which is
-    -- what lets one module work with both a static and a shared libpython.
-    -- Windows has no such thing and must link the import library.
-    if is_plat("windows") then
-        assert(python.libdir ~= "", "feather_bindings: Python reported no LIBDIR to link against")
-        target:add("linkdirs", path.join(python.libdir, "libs"))
-        target:add("links", "python" .. python.version)
-    elseif is_plat("macosx") then
+    -- Python itself is deliberately not linked: a module's Python symbols
+    -- resolve against the interpreter that loads it, which is what lets one
+    -- module work with both a static and a shared libpython. (Windows, which
+    -- would have to link the import library instead, doesn't build this module
+    -- at all -- see modules/py_bindings/xmake.lua.)
+    if is_plat("macosx") then
+        -- Mach-O rejects undefined symbols in a dylib by default.
         target:add("shflags", "-Wl,-undefined,dynamic_lookup", {force = true})
     end
 

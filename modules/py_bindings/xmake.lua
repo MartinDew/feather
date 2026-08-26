@@ -28,6 +28,15 @@ if not has_config("enable_py_bindings") then
     return
 end
 
+-- The platform check lives here rather than in the option's default, where
+-- is_plat() reads as false whatever the platform is (see xmake/options.lua).
+if is_plat("windows", "mingw") then
+    cprint("${yellow}[py_bindings]${reset} skipped: the module has to be built by a Clang in"
+        .. " MSVC-compatible mode against the official Python's ABI, which this repo's Windows"
+        .. " toolchain setup doesn't cover yet")
+    return
+end
+
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 local OUTPUT_DIR = path.join(FEATHER_ROOT, "build", "bindings", "python")
 local FRAGMENT_DIR = path.join(OUTPUT_DIR, "fragments")
@@ -41,7 +50,7 @@ target("py_bindings")
     -- the module name: feather.so, not libfeather.so.
     set_basename(MODULE_NAME)
     set_prefixname("")
-    set_extension(is_plat("windows") and ".pyd" or ".so")
+    set_extension(".so")
     set_targetdir(OUTPUT_DIR)
     -- Generated code: there is nothing to act on in its warnings.
     set_warnings("none")
@@ -65,12 +74,7 @@ target("py_bindings")
     add_deps("feather_core")
     add_deps("simplemath")
     add_packages("flecs", "assimp", "sdl3", "taywee_args")
-    if is_plat("windows") then
-        add_ldflags("/WHOLEARCHIVE:feather_core.lib", {force = true})
-        add_syslinks("shell32")
-    else
-        add_linkgroups("feather_core", {whole = true})
-    end
+    add_linkgroups("feather_core", {whole = true})
 
     -- Same defines the engine compiles itself with: the bindings call into it
     -- directly, so their view of its headers has to match.
