@@ -66,3 +66,55 @@ end
 -- Split out so it can be includes()'d cross-repo without dragging along
 -- set_project()/set_version()/etc, which only make sense at this top level.
 includes("xmake/engine.lua")
+
+-- ---- API export -----------------------------------------------------------
+-- Publishes the API description a plugin project designates in its own build.
+--
+-- This is the handoff point of the whole multi-language plugin story: the
+-- engine parses its headers once (xmake/bindings.lua) and everything a C or C#
+-- plugin needs to generate bindings is in the file this task copies out, plus
+-- the small sidecar that says how it was made. A plugin project commits both
+-- and never sees the engine's source. See tools/SDK/FeatherPluginSDK.lua.
+task("export-api")
+    set_menu {
+        usage = "xmake export-api",
+        description = "Publish build/bindings/dist/feather_api.json for plugin projects to consume",
+    }
+
+    on_run(function ()
+        import("core.base.json")
+        import("core.project.project")
+        import("feather_bindings")
+
+        local api_json = feather_bindings.api_json_path()
+        assert(os.isfile(api_json), "export-api: " .. api_json .. " does not exist.\n"
+            .. "  Configure with the C bindings enabled first: xmake f -m debug -y")
+
+        local feather_root = os.scriptdir()
+        local dist = feather_bindings.dist_dir()
+        os.mkdir(dist)
+        os.vcp(api_json, feather_bindings.dist_api_json_path())
+
+        local commit = try { function ()
+            return os.iorunv("git", {"describe", "--always", "--dirty"}, {curdir = feather_root}):trim()
+        end } or "unknown"
+
+        json.savefile(feather_bindings.dist_api_meta_path(), {
+            api_version = 1,
+            -- The engine checkout path baked into every filename inside
+            -- api.json. A consumer passes it back to the generators verbatim
+            -- so their path mappings line up; nothing ever opens it, so it
+            -- needs not exist on the consumer's machine.
+            feather_root = feather_root,
+            engine_commit = commit,
+            gen_c_flags_id = feather_bindings.gen_c_flags_id(feather_root),
+            -- Which mrbind produced this file. The schema is undocumented, so
+            -- a consumer whose generators disagree can at least be told why.
+            mrbind_ref = feather_bindings.mrbind_pinned_commit(),
+            generated = os.date("%Y-%m-%dT%H:%M:%S"),
+        })
+
+        cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_json_path())
+        cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_meta_path())
+    end)
+task_end()

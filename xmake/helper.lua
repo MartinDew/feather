@@ -17,10 +17,11 @@ rule_end()
 -- add_packages() only wires the import lib, not the runtime file itself.
 rule("feather.deploy_shared_deps")
     after_build(function(target)
-        if not target:is_plat("windows", "mingw") then return end
         for _, pkgname in ipairs({"flecs", "sdl3"}) do
             local pkg = target:pkg(pkgname)
-            if pkg then
+            if not pkg then goto continue end
+
+            if target:is_plat("windows", "mingw") then
                 -- installdir(subpath) ignores the arg, returns the root.
                 local bindir = path.join(pkg:installdir(), "bin")
                 if os.isdir(bindir) then
@@ -28,7 +29,24 @@ rule("feather.deploy_shared_deps")
                         os.cp(f, target:targetdir())
                     end
                 end
+            else
+                -- ELF/Mach-O: into lib/ next to the binary, which is already on
+                -- the rpath ($ORIGIN/lib, see xmake/engine.lua). Without this a
+                -- shared dep is only findable through the absolute rpath xmake
+                -- bakes into a dev build, which no deployed copy would have.
+                local libdir = path.join(pkg:installdir(), "lib")
+                if os.isdir(libdir) then
+                    local outdir = path.join(target:targetdir(), "lib")
+                    os.mkdir(outdir)
+                    for _, pattern in ipairs({"*.so", "*.so.*", "*.dylib"}) do
+                        for _, f in ipairs(os.files(path.join(libdir, pattern))) do
+                            os.vcp(f, outdir, {symlink = true})
+                        end
+                    end
+                end
             end
+
+            ::continue::
         end
     end)
 rule_end()

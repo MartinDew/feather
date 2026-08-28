@@ -10,11 +10,13 @@ namespace feather {
 
 class SharedLibrary;
 class ExtensionFormatLoader;
+class FextFormatLoader;
 
 class FEATHER_API Extension final : public Resource {
 	FCLASS();
 
 	friend class ExtensionFormatLoader;
+	friend class FextFormatLoader;
 
 	std::string _extension_name;
 	std::string _entry_point;

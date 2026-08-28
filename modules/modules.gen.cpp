@@ -6,6 +6,10 @@
 #include <modules/vex_renderer/register_module.h>
 #endif
 
+#if py_host_ENABLED
+#include <modules/py_host/register_module.h>
+#endif
+
 namespace feather {
 
 // Called once per level the engine enters; each module decides which levels it
@@ -15,11 +19,17 @@ void register_modules(InitLevel level) {
 #if vex_renderer_ENABLED
 	register_vex_renderer(level);
 #endif
+#if py_host_ENABLED
+	register_py_host(level);
+#endif
 }
 
 void unregister_modules(InitLevel level) {
 #if vex_renderer_ENABLED
 	unregister_vex_renderer(level);
+#endif
+#if py_host_ENABLED
+	unregister_py_host(level);
 #endif
 }
 

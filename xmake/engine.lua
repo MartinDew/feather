@@ -54,6 +54,9 @@ for _, p in ipairs({
     "core/resources/texture_format_loader.cpp",
     "core/resources/extension.cpp",
     "core/resources/extension_format_loader.cpp",
+    "core/resources/extension_loading.cpp",
+    "core/resources/script_extension_runner.cpp",
+    "core/resources/fext_format_loader.cpp",
     "core/world/ecs_module.cpp",
     "core/world/rendering_world_module.cpp",
     "core/world/math_module.cpp",
@@ -135,7 +138,7 @@ if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
 
         add_deps("feather_public_api")
         add_deps("simplemath")
-        add_packages("flecs", "assimp", "sdl3", "taywee_args")
+        add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
 
         -- Linked into a shared library, so every object has to be position
         -- independent -- not the default for a static library's objects.
@@ -173,7 +176,7 @@ target("feather")
     add_deps("feather_public_api")
     -- Direct, not just via feather_public_api: see public_api.lua.
     add_deps("simplemath")
-    add_packages("flecs", "assimp", "sdl3", "taywee_args")
+    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")

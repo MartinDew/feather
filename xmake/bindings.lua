@@ -51,7 +51,9 @@ rule("feather.mrbind_api")
         -- A changed header list means a header was added or removed, which an
         -- mtime comparison alone can miss (removing one leaves every remaining
         -- file untouched).
-        if not header_list_changed and not feather_bindings.outputs_are_stale(outputs, API_DIRS) then
+        if not header_list_changed
+                and not feather_bindings.parser_flags_changed()
+                and not feather_bindings.outputs_are_stale(outputs, API_DIRS) then
             return
         end
 
@@ -75,6 +77,10 @@ rule("feather.mrbind_api")
                 extra_parser_flags = feather_bindings.python_parser_flags(),
             })
         end
+
+        -- Last, so an interrupted or failed parse doesn't leave a stamp
+        -- claiming the outputs match the current flags.
+        feather_bindings.write_parser_flags_stamp()
     end)
 rule_end()
 

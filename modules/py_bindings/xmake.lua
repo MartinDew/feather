@@ -21,8 +21,22 @@
 -- leans on template machinery other compilers choke on (mrbind's
 -- docs/generating_python.md). set_toolset() below points this target at it.
 --
--- Unlike the C bindings, this module links the engine rather than loading into
--- a running one, so `import feather` works from a plain interpreter.
+-- Like the C bindings, and unlike an ordinary Python extension, this module
+-- does NOT link the engine. It is imported by an interpreter embedded in a
+-- running engine process (modules/py_host), so its engine symbols stay
+-- undefined and bind to that process when Python dlopens it -- the executable
+-- links with -rdynamic for exactly this.
+--
+-- That direction is what makes the ClassDB problem go away. Linking the engine
+-- in gave a module with its own copy of every engine global and an empty
+-- reflection registry, because register_*_types() runs from Main::setup_db() in
+-- feather_main.cpp, which feather_core leaves out. A script running inside the
+-- engine needs none of that: setup_db() has already run, and the singletons the
+-- bindings reach are the live ones.
+--
+-- The cost is that `import feather` no longer works from a plain interpreter --
+-- there is no engine process for it to bind against. Running scripts through
+-- the engine (a .fext manifest of type "python") is the supported path.
 
 if not has_config("enable_py_bindings") then
     return
@@ -69,47 +83,16 @@ target("py_bindings")
     add_deps("bindings_api")
     add_packages("mrbind", "pybind11")
 
-    -- The engine, linked whole: a static library only hands over the members
-    -- something already references, so anything reached indirectly (a virtual
-    -- override, a factory registered from a static initializer) would be
-    -- dropped from a module whose only references are the generated bindings.
-    --
-    -- What this does NOT do is populate the ClassDB: the register_*_types()
-    -- calls run from Main::setup_db() in feather_main.cpp, which feather_core
-    -- deliberately leaves out, and ClassDB's constructor is private to Main.
-    -- So an imported module exposes the C++ API but starts with no reflection
-    -- registry. Giving an embedder its own way in needs an engine-side entry
-    -- point that doesn't exist yet -- a separate change from generating these
-    -- bindings.
-    add_deps("feather_core")
-    add_packages("flecs", "assimp", "sdl3", "taywee_args")
-
-    -- feather_core whole-archived, in the same group as the static libraries
-    -- its objects call into (flecs_static, assimp, minizip, SDL3): a plain
-    -- (non-whole-archive) static library is only scanned for members that
-    -- resolve an undefined symbol already pending *at that point* in the
-    -- link line, and for a shared-library target xmake places every
-    -- package's -l flag before the target's own linkgroups regardless of
-    -- declaration order -- confirmed empirically, and add_linkorders does
-    -- nothing to it here (it only reorders a target's own links/linkgroups
-    -- against each other, not package-derived ones). So when the linker
-    -- reaches flecs_static et al., nothing has referenced them yet;
-    -- whole-archiving feather_core afterwards forces in the objects that
-    -- call them, but by then the linker has already moved past their
-    -- archives and won't revisit them ("undefined symbol: EcsScopeClose" at
-    -- import time -- a .so link doesn't fail outright on this the way an
-    -- executable would, so it surfaces one symbol at a time via dlopen).
-    -- Listing them alongside feather_core here puts them all in one
-    -- explicit whole-archive block instead, sidestepping the ordering
-    -- question entirely; xmake drops the packages' own plain -l flags for
-    -- names that already appear in a linkgroup, so nothing double-links.
-    add_linkgroups("feather_core", "flecs_static", "assimp", "minizip", "SDL3", {whole = true})
-
-    -- No add_deps("simplemath") here, unlike the engine's other targets:
-    -- simplemath is an object library, so its objects are already archived
-    -- into libfeather_core.a, and whole-archive brings every one of them in.
-    -- Depending on it as well would put the same objects in the link twice,
-    -- which the linker rejects as multiple definitions.
+    -- Headers only for the static packages: the engine's headers need them to
+    -- compile, but linking their archives would give this module a second copy
+    -- of state the engine process already owns. flecs is a real shared library
+    -- (see thirdparty/xmake.lua) so it links normally, one copy for everyone.
+    add_deps("feather_public_api")
+    add_deps("simplemath")
+    add_packages("flecs")
+    add_packages("assimp", {links = {}})
+    add_packages("sdl3", {links = {}})
+    add_packages("taywee_args")
 
     -- Same defines the engine compiles itself with: the bindings call into it
     -- directly, so their view of its headers has to match.
@@ -120,6 +103,15 @@ target("py_bindings")
     if is_mode("release") then
         add_defines("PRODUCTION")
     end
+
+    -- Shipped next to the engine binary, where modules/py_host adds it to
+    -- sys.path. Same arrangement as libfeather_c: the engine carries what its
+    -- extensions and scripts bind against.
+    after_build(function (target)
+        local outdir = path.join(FEATHER_ROOT, "build", "bin", "python")
+        os.mkdir(outdir)
+        os.vcp(target:targetfile(), outdir)
+    end)
 
     on_config(function (target)
         import("feather_bindings")

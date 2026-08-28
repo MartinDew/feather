@@ -12,10 +12,26 @@ end
 -- windows/mingw force shared regardless of static_deps: no -rdynamic there,
 -- so a static flecs would duplicate ecs_os_api per binary.
 local FEATHER_FORCE_SHARED_DEPS = is_plat("windows", "mingw")
+-- flecs is shared everywhere, static_deps or not, and this is load-bearing for
+-- extensions rather than a preference.
+--
+-- The plan elsewhere (see xmake/public_api.lua's {links = {}}) is that a
+-- consumer DLL leaves flecs symbols undefined and binds them to the host
+-- executable at dlopen time, thanks to -rdynamic. That does not work with the
+-- static flecs: its archive is compiled with hidden visibility, so every flecs
+-- symbol becomes LOCAL when linked into the executable and -rdynamic cannot
+-- export what is no longer global. Confirmed by readelf: `ecs_init` is GLOBAL
+-- HIDDEN in libflecs_static.a and LOCAL in the linked binary.
+--
+-- The result was that anything dlopen'd which touches flecs -- libfeather_c
+-- above all, but equally a C++ extension that registers an EcsModule -- failed
+-- to load with "undefined symbol: EcsOnLoad". A shared flecs is exported
+-- normally and both the engine and the extension bind to the same copy, which
+-- is also what keeps ecs_os_api single.
 add_requires("flecs 4.1.5", {
     system = false,
     alias  = "flecs",
-    configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")},
+    configs = {shared = true},
 })
 
 -- Local package (packages/assimp.lua) builds assimp's bundled minizip instead of
@@ -29,6 +45,10 @@ add_requires("assimp 6.0.4", {
         debug     = false, -- assimp's CMakeLists has a PDB bug in debug
     },
 })
+
+-- Header-only; parses .fext extension manifests (core/resources/fext_format_loader.cpp).
+-- Not in feather_public_api: it stays out of the engine's public headers.
+add_requires("nlohmann_json", {system = false, alias = "nlohmann_json"})
 
 add_requires("directxmath_feather", {system = false, alias = "directxmath"})
 -- SDL3 owns process-global state too; same reasoning as flecs above.

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The generated bindings are full of pointer work. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Publishing with NativeLib=Shared turns this into a plain native .so
+         exporting the [UnmanagedCallersOnly] entry point, which is the only
+         shape the engine's loader can dlopen. -->
+    <PublishAot>true</PublishAot>
+    <!-- Generated code is not ours to tidy; it warns a lot. -->
+    <NoWarn>$(NoWarn);CS0108;CS0114;CS0465;CS8500;CA1416</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!-- FeatherCsharpDir is where the SDK generated the bindings from
+       api/feather_api.json; the xmake target passes it in. -->
+  <ItemGroup>
+    <Compile Include="MyPlugin.cs" />
+    <Compile Include="$(FeatherCsharpDir)/**/*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -5,10 +5,16 @@
 #include "world/rendering_world_module.h"
 
 #include <framework/assert.h>
+#include <framework/shared_library.h>
 #include <resources/resource_loader.h>
+
+#include <SDL3/SDL_filesystem.h>
+#include <filesystem>
 
 #include <chrono>
 #include <csignal>
+#include <iostream>
+#include <print>
 
 #include <rendering/rendering_server.h>
 #include <resources/mesh.h>
@@ -117,12 +123,62 @@ inline void _setup_demo_scene(WorldSim& _world_sim) {
 }
 #endif
 
+// Makes the generated C bindings' symbols available to extensions loaded
+// afterwards. A C or C# plugin is compiled against the generated headers but
+// links nothing, exactly like a C++ plugin: its feather_* imports stay
+// undefined and bind when it is dlopen'd. That only works if libfeather_c is
+// already in the process-wide lookup scope by then, which is what the global
+// load here is for -- the engine executable's own -rdynamic covers engine
+// symbols, but not the bindings library's.
+//
+// Absent is not an error: a project with only C++ extensions never needs it,
+// and the engine can be built with the bindings disabled entirely.
+//
+// The bindings carry their own copy of the operator new/delete overrides
+// (core/framework/alloc.cpp). Loading them globally does not change which copy
+// wins: the executable's definitions come first in the global scope and
+// interpose everything loaded later, so allocations still route through the
+// engine's heap.
+static void _preload_c_bindings() {
+	static SharedLibrary bindings;
+	if (bindings.is_loaded()) {
+		return;
+	}
+
+	const char* base_path = SDL_GetBasePath();
+	if (!base_path) {
+		return;
+	}
+
+#if defined(_WIN32)
+	constexpr const char* LIBRARY_NAME = "feather_c.dll";
+#elif defined(__APPLE__)
+	constexpr const char* LIBRARY_NAME = "libfeather_c.dylib";
+#else
+	constexpr const char* LIBRARY_NAME = "libfeather_c.so";
+#endif
+
+	auto library_path = std::filesystem::path(base_path) / LIBRARY_NAME;
+	if (!std::filesystem::exists(library_path)) {
+		return;
+	}
+
+	if (!bindings.load(library_path.string(), /*global_symbols=*/true)) {
+		std::cerr << "Engine: Found " << library_path << " but failed to load it: "
+				  << SharedLibrary::get_last_error() << std::endl;
+		return;
+	}
+
+	std::println(std::cout, "Engine: Loaded C bindings from {}", library_path.string());
+}
+
 bool Engine::run() {
 	auto current_time = start_time;
 
 	bool keep_running = true;
 
 	// initialization
+	_preload_c_bindings();
 	ResourceLoader::get()->index_project();
 
 #if BETA

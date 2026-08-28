@@ -211,15 +211,90 @@ jobs:
           check build/bindings/c/include
           check build/bindings/c/desc.json
           check build/bindings/csharp
+          # The generated C headers a plugin includes through.
+          check build/bindings/c/include/feather_c
           if [ "$RUNNER_OS" != "Windows" ]; then
+            # Shipped next to the engine binary, which is where the engine
+            # loads it from at startup -- a plugin written in C or C# resolves
+            # its imports against this copy, not the one in build/bindings.
+            check build/bin/libfeather_c.so
             check build/bindings/python/feather.so
           fi
 
-      # The C bindings are checked by the fact that they compile; the C# ones
-      # are only source here. Importing the Python module actually runs it.
-      - name: Import the Python module
+      # The Python module is deliberately NOT importable from a standalone
+      # interpreter: it leaves engine symbols undefined and binds them to a
+      # running engine process (see modules/py_bindings/xmake.lua). Checking
+      # that it is built and has those undefined symbols is the honest test;
+      # actually running it needs an engine, which the example project's
+      # run_examples_test.sh covers.
+      - name: Check the Python module targets the engine process
         if: runner.os != 'Windows'
-        run: PYTHONPATH=build/bindings/python python3 -c "import feather; print(feather.__doc__ or 'imported')"
+        run: |
+          set -e
+          if nm -D --undefined-only build/bindings/python/feather.so | grep -q feather; then
+            echo "ok: feather.so binds to the engine process"
+          else
+            echo "feather.so has no undefined engine symbols -- it was linked standalone"
+            exit 1
+          fi
+
+      # ── The plugin-facing contract ─────────────────────────────────────────
+      # A plugin project builds from the exported API file alone, with no engine
+      # checkout. This runs that path the way a consumer would: publish the
+      # file, then generate C headers and C# sources from it in a scratch
+      # directory using only the flags recorded in its metadata. A break here
+      # means every downstream plugin project breaks.
+      - name: Export the API description
+        run: xmake export-api
+
+      - name: Generate bindings the way a plugin project would
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
+          python3 - <<'EOF'
+          import json, os, shutil, subprocess, sys, glob
+
+          meta = json.load(open("build/bindings/dist/feather_api.meta.json"))
+          api = os.path.abspath("build/bindings/dist/feather_api.json")
+          root = meta["feather_root"]
+          print(f"engine {meta['engine_commit']}, mrbind {meta.get('mrbind_ref', '?')}")
+
+          gen_c = shutil.which("mrbind_gen_c") or next(iter(glob.glob(
+              os.path.expanduser("~/.xmake/packages/m/mrbind/*/*/bin/mrbind_gen_c"))), None)
+          gen_cs = shutil.which("mrbind_gen_csharp") or next(iter(glob.glob(
+              os.path.expanduser("~/.xmake/packages/m/mrbind/*/*/bin/mrbind_gen_csharp"))), None)
+          if not gen_c or not gen_cs:
+              sys.exit("could not locate the mrbind generators")
+
+          out = os.path.abspath("build/consumer-smoke")
+          shutil.rmtree(out, ignore_errors=True)
+          # Exactly the flags tools/SDK/modules/feather_plugin_bindings.lua uses.
+          subprocess.run([gen_c,
+              "--input", api,
+              "--output-header-dir", f"{out}/include",
+              "--output-source-dir", f"{out}/unused-glue",
+              "--helper-name-prefix", "Feather_",
+              "--helper-macro-name-prefix", "FEATHER_C_",
+              "--map-path", os.path.join(root, "core"), "feather_c",
+              "--map-path", root, "feather_c/_root",
+              "--assume-include-dir", root,
+              "--clean-output-dirs",
+              "--output-desc-json", f"{out}/desc.json",
+              "--force-emit-common-helpers",
+              "--helper-header-dir", "feather_helpers"], check=True)
+          subprocess.run([gen_cs,
+              "--input-json", f"{out}/desc.json",
+              "--output-dir", f"{out}/csharp",
+              "--imported-lib-name", "feather_c",
+              "--helpers-namespace", "Feather::Misc",
+              "--clean-output-dir"], check=True)
+
+          for required in (f"{out}/include/feather_c", f"{out}/desc.json", f"{out}/csharp"):
+              if not os.path.exists(required):
+                  sys.exit(f"missing: {required}")
+              print(f"ok: {required}")
+          EOF
 
       # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload binaries

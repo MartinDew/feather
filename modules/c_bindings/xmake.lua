@@ -94,6 +94,16 @@ target("c_bindings")
     -- ELF: engine symbols stay undefined here and bind to the host executable
     -- when the library is loaded (the engine links with -rdynamic).
 
+    -- The engine loads this from its own directory at startup (see
+    -- _preload_c_bindings in core/main/engine.cpp), so extensions written in C
+    -- or C# resolve their feather_* imports without knowing where the engine
+    -- was built. build/bindings/c/lib stays the copy a consumer links against
+    -- on Windows.
+    after_build(function (target)
+        os.mkdir(ENGINE_BIN_DIR)
+        os.vcp(target:targetfile(), ENGINE_BIN_DIR)
+    end)
+
     on_config(function (target)
         import("feather_bindings")
         import("feather_flags")

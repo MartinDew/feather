@@ -9,7 +9,12 @@ package("mrbind")
     set_description("A Clang-based C++ header parser and C/C# binding generator")
     set_license("MIT")
 
-    add_urls("https://github.com/MeshInspector/mrbind.git", {branch = "master"})
+    -- Pinned, not tracking master. The parse output (build/bindings/api.json)
+    -- is published for plugin projects to generate from, and its schema is
+    -- undocumented and unversioned upstream -- a generator from a different
+    -- revision may simply fail to read it. tools/SDK/packages/mrbind_generators.lua
+    -- pins the same commit; move both together.
+    add_urls("https://github.com/MeshInspector/mrbind.git", {commit = "232ff33159d5e76e57b11669453d7d25ad22a14d"})
     set_policy("platform.longpaths", true)
 
     add_deps("cmake", "ninja")

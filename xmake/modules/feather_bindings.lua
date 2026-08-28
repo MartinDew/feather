@@ -73,6 +73,42 @@ end
 -- `dirs`. Generated headers count here even though they're kept out of the
 -- combined header: the parse reads them through their originating header, so a
 -- reflection-codegen refresh has to invalidate the parse too.
+-- Identifies the flags the parse was last run with.
+--
+-- The mtime comparison below only notices changed headers, so editing the
+-- ignore lists or any other parser flag would otherwise leave a stale api.json
+-- in place and the change would appear to do nothing -- a genuinely confusing
+-- failure, since the bindings then disagree with the flags that are right
+-- there in the source.
+function parser_flags_id()
+    local parts = {}
+    for _, f in ipairs(api_parser_flags()) do
+        table.insert(parts, f)
+    end
+    for _, f in ipairs(python_parser_flags()) do
+        table.insert(parts, f)
+    end
+    return hash.strhash128(table.concat(parts, "\0"))
+end
+
+function parser_flags_stamp_path()
+    return path.join(output_dir(), ".parser_flags")
+end
+
+-- True when the parse's flags differ from the ones its outputs were produced
+-- with (or were never recorded).
+function parser_flags_changed()
+    local stamp = parser_flags_stamp_path()
+    if not os.isfile(stamp) then
+        return true
+    end
+    return io.readfile(stamp):trim() ~= parser_flags_id()
+end
+
+function write_parser_flags_stamp()
+    io.writefile(parser_flags_stamp_path(), parser_flags_id())
+end
+
 function outputs_are_stale(outputs, dirs)
     local newest = 0
     for _, dir in ipairs(dirs) do
@@ -267,6 +303,17 @@ function api_parser_flags()
         -- just namespaced "nassimp" rather than "feather" -- without its own
         -- --allow, mrbind refuses to bind anything that mentions it.
         "--allow", "nassimp",
+        -- StaticString's implicit conversions and comparisons don't survive
+        -- the trip to C#. std::string_view maps to ReadOnlySpan<char>, a ref
+        -- struct, and the generator's IEquatable implementation for
+        -- operator==(std::string_view) instantiates Nullable<ReadOnlySpan<char>>,
+        -- which C# forbids outright; the two conversion operators
+        -- (std::string_view and std::string) additionally collapse into a
+        -- duplicate conversion and a duplicate ToString(). None of that is
+        -- fixable from this side, so the operators are dropped and the
+        -- equivalent named accessors -- str(), data(), size(), hash() -- carry
+        -- the same information in every language.
+        "--ignore", "/nassimp::StaticString::operator.*/",
 
         -- Standard containers that can't cross a C ABI. Matching is by
         -- spelling, and it doesn't cascade: skipping the element type doesn't
@@ -418,6 +465,48 @@ function c_desc_json_path()
     return path.join(output_dir("c"), "desc.json")
 end
 
+-- The mrbind revision thirdparty/packages/mrbind.lua pins. Duplicated as a
+-- plain string because a package's URL spec isn't reachable from here; the
+-- assertion in the export task is that these two stay equal.
+function mrbind_pinned_commit()
+    return "232ff33159d5e76e57b11669453d7d25ad22a14d"
+end
+
+function dist_dir()
+    return output_dir("dist")
+end
+
+function dist_api_json_path()
+    return path.join(dist_dir(), "feather_api.json")
+end
+
+function dist_api_meta_path()
+    return path.join(dist_dir(), "feather_api.meta.json")
+end
+
+-- Identifies the ABI-shaping flags run_gen_c() passes, so a plugin project can
+-- tell whether its own copy of the generator flags still matches the engine
+-- that produced the API file it was given. Published as gen_c_flags_id in the
+-- exported metadata; tools/SDK/FeatherPluginSDK.lua computes the same value
+-- from its own flag list and refuses to build when the two disagree.
+--
+-- Only the flags that shape the generated ABI go in. Input and output paths
+-- are per-build and mean nothing to a consumer.
+--
+-- KEEP IN SYNC with run_gen_c() below and with FeatherPluginSDK.lua's
+-- gen_c_flags_id().
+function gen_c_flags_id(feather_root)
+    local shaping = {
+        "Feather_", "FEATHER_C_",
+        path.join(feather_root, "core"), "feather_c",
+        feather_root, "feather_c/_root",
+        feather_root,
+        "--force-emit-common-helpers",
+        "feather_helpers",
+    }
+    return hash.strhash128(table.concat(shaping, "\0"))
+end
+
 -- mrbind_gen_c's exception-relaying helper (__mrbind_c_details.cpp) calls
 -- typeid() but doesn't include <typeinfo> for it -- <exception> happens to
 -- drag it in transitively under libstdc++, so this only surfaces under
@@ -473,15 +562,27 @@ function run_gen_c(target, opts)
         -- definitions (or the two definitions would just collide). Harmless on
         -- ELF, where both spellings expand to the same visibility attribute.
         "--helper-macro-name-prefix", opts.helper_macro_prefix or "FEATHER_C_",
-        -- OUT="generated" rather than "." deliberately differs from
-        -- --assume-include-dir's spelling of the ORIGINAL headers. With both
-        -- set to feather_root, a generated .cpp's two includes -- quoted for
-        -- its own generated header, angled for the real C++ one -- would
-        -- resolve to the identical relative path "core/x/y.h", leaving
-        -- resolution to depend on -I order alone (mrbind's docs/generating_c.md
-        -- warns about exactly this collision). With this prefix the two
-        -- spellings are textually distinct.
-        "--map-path", feather_root, "generated",
+        -- The prefix a C consumer includes through: core/main/init_level.h
+        -- becomes <feather_c/main/init_level.h>. The "core" segment is mapped
+        -- away rather than kept because it names an engine source layout the
+        -- consumer has no reason to know about.
+        --
+        -- This spelling deliberately differs from --assume-include-dir's
+        -- spelling of the ORIGINAL headers below. With both set to
+        -- feather_root, a generated .cpp's two includes -- quoted for its own
+        -- generated header, angled for the real C++ one -- would resolve to
+        -- the identical relative path "core/x/y.h", leaving resolution to
+        -- depend on -I order alone (mrbind's docs/generating_c.md warns about
+        -- exactly this collision). With this prefix the two spellings are
+        -- textually distinct.
+        --
+        -- Longer prefixes win (--map-path's documented rule), so the second
+        -- mapping only catches parsed headers from outside core/. There are
+        -- none today (the parse covers core/ alone, see xmake/bindings.lua),
+        -- but every parsed filename must match some prefix or the generator
+        -- errors out, so it stays as a backstop.
+        "--map-path", path.join(feather_root, "core"), "feather_c",
+        "--map-path", feather_root, "feather_c/_root",
         "--assume-include-dir", feather_root,
         "--clean-output-dirs",
         "--output-desc-json", c_desc_json_path(),
@@ -535,7 +636,11 @@ function run_gen_csharp(target, opts)
         -- C# has no free functions, so the generator puts helpers in a static
         -- class; the C++-style spelling here becomes Feather.Misc.* in C#.
         "--helpers-namespace", "Feather::Misc",
-        "--force-namespace", "Feather",
+        -- No --force-namespace: the C++ side already lives in namespace
+        -- `feather`, which the generator maps to `Feather` on its own. Forcing
+        -- it as well produced `Feather.Feather.X` -- and worse, the generated
+        -- IEquatable implementations still named the single-level spelling, so
+        -- the output did not compile at all.
         "--clean-output-dir",
     }
     for _, f in ipairs(opts.extra_flags or {}) do
