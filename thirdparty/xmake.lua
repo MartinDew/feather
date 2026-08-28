@@ -74,7 +74,10 @@ end
 -- at `xmake f` time -- but only when a bindings module actually needs it,
 -- since without a system Clang install the package builds LLVM from source.
 if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
-    add_requires("mrbind", {system = false, alias = "mrbind"})
+    -- host = true: mrbind is a build tool this machine runs, not something the
+    -- engine links. Without it a cross-compile (mingw, say) would build the
+    -- parser for the target and then be unable to execute it.
+    add_requires("mrbind", {system = false, alias = "mrbind", host = true})
 
     -- Windows always takes mrbind's libllvm path (see packages/mrbind.lua's
     -- on_load). Required directly, not just transitively, so the bindings

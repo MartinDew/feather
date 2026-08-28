@@ -44,7 +44,9 @@ local SDK_DIR = os.scriptdir()
 function feather_plugin_sdk_init()
     add_moduledirs(path.join(SDK_DIR, "modules"))
     includes(path.join(SDK_DIR, "packages", "mrbind_generators.lua"))
-    add_requires("mrbind_generators", {system = false})
+    -- host = true: these are build tools this machine runs, not libraries the
+    -- plugin links, so a cross-compiling plugin build still gets runnable ones.
+    add_requires("mrbind_generators", {system = false, host = true})
 end
 
 -- Shared link setup: a plugin links nothing of the engine's.
@@ -54,17 +56,11 @@ end
 -- symbol scope. That is the same arrangement C++ extensions use for engine
 -- symbols (tools/SDK/FeatherSDK.lua), and it is what keeps a built plugin
 -- independent of where the engine lives.
-local function apply_plugin_link_setup(feather_c_libdir)
-    if is_plat("windows", "mingw") then
-        -- No load-time binding on Windows: the import library is required.
-        if feather_c_libdir then
-            add_linkdirs(feather_c_libdir)
-            add_links("feather_c")
-        else
-            print("FeatherPluginSDK: warning: Windows builds need opts.feather_c_libdir "
-                .. "(the engine's build/bindings/c/lib) to link feather_c's import library.")
-        end
-    elseif is_plat("macosx") then
+-- Windows linking is handled in on_config instead (see the module's
+-- apply_windows_link): it needs to look for the import library on disk and fail
+-- with a useful message, and the description scope has no way to do either.
+local function apply_plugin_link_setup()
+    if is_plat("macosx") then
         -- Mach-O rejects undefined symbols in a dylib by default.
         add_shflags("-undefined", "dynamic_lookup", {force = true})
     end
@@ -75,7 +71,8 @@ end
 --   opts.files             sources (string or list), required
 --   opts.api_json          the designated API file, required
 --   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
---   opts.feather_c_libdir  Windows only; the engine's build/bindings/c/lib
+--   opts.feather_c_libdir  Windows only, and only if the import library does not
+--                          already sit next to opts.api_json
 function feather_c_plugin(name, opts)
     opts = opts or {}
 
@@ -89,6 +86,12 @@ function feather_c_plugin(name, opts)
     target(name)
         set_kind("shared")
         set_basename(name)
+        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll. The
+        -- .fext manifest has to name one file, so pin the spelling that does
+        -- not depend on which toolchain built it.
+        if is_plat("windows", "mingw") then
+            set_prefixname("")
+        end
         -- Flat, not bin/$(mode): the engine finds extensions by walking the
         -- project directory, and a per-mode subdirectory would leave stale
         -- copies of other configurations for it to load too.
@@ -98,7 +101,7 @@ function feather_c_plugin(name, opts)
         add_includedirs(path.join(os.projectdir(), "build", "feather_bindings", "include"))
         add_packages("mrbind_generators")
 
-        apply_plugin_link_setup(opts.feather_c_libdir)
+        apply_plugin_link_setup()
 
         -- on_config, not before_build: the include directory above has to hold
         -- real headers before the compiler is invoked, and on_config is the
@@ -109,6 +112,7 @@ function feather_c_plugin(name, opts)
         on_config(function (target)
             import("feather_plugin_bindings")
             feather_plugin_bindings.generate(target, opts, false)
+            feather_plugin_bindings.apply_windows_link(target, opts)
         end)
     target_end()
 end

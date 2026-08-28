@@ -84,8 +84,18 @@ target("c_bindings")
         add_linkdirs(ENGINE_BIN_DIR)
         add_links("feather")
         if is_plat("mingw") then
+            -- Windows has no guaranteed C++ runtime the way glibc is on Linux,
+            -- so this library carries its own -- the engine executable does the
+            -- same (xmake/engine.lua). add_shflags, not add_ldflags: this
+            -- target's kind is "shared", and ldflags are silently dropped there.
             add_shflags("-static-libgcc", "-static-libstdc++", {force = true})
             add_syslinks("stdc++exp")
+            -- And winpthread, for the same reason: without it the built DLL
+            -- imports libwinpthread-1.dll, which nothing deploys, and every
+            -- attempt to load it fails with a bare "Module not found" -- naming
+            -- the dependent, not the dependency.
+            add_shflags("-Wl,-Bstatic,--whole-archive", "-lwinpthread",
+                "-Wl,--no-whole-archive,-Bdynamic", {force = true})
         end
     elseif is_plat("macosx") then
         -- Mach-O rejects undefined symbols in a dylib by default.
@@ -102,6 +112,18 @@ target("c_bindings")
     after_build(function (target)
         os.mkdir(ENGINE_BIN_DIR)
         os.vcp(target:targetfile(), ENGINE_BIN_DIR)
+
+        -- Windows has no load-time symbol binding, so a plugin has to link an
+        -- import library at build time. Keep it next to the DLL; `xmake
+        -- export-api` publishes it for plugin projects to vendor.
+        if is_plat("windows", "mingw") then
+            for _, lib in ipairs(os.files(path.join(path.directory(target:targetfile()), "*feather_c*.lib"))) do
+                os.vcp(lib, ENGINE_BIN_DIR)
+            end
+            for _, lib in ipairs(os.files(path.join(path.directory(target:targetfile()), "*feather_c*.dll.a"))) do
+                os.vcp(lib, ENGINE_BIN_DIR)
+            end
+        end
     end)
 
     on_config(function (target)

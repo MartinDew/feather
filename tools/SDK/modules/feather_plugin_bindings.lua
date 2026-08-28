@@ -161,6 +161,42 @@ function generate(target, opts, want_csharp)
     return out
 end
 
+-- Wires up linking for a Windows plugin.
+--
+-- ELF and Mach-O let a plugin leave its feather_* imports undefined and bind
+-- them when the engine dlopens it. Windows has no equivalent, so the plugin has
+-- to link feather_c's import library at build time. `xmake export-api`
+-- publishes that library next to feather_api.json for exactly this, so a plugin
+-- project still vendors one directory and never names an engine build tree.
+function apply_windows_link(target, opts)
+    if not is_plat("windows", "mingw") then
+        return
+    end
+
+    local dirs = {}
+    if opts.api_json then
+        table.insert(dirs, path.directory(path.absolute(opts.api_json, os.projectdir())))
+    end
+    if opts.feather_c_libdir then
+        table.insert(dirs, path.absolute(opts.feather_c_libdir, os.projectdir()))
+    end
+
+    for _, dir in ipairs(dirs) do
+        for _, pattern in ipairs({"*feather_c*.lib", "*feather_c*.dll.a"}) do
+            if #os.files(path.join(dir, pattern)) > 0 then
+                target:add("linkdirs", dir)
+                target:add("links", "feather_c")
+                return
+            end
+        end
+    end
+
+    raise("FeatherPluginSDK: no feather_c import library found for this Windows build.\n"
+        .. "  Looked in: " .. table.concat(dirs, ", ") .. "\n"
+        .. "  Publish one from the engine with `xmake export-api` and copy it next to\n"
+        .. "  feather_api.json, or point opts.feather_c_libdir at the engine's build/bin.")
+end
+
 -- Publishes a C# plugin with NativeAOT, so the result is an ordinary native
 -- shared library the engine loads exactly like a C one.
 function publish_csharp(target, opts, out)

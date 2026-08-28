@@ -116,5 +116,17 @@ task("export-api")
 
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_json_path())
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_meta_path())
+
+        -- On Windows a plugin cannot leave its feather_* imports undefined the
+        -- way it can on ELF, so it needs an import library at link time.
+        -- Publishing it here keeps a plugin project pointing at one vendored
+        -- directory rather than at an engine build tree.
+        local bindir = path.join(os.scriptdir(), "build", "bin")
+        for _, pattern in ipairs({"*feather_c*.lib", "*feather_c*.dll.a"}) do
+            for _, lib in ipairs(os.files(path.join(bindir, pattern))) do
+                os.vcp(lib, dist)
+                cprint("${green}export-api:${reset} %s", path.join(dist, path.filename(lib)))
+            end
+        end
     end)
 task_end()

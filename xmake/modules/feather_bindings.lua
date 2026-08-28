@@ -303,6 +303,29 @@ function api_parser_flags()
         -- just namespaced "nassimp" rather than "feather" -- without its own
         -- --allow, mrbind refuses to bind anything that mentions it.
         "--allow", "nassimp",
+
+        -- Make the parse platform-neutral.
+        --
+        -- Integer types are recorded with the spelling they have on the machine
+        -- that parsed, and the API description these flags feed is published
+        -- for plugin projects to generate bindings from on *any* platform. Left
+        -- alone, `size_t` is captured as `unsigned long` from a Linux parse,
+        -- and the resulting C header declares `unsigned long *` where Windows
+        -- needs `unsigned long long *` -- a hard compile error in the generated
+        -- glue, and a silent ABI mismatch anywhere it is not.
+        --
+        -- Canonicalizing to the fixed-width typedefs records `uint64_t`
+        -- instead, which resolves to the right underlying type on each
+        -- platform. Caught by cross-compiling to mingw, where feather::RID's
+        -- `size_t id` failed exactly this way.
+        "--canonicalize-to-fixed-size-typedefs",
+
+        -- Internal plumbing that happens to live under core/: the shared body
+        -- of the two extension loaders (core/resources/extension_loading.h).
+        -- It is not part of the API a plugin talks to, and being unexported it
+        -- cannot be linked from outside the engine at all.
+        "--ignore", "feather::probe_legacy_extension",
+        "--ignore", "feather::resolve_and_register_extension_entry",
         -- StaticString's implicit conversions and comparisons don't survive
         -- the trip to C#. std::string_view maps to ReadOnlySpan<char>, a ref
         -- struct, and the generator's IEquatable implementation for
@@ -447,6 +470,10 @@ function run_parse(target, opts)
 
     table.insert(argv, "--")
     table.insert(argv, "-xc++-header")
+    -- Lets a header hide a declaration from the bindings with FEATHER_NO_BIND
+    -- (core/framework/export_defs.h) while the compiler still sees it. --ignore
+    -- does not reach static data members, which is what forced the attribute.
+    table.insert(argv, "-DFEATHER_MRBIND_PARSE=1")
     table.insert(argv, "-resource-dir=" .. resolve_clang_resource_dir(target))
     for _, f in ipairs(sanitize_compflags_for_mrbind(resolve_compile_flags(target))) do
         table.insert(argv, f)

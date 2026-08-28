@@ -53,6 +53,77 @@ package("mrbind")
     on_install(function (package)
         import("package.tools.cmake")
 
+        -- The prebuilt LLVM for Windows names a DIA SDK library that does not exist.
+        --
+        -- xrepo's libllvm downloads LLVM's official Windows release build, whose
+        -- lib/cmake/llvm/LLVMExports.cmake carries, on LLVMDebugInfoPDB:
+        --
+        --   INTERFACE_LINK_LIBRARIES "C:/Program Files (x86)/Microsoft Visual Studio/
+        --     2019/Professional/DIA SDK/lib/amd64/diaguids.lib;LLVMBinaryFormat;..."
+        --
+        -- That absolute path is baked in from whatever machine built the release, and
+        -- every consumer inherits it. mrbind links LLVMDebugInfoPDB transitively, so
+        -- the build dies with "ninja: error: '<...>/diaguids.lib', needed by
+        -- 'mrbind.exe', missing and no known rule to make it". libllvm's Windows
+        -- install is a bare copy with no patching, so nothing upstream fixes this.
+        --
+        -- Verified by inspecting the published archive directly (clang+llvm-21.1.0-
+        -- win64.zip): exactly one line matches, and clangTooling.lib is present, which
+        -- rules out MRBIND_STATIC_BUILD picking a target the archive lacks.
+        --
+        -- Repointing at the real DIA SDK is preferred over deleting the entry, because
+        -- LLVMDebugInfoPDB.lib genuinely contains objects referencing DIA's GUIDs; if
+        -- the linker pulls one in, dropping the library turns a missing-file error into
+        -- an unresolved-symbol error. find_dia_sdk locates the copy that ships with the
+        -- installed Visual Studio. Only when there is none do we strip the entry, on the
+        -- grounds that mrbind never reads PDBs and the alternative is a guaranteed
+        -- failure.
+        local function _fix_baked_dia_path(installdir)
+            local llvm_exports = path.join(installdir, "lib", "cmake", "llvm", "LLVMExports.cmake")
+            if not os.isfile(llvm_exports) then
+                return
+            end
+
+            local contents = io.readfile(llvm_exports)
+            -- The pattern is anchored on the filename, since only the directory varies.
+            if not contents:find("diaguids%.lib") then
+                -- Already patched, or a future archive fixed it upstream.
+                return
+            end
+
+            local replacement
+            local dia = try { function ()
+                import("detect.sdks.find_dia_sdk")
+                return find_dia_sdk(nil, {arch = "x64"})
+            end }
+            if dia and dia.linkdirs then
+                for _, dir in ipairs(table.wrap(dia.linkdirs)) do
+                    local candidate = path.join(dir, "diaguids.lib")
+                    if os.isfile(candidate) then
+                        -- CMake wants forward slashes in a path inside a quoted list.
+                        replacement = candidate:gsub("\\", "/")
+                        break
+                    end
+                end
+            end
+
+            if replacement then
+                io.replace(llvm_exports, '[A-Za-z]:[/\\][^";]-diaguids%.lib', replacement, {plain = false})
+                cprint("${cyan}[mrbind]${reset} repointed LLVM's baked DIA SDK path at %s", replacement)
+            else
+                -- Drop the entry and the separator that follows it, leaving the rest of
+                -- the INTERFACE_LINK_LIBRARIES list intact.
+                io.replace(llvm_exports, '[A-Za-z]:[/\\][^";]-diaguids%.lib;', "", {plain = false})
+                io.replace(llvm_exports, ';[A-Za-z]:[/\\][^";]-diaguids%.lib', "", {plain = false})
+                cprint("${yellow}[mrbind]${reset} no DIA SDK found; removed LLVM's baked reference to it."
+                    .. " If linking now fails on DIA symbols, install the Visual Studio 'Debugging Tools' component.")
+            end
+
+            if io.readfile(llvm_exports):find("diaguids%.lib") and not replacement then
+                raise("mrbind: failed to remove the baked DIA SDK path from " .. llvm_exports)
+            end
+        end
+
         local llvm_config = package:data("llvm_config")
         local static_build = llvm_config == nil
 
@@ -95,17 +166,7 @@ package("mrbind")
                 cc  = cc  .. ".exe"
                 cxx = cxx .. ".exe"
 
-                local llvm_exports = path.join(installdir, "lib", "cmake", "llvm", "LLVMExports.cmake")
-                if os.isfile(llvm_exports) then
-                    local before = io.readfile(llvm_exports)
-                    io.replace(llvm_exports,
-                        '[A-Za-z]:/[^";]-diaguids%.lib',
-                        "$ENV{VSINSTALLDIR}/DIA SDK/lib/amd64/diaguids.lib")
-                    if io.readfile(llvm_exports) == before then
-                        cprint("${yellow}[mrbind]${reset} no baked DIA SDK path found to patch in %s"
-                            .. " -- upstream may have changed; re-check docs/building_mrbind.md", llvm_exports)
-                    end
-                end
+                _fix_baked_dia_path(installdir)
             end
         end
 

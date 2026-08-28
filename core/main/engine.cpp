@@ -11,6 +11,7 @@
 #include <SDL3/SDL_filesystem.h>
 #include <filesystem>
 
+#include <array>
 #include <chrono>
 #include <csignal>
 #include <iostream>
@@ -150,16 +151,26 @@ static void _preload_c_bindings() {
 		return;
 	}
 
+	// mingw prefixes shared libraries with "lib" and MSVC does not, so the
+	// engine's own bindings DLL can arrive under either name depending on how
+	// it was built.
 #if defined(_WIN32)
-	constexpr const char* LIBRARY_NAME = "feather_c.dll";
+	constexpr std::array LIBRARY_NAMES { "feather_c.dll", "libfeather_c.dll" };
 #elif defined(__APPLE__)
-	constexpr const char* LIBRARY_NAME = "libfeather_c.dylib";
+	constexpr std::array LIBRARY_NAMES { "libfeather_c.dylib" };
 #else
-	constexpr const char* LIBRARY_NAME = "libfeather_c.so";
+	constexpr std::array LIBRARY_NAMES { "libfeather_c.so" };
 #endif
 
-	auto library_path = std::filesystem::path(base_path) / LIBRARY_NAME;
-	if (!std::filesystem::exists(library_path)) {
+	std::filesystem::path library_path;
+	for (const char* name : LIBRARY_NAMES) {
+		auto candidate = std::filesystem::path(base_path) / name;
+		if (std::filesystem::exists(candidate)) {
+			library_path = candidate;
+			break;
+		}
+	}
+	if (library_path.empty()) {
 		return;
 	}
 
