@@ -267,10 +267,20 @@ local function build_import_lib(target, out, engine_binary)
             table.insert(argv, "/lib")
         end
 
+        local lib_path = path.join(libdir, libname .. ".lib")
+
+        -- Removed first, because the librarian opens an existing output library
+        -- to update it rather than replacing it outright: a truncated one left
+        -- by an interrupted or failed run is read back, rejected as corrupt
+        -- (LNK1136), and fails every subsequent build until it is deleted by
+        -- hand. The .exp is written beside it and goes the same way.
+        os.tryrm(lib_path)
+        os.tryrm(path.join(libdir, libname .. ".exp"))
+
         local machine = is_arch("x64", "x86_64") and "x64" or (is_arch("arm64") and "ARM64" or "x86")
         table.join2(argv, {
             "/nologo", "/def:" .. def_path, "/name:" .. engine_binary,
-            "/machine:" .. machine, "/out:" .. path.join(libdir, libname .. ".lib"),
+            "/machine:" .. machine, "/out:" .. lib_path,
         })
         os.vrunv(librarian, argv)
     else
@@ -278,10 +288,14 @@ local function build_import_lib(target, out, engine_binary)
         -- come with any toolchain able to link a DLL.
         local dlltool = find_tool("dlltool") or find_tool("x86_64-w64-mingw32-dlltool")
         assert(dlltool, "FeatherPluginSDK: dlltool not found; it ships with the mingw binutils")
+
+        local lib_path = path.join(libdir, "lib" .. libname .. ".a")
+        os.tryrm(lib_path)
+
         os.vrunv(dlltool.program, {
             "--dllname", engine_binary,
             "--def", def_path,
-            "--output-lib", path.join(libdir, "lib" .. libname .. ".a"),
+            "--output-lib", lib_path,
         })
     end
 
