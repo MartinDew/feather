@@ -249,14 +249,30 @@ local function build_import_lib(target, out, engine_binary)
 
     local libdir = bindings_dir()
     if target:has_tool("cxx", "cl", "clang_cl") then
-        -- MSVC: lib.exe turns a .def straight into an import library. It is the
-        -- same tool xmake already uses to archive static libraries.
-        local lib = assert(target:tool("ar"), "FeatherPluginSDK: no MSVC librarian (lib.exe) found")
+        -- MSVC: a .def plus /DEF, /NAME and /OUT is the librarian's documented
+        -- way to produce an import library with no object files at all.
+        --
+        -- The librarian may arrive as either lib.exe or link.exe -- LIB is
+        -- documented as a wrapper for LINK /LIB, and xmake hands back whichever
+        -- the toolchain configured. link.exe needs /lib to act as the
+        -- librarian; without it, it tries to link an executable named
+        -- feather_imports.lib, warns that /name is unrecognized and that no
+        -- object files were given, and then dies unable to open the file it
+        -- just wrote as an import-library side effect.
+        local librarian = assert(target:tool("ar"),
+            "FeatherPluginSDK: no MSVC librarian (lib.exe) found")
+
+        local argv = {}
+        if path.basename(librarian):lower() == "link" then
+            table.insert(argv, "/lib")
+        end
+
         local machine = is_arch("x64", "x86_64") and "x64" or (is_arch("arm64") and "ARM64" or "x86")
-        os.vrunv(lib, {
+        table.join2(argv, {
             "/nologo", "/def:" .. def_path, "/name:" .. engine_binary,
             "/machine:" .. machine, "/out:" .. path.join(libdir, libname .. ".lib"),
         })
+        os.vrunv(librarian, argv)
     else
         -- mingw: dlltool does the same job, and ships with the binutils that
         -- come with any toolchain able to link a DLL.
