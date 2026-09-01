@@ -40,6 +40,25 @@ package("mrbind_generators")
         }
 
         if package:is_plat("windows") then
+            -- mrbind's own CMakeLists.txt only requests a C++ standard on
+            -- `if(NOT MSVC)` -- its Windows docs assume Clang built against
+            -- MSVC's libraries, not real cl.exe, so the MSVC branch gets no
+            -- flag at all. This package deliberately uses the default (real
+            -- MSVC) toolchain instead, since the generators link neither Clang
+            -- nor LLVM and have no reason to need either. Left unset, cl.exe
+            -- silently compiles in a pre-C++17 mode and <filesystem> in
+            -- src/common/filesystem.h fails to find std::filesystem at all.
+            --
+            -- CMAKE_CXX_STANDARD, not a raw /std: flag: CMakeLists.txt never
+            -- sets it itself (the assignment is commented out, "old CMake
+            -- doesn't understand it"), so a target's CXX_STANDARD property
+            -- defaults to whatever the command line supplied -- this is the
+            -- one case where setting the CMake variable from outside actually
+            -- takes effect, rather than being shadowed by the project's own
+            -- assignment the way CMAKE_CXX_FLAGS is below.
+            table.insert(configs, "-DCMAKE_CXX_STANDARD=23")
+            table.insert(configs, "-DCMAKE_CXX_STANDARD_REQUIRED=ON")
+
             local buildtype_map = {debug = "DEBUG", release = "RELEASE", releasedbg = "RELWITHDEBINFO"}
             local buildtype = buildtype_map[package:mode()] or "RELEASE"
             for _, key in ipairs({
