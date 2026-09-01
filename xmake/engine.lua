@@ -62,6 +62,7 @@ for _, p in ipairs({
     "core/world/math_module.cpp",
     "core/world/register_core_features.cpp",
     "core/world/core_world_module.cpp",
+    "core/world/scripted_component.cpp",
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))

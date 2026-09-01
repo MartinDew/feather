@@ -34,6 +34,34 @@ Reflected* ClassDB::create_object_unsafe(std::string_view name) {
 	return {};
 }
 
+bool ClassDB::register_scripted_value_class(StaticString name, std::vector<ClassInfo::Property> properties) {
+	ClassDB& instance = *get();
+
+	if (instance._class_infos.contains(name)) {
+		std::println("ClassDB: '{}' is already registered; ignoring the scripted definition", name.str());
+		return false;
+	}
+
+	std::println("Registering class '{}' as {} object", name.str(), "scripted value type");
+
+	ClassInfo& info = instance._class_infos[name];
+	info.name = name;
+	// Deliberately parentless: a scripted value type derives from nothing, so
+	// there is no base whose ClassInfo* would have to outlive it, and
+	// _fire_subclass_delegates has no chain to walk.
+	info.parent = ""_ss;
+	info.is_abstract = false;
+	info.is_singleton = false;
+	info.is_value_type = true;
+	info.object_create_func = nullptr;
+	info.properties = std::move(properties);
+
+	// No _current_info dance: that exists so a generated _bind_members() can
+	// find the entry it is populating. Here the members arrive with the call.
+	_fire_subclass_delegates(name);
+	return true;
+}
+
 std::vector<StaticString> ClassDB::_get_children_names_internal(const ClassInfo& object, bool exclusive) {
 	std::vector<StaticString> children;
 	children.reserve(object.children.size());

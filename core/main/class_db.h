@@ -70,6 +70,30 @@ public:
 		requires(!std::is_base_of_v<Reflected, T>)
 	static void register_value_class();
 
+	// The same registration, for a type that has no C++ type at all: a value
+	// class described at runtime by something outside the engine -- a script,
+	// or a plugin assembly discovered by reflection.
+	//
+	// Every register_*_class<T>() above needs T only for four things: the class
+	// name, the parent name, a factory, and a _bind_members() that populates
+	// _current_info. A value type has no factory, so a caller that supplies the
+	// other three needs no type. Properties carry their own type-erased
+	// accessors already (ClassInfo::Property), so nothing here is weaker than
+	// what a generated _bind_members() produces -- the accessors just close over
+	// a field offset instead of a member pointer.
+	//
+	// Returns false if the name is taken, rather than quietly redefining a
+	// class other code may already hold a ClassInfo* to.
+	//
+	// FEATHER_NO_BIND: ClassInfo::Property is std::function-valued, which has no
+	// C or C# spelling. A language binding registers through the flatter,
+	// C-ABI-shaped entry points built on this (see core/world/scripted_component.h),
+	// not by handing over a vector of closures.
+	FEATHER_NO_BIND static bool register_scripted_value_class(
+			StaticString name,
+			std::vector<ClassInfo::Property> properties
+	);
+
 	// Property backed directly by a data member; both accessors share its access level.
 	template <class T, class U>
 	static void bind_property(U T::* member, std::string_view name, AccessLevel access = AccessLevel::Public);
