@@ -14,6 +14,9 @@ void register_py_host(InitLevel level) {
 		return;
 	}
 
+	// Keeps py_ecs.cpp in the link; see py_host.h.
+	py_ecs_link_anchor();
+
 	register_script_extension_runner("python", [](const Path& script) { return py_host_run_script(script); });
 }
 

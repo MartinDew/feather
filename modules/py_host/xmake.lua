@@ -33,8 +33,22 @@ local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 
 feather_module_target("py_host", os.scriptdir(), {
     "py_host.cpp",
+    "py_ecs.cpp",
     "register_module.cpp",
 })
+
+target("py_host")
+    -- py_ecs.cpp defines an embedded module with pybind11.
+    add_packages("pybind11")
+
+    -- The shim a script imports. Ships beside the engine binary in the same
+    -- directory py_host puts on sys.path, next to the generated feather module.
+    after_build(function (target)
+        local outdir = path.join(FEATHER_ROOT, "build", "bin", "python")
+        os.mkdir(outdir)
+        os.vcp(path.join(os.scriptdir(), "python", "feather_ecs.py"), outdir)
+    end)
+target_end()
 
 target("py_host")
     on_config(function (target)

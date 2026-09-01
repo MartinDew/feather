@@ -57,6 +57,7 @@ for _, p in ipairs({
     "core/resources/extension_loading.cpp",
     "core/resources/script_extension_runner.cpp",
     "core/resources/fext_format_loader.cpp",
+    "core/resources/script_format_loader.cpp",
     "core/world/ecs_module.cpp",
     "core/world/rendering_world_module.cpp",
     "core/world/math_module.cpp",
