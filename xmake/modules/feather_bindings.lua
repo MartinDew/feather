@@ -499,6 +499,13 @@ function mrbind_pinned_commit()
     return "232ff33159d5e76e57b11669453d7d25ad22a14d"
 end
 
+-- Paths inside api.json and in the exported metadata are always spelled with
+-- forward slashes, so every flag derived from them has to be too -- on Windows
+-- they would otherwise be translated to backslashes and stop matching.
+function to_forward_slashes(p)
+    return (tostring(p):gsub("\\", "/"))
+end
+
 function dist_dir()
     return output_dir("dist")
 end
@@ -522,16 +529,28 @@ end
 --
 -- KEEP IN SYNC with run_gen_c() below and with FeatherPluginSDK.lua's
 -- gen_c_flags_id().
-function gen_c_flags_id(feather_root)
-    local shaping = {
-        "Feather_", "FEATHER_C_",
-        path.join(feather_root, "core"), "feather_c",
-        feather_root, "feather_c/_root",
-        feather_root,
-        "--force-emit-common-helpers",
-        "feather_helpers",
+-- Deliberately hashes only the *shape* of the flags -- the prefixes, the path
+-- mappings' targets, the helper directory -- and none of the paths themselves.
+--
+-- feather_root is data carried in the metadata, identical on both sides by
+-- construction, so including it detects nothing. It actively breaks things: it
+-- is an absolute path, and hashing it through path.join() made the result
+-- depend on the host separator, so a Windows plugin build computed a different
+-- id than the Linux engine that exported the file and failed with a drift error
+-- describing a disagreement that did not exist.
+--
+-- KEEP IN SYNC with FeatherPluginSDK's modules/feather_plugin_bindings.lua.
+function gen_c_flags_id()
+    local shape = {
+        "helper-name-prefix=Feather_",
+        "helper-macro-name-prefix=FEATHER_C_",
+        "map-path=<root>/core->feather_c",
+        "map-path=<root>->feather_c/_root",
+        "assume-include-dir=<root>",
+        "force-emit-common-helpers",
+        "helper-header-dir=feather_helpers",
     }
-    return hash.strhash128(table.concat(shaping, "\0"))
+    return hash.strhash128(table.concat(shape, "\0"))
 end
 
 -- mrbind_gen_c's exception-relaying helper (__mrbind_c_details.cpp) calls
@@ -608,9 +627,13 @@ function run_gen_c(target, opts)
         -- none today (the parse covers core/ alone, see xmake/bindings.lua),
         -- but every parsed filename must match some prefix or the generator
         -- errors out, so it stays as a backstop.
-        "--map-path", path.join(feather_root, "core"), "feather_c",
-        "--map-path", feather_root, "feather_c/_root",
-        "--assume-include-dir", feather_root,
+        -- Built by concatenation, not path.join(): path.join() translates to
+        -- the host separator, which on Windows would spell a prefix that no
+        -- longer matches the filenames recorded inside api.json. The consumer
+        -- SDK derives the same strings the same way.
+        "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
+        "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
+        "--assume-include-dir", to_forward_slashes(feather_root),
         "--clean-output-dirs",
         "--output-desc-json", c_desc_json_path(),
         -- The C# bindings are generated from the descriptor above and need the

@@ -61,19 +61,36 @@ end
 --
 -- KEEP IN SYNC with the engine's run_gen_c() and gen_c_flags_id() in
 -- xmake/modules/feather_bindings.lua.
-local function shaping_flags(feather_root)
+-- Hashes only the *shape* of the flags, never the paths.
+--
+-- feather_root is data from the metadata and identical on both sides, so
+-- hashing it detects nothing -- and hashing it through path.join() made the
+-- result depend on the host separator, so a Windows plugin build disagreed with
+-- a Linux-exported file and reported drift that did not exist.
+--
+-- KEEP IN SYNC with the engine's gen_c_flags_id() in
+-- xmake/modules/feather_bindings.lua.
+local function shape_flags()
     return {
-        "Feather_", "FEATHER_C_",
-        path.join(feather_root, "core"), "feather_c",
-        feather_root, "feather_c/_root",
-        feather_root,
-        "--force-emit-common-helpers",
-        "feather_helpers",
+        "helper-name-prefix=Feather_",
+        "helper-macro-name-prefix=FEATHER_C_",
+        "map-path=<root>/core->feather_c",
+        "map-path=<root>->feather_c/_root",
+        "assume-include-dir=<root>",
+        "force-emit-common-helpers",
+        "helper-header-dir=feather_helpers",
     }
 end
 
-function gen_c_flags_id(feather_root)
-    return hash.strhash128(table.concat(shaping_flags(feather_root), "\0"))
+function gen_c_flags_id()
+    return hash.strhash128(table.concat(shape_flags(), "\0"))
+end
+
+-- Paths in api.json and the metadata are spelled with forward slashes; keep
+-- every flag derived from them that way, or Windows translates them to
+-- backslashes and the prefix stops matching what the parse recorded.
+local function to_forward_slashes(p)
+    return (tostring(p):gsub("\\", "/"))
 end
 
 local function check_flags_id(meta, api_meta_name)
@@ -81,7 +98,7 @@ local function check_flags_id(meta, api_meta_name)
         -- Older export, or one written by hand. Nothing to compare against.
         return
     end
-    local ours = gen_c_flags_id(meta.feather_root)
+    local ours = gen_c_flags_id()
     assert(ours == meta.gen_c_flags_id, string.format(
         "FeatherPluginSDK: binding flags disagree with the engine that produced this API file.\n"
         .. "  engine (%s): %s\n  this SDK:     %s\n"
@@ -100,9 +117,11 @@ local function gen_c_argv(api_json, feather_root, out)
         "--helper-name-prefix", "Feather_",
         "--helper-macro-name-prefix", "FEATHER_C_",
         -- Consumers include through this prefix: <feather_c/math/projection.h>.
-        "--map-path", path.join(feather_root, "core"), "feather_c",
-        "--map-path", feather_root, "feather_c/_root",
-        "--assume-include-dir", feather_root,
+        -- Concatenated, not path.join()'d: see to_forward_slashes above. The
+        -- engine's run_gen_c() derives these exactly the same way.
+        "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
+        "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
+        "--assume-include-dir", to_forward_slashes(feather_root),
         "--clean-output-dirs",
         "--output-desc-json", out.desc_json,
         "--force-emit-common-helpers",

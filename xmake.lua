@@ -90,7 +90,10 @@ task("export-api")
         assert(os.isfile(api_json), "export-api: " .. api_json .. " does not exist.\n"
             .. "  Configure with the C bindings enabled first: xmake f -m debug -y")
 
-        local feather_root = os.scriptdir()
+        -- Normalized to forward slashes: this string is handed back verbatim
+        -- to the generators by every consumer, on whatever platform, and it has
+        -- to match the filenames the parse recorded inside api.json.
+        local feather_root = feather_bindings.to_forward_slashes(os.scriptdir())
         local dist = feather_bindings.dist_dir()
         os.mkdir(dist)
         os.vcp(api_json, feather_bindings.dist_api_json_path())
@@ -107,7 +110,7 @@ task("export-api")
             -- needs not exist on the consumer's machine.
             feather_root = feather_root,
             engine_commit = commit,
-            gen_c_flags_id = feather_bindings.gen_c_flags_id(feather_root),
+            gen_c_flags_id = feather_bindings.gen_c_flags_id(),
             -- Which mrbind produced this file. The schema is undocumented, so
             -- a consumer whose generators disagree can at least be told why.
             mrbind_ref = feather_bindings.mrbind_pinned_commit(),
