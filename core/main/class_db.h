@@ -85,6 +85,11 @@ public:
 	// Returns false if the name is taken, rather than quietly redefining a
 	// class other code may already hold a ClassInfo* to.
 	//
+	// The name and every property name must outlive the registration:
+	// StaticString is a view over characters it does not own. A dangling one
+	// still compares and looks up correctly, because that goes through the
+	// hash -- it only shows up as garbage when the name is printed.
+	//
 	// FEATHER_NO_BIND: ClassInfo::Property is std::function-valued, which has no
 	// C or C# spelling. A language binding registers through the flatter,
 	// C-ABI-shaped entry points built on this (see core/world/scripted_component.h),

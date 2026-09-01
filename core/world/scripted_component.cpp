@@ -104,6 +104,26 @@ bool build_accessors(ScriptedFieldLayout& field) {
 	}
 }
 
+// StaticString is a view: it holds a string_view and never owns the characters,
+// which is what makes it cheap for the string literals the reflection macros
+// produce. A name that came from a script is not a literal, so it has to be
+// given somewhere permanent to live before a ClassInfo can point at it.
+//
+// This is not a leak that could have been avoided by storing the std::string in
+// the layout below: comparisons go through the hash, so a dangling name still
+// matches, registers and looks up correctly -- it only reads as garbage when
+// something prints it. Interning removes the question entirely.
+std::string_view intern(const std::string& name) {
+	static auto* names = new std::deque<std::string>();
+	for (const std::string& existing : *names) {
+		if (existing == name) {
+			return existing;
+		}
+	}
+	names->push_back(name);
+	return names->back();
+}
+
 // Layouts outlive every caller: a component cannot be withdrawn from a world
 // that may already store it, so these are only ever added to. std::deque, not
 // vector, so growing the registry never invalidates a pointer handed out
@@ -191,7 +211,8 @@ Ecs::entity_t register_scripted_component(
 	properties.reserve(layout.fields.size());
 	for (const ScriptedFieldLayout& field : layout.fields) {
 		properties.push_back(ClassInfo::Property {
-				.name = StaticString(field.name),
+				// Interned: ClassInfo keeps this view for the life of the class.
+				.name = StaticString(intern(field.name)),
 				.type = field.type,
 				.getter = field.getter,
 				.setter = field.setter,
@@ -201,7 +222,7 @@ Ecs::entity_t register_scripted_component(
 	// ClassDB first: it is the half that can refuse (a name collision with a
 	// C++ class), and a refused registration must not leave a component behind
 	// in the world that nothing can read.
-	if (!ClassDB::register_scripted_value_class(StaticString(name), std::move(properties))) {
+	if (!ClassDB::register_scripted_value_class(StaticString(intern(name)), std::move(properties))) {
 		return fail(std::format("'{}' is already a registered class", name));
 	}
 

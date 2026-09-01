@@ -14,6 +14,12 @@
 import("core.base.json")
 import("lib.detect.find_tool")
 
+-- This module lives in <sdk>/modules, so the SDK root is one level up. Used to
+-- find the C# bootstrap that ships beside it.
+function sdk_dir()
+    return path.directory(os.scriptdir())
+end
+
 -- Where generated bindings land: under build/ so it's disposable, and out of
 -- the source tree so the engine's project walk never sees it.
 function bindings_dir()
@@ -178,6 +184,16 @@ function generate(target, opts, want_csharp)
             -- write into a non-empty output dir otherwise.
             "--clean-output-dir",
         })
+
+        -- Copied in after the generator has cleaned the directory, not before.
+        -- This is what turns an assembly into a plugin: the entry point the
+        -- manifest names, the DllImport resolver, and the reflection pass that
+        -- registers whatever the author attributed.
+        local bootstrap = path.join(sdk_dir(), "csharp", "FeatherPluginBootstrap.cs")
+        assert(os.isfile(bootstrap),
+            "FeatherPluginSDK: missing " .. bootstrap .. "\n"
+            .. "  Vendor the SDK's csharp/ directory alongside modules/ and packages/.")
+        os.vcp(bootstrap, out.csharp_dir)
     end
 
     return out
