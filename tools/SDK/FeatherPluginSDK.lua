@@ -123,9 +123,17 @@ end
 --
 --   opts.csproj          the project file, required
 --   opts.api_json        the designated API file, required
---   opts.published_name  file dotnet publish emits (default CsExample.so)
---   opts.output_name     name to stage into bin/ as (default lib<name>.so)
---   opts.runtime         RID passed to dotnet publish (default linux-x64)
+--   opts.published_name  file dotnet publish emits (default: the csproj's own
+--                          filename plus the host's native shared-library
+--                          extension -- .dll/.so/.dylib; override if
+--                          <AssemblyName> in the .csproj differs)
+--   opts.output_name     name to stage into bin/ as (default: lib<name>.so,
+--                          matching feather_c_plugin's own naming -- <name>.dll
+--                          with no "lib" prefix on Windows, lib<name>.dylib on
+--                          macOS)
+--   opts.runtime         .NET RID passed to dotnet publish (default: the host's
+--                          own RID -- NativeAOT cannot cross the OS boundary,
+--                          so this is the only default that always works)
 function feather_cs_plugin(name, opts)
     opts = opts or {}
 

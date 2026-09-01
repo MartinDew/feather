@@ -216,6 +216,53 @@ function apply_windows_link(target, opts)
         .. "  feather_api.json, or point opts.feather_c_libdir at the engine's build/bin.")
 end
 
+-- The .NET Runtime Identifier for the machine actually running dotnet.
+--
+-- NativeAOT cannot cross the OS boundary at all -- "Cross-OS native
+-- compilation is not supported" is ILCompiler's own message for it -- so the
+-- one RID that can always be published here is the host's own, regardless of
+-- what platform xmake itself is configured for. A hardcoded "linux-x64"
+-- default broke every non-Linux machine outright: dotnet ran, picked up the
+-- forced RID, and refused before compiling anything.
+--
+-- os.host()/os.arch() name the machine dotnet is actually running on; xmake's
+-- is_plat()/is_arch() name the *target* xmake was configured for, which is the
+-- wrong question for a tool that cannot cross-compile regardless of what the
+-- rest of the build is doing.
+local function host_dotnet_rid()
+    local os_part = ({windows = "win", linux = "linux", macosx = "osx"})[os.host()]
+    local arch_part = ({x86_64 = "x64", x64 = "x64", i386 = "x86", arm64 = "arm64", ["arm64-v8a"] = "arm64"})[os.arch()]
+    if not os_part or not arch_part then
+        raise("FeatherPluginSDK: don't know the .NET RID for " .. os.host() .. "/" .. os.arch()
+            .. " -- pass opts.runtime explicitly (e.g. \"win-x64\", \"linux-x64\", \"osx-arm64\").")
+    end
+    return os_part .. "-" .. arch_part
+end
+
+-- The filename dotnet's NativeAOT publish actually produces: the assembly
+-- name (the csproj's own filename, absent an explicit <AssemblyName>) plus
+-- whatever shared-library extension is native to the host -- .dll here,
+-- .so/.dylib elsewhere, never .so unconditionally the way a hardcoded default
+-- would assume.
+local function default_published_name(csproj)
+    local ext = ({windows = ".dll", linux = ".so", macosx = ".dylib"})[os.host()] or ".so"
+    return path.basename(csproj) .. ext
+end
+
+-- The filename staged into bin/ -- and so the one a .fext manifest's
+-- "libraries" table names. Mirrors feather_c_plugin's own convention (no "lib"
+-- prefix on Windows, via set_prefixname(""); the platform default elsewhere),
+-- so a C and a C# extension of the same logical name are found the same way.
+local function default_output_name(name)
+    if os.host() == "windows" then
+        return name .. ".dll"
+    elseif os.host() == "macosx" then
+        return "lib" .. name .. ".dylib"
+    else
+        return "lib" .. name .. ".so"
+    end
+end
+
 -- Publishes a C# plugin with NativeAOT, so the result is an ordinary native
 -- shared library the engine loads exactly like a C one.
 function publish_csharp(target, opts, out)
@@ -236,7 +283,7 @@ function publish_csharp(target, opts, out)
     os.vrunv(dotnet.program, {
         "publish", csproj,
         "-c", "Release",
-        "-r", opts.runtime or "linux-x64",
+        "-r", opts.runtime or host_dotnet_rid(),
         -- Emits a plain native .so exporting the [UnmanagedCallersOnly] entry
         -- points, rather than a managed assembly needing a host.
         "-p:NativeLib=Shared",
@@ -248,11 +295,15 @@ function publish_csharp(target, opts, out)
         "-o", path.join(stage, "publish"),
     }, {envs = {DOTNET_CLI_TELEMETRY_OPTOUT = "1", DOTNET_NOLOGO = "1"}})
 
-    local produced = path.join(stage, "publish", opts.published_name or "CsExample.so")
-    assert(os.isfile(produced), "FeatherPluginSDK: dotnet publish produced no " .. produced)
+    local published_name = opts.published_name or default_published_name(csproj)
+    local produced = path.join(stage, "publish", published_name)
+    assert(os.isfile(produced), "FeatherPluginSDK: dotnet publish produced no " .. produced
+        .. "\n  (looked for the assembly name derived from " .. path.filename(csproj)
+        .. "; pass opts.published_name if <AssemblyName> overrides it in the .csproj)")
 
+    local output_name = opts.output_name or default_output_name(target:name())
     local bindir = path.join(os.projectdir(), "bin")
     os.mkdir(bindir)
-    os.vcp(produced, path.join(bindir, opts.output_name or ("lib" .. target:name() .. ".so")))
-    cprint("${cyan}[feather]${reset} -> bin/%s", opts.output_name or ("lib" .. target:name() .. ".so"))
+    os.vcp(produced, path.join(bindir, output_name))
+    cprint("${cyan}[feather]${reset} -> bin/%s", output_name)
 end
