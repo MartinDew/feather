@@ -12,9 +12,9 @@
 --     packages/ directories next to it, and an api/ file are the whole
 --     toolchain.
 --   * mrbind also emits C++ glue that calls the engine. It is deliberately
---     never compiled here: the engine already ships that compiled, as
---     libfeather_c, and loads it at startup. A plugin's feather_* imports stay
---     undefined and bind to it when the engine dlopens the plugin.
+--     never compiled here: the engine already has that glue compiled into its
+--     own binary. A plugin's feather_* imports stay undefined and bind to the
+--     engine process when it dlopens the plugin.
 --
 -- Vendor this file, modules/, packages/ and the api/ files into the plugin
 -- repo -- the same way a Godot project vendors nothing but its .gdextension.
@@ -52,10 +52,11 @@ end
 -- Shared link setup: a plugin links nothing of the engine's.
 --
 -- On ELF its feather_* imports stay undefined and bind when the engine dlopens
--- it, against libfeather_c which the engine has already loaded into the global
--- symbol scope. That is the same arrangement C++ extensions use for engine
--- symbols (tools/SDK/FeatherSDK.lua), and it is what keeps a built plugin
--- independent of where the engine lives.
+-- it, against the engine executable itself -- which exports the generated C
+-- bindings along with the rest of its API (it links -rdynamic, and the bindings
+-- are compiled into it). That is the same arrangement C++ extensions use for
+-- engine symbols (tools/SDK/FeatherSDK.lua), and it is what keeps a built
+-- plugin independent of where the engine lives.
 -- Windows linking is handled in on_config instead (see the module's
 -- apply_windows_link): it needs to look for the import library on disk and fail
 -- with a useful message, and the description scope has no way to do either.
@@ -71,8 +72,8 @@ end
 --   opts.files             sources (string or list), required
 --   opts.api_json          the designated API file, required
 --   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
---   opts.feather_c_libdir  Windows only, and only if the import library does not
---                          already sit next to opts.api_json
+--   opts.feather_libdir    Windows only, and only if the engine's import library
+--                          does not already sit next to opts.api_json
 function feather_c_plugin(name, opts)
     opts = opts or {}
 

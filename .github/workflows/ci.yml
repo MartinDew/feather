@@ -214,12 +214,23 @@ jobs:
           # The generated C headers a plugin includes through.
           check build/bindings/c/include/feather_c
           if [ "$RUNNER_OS" != "Windows" ]; then
-            # Shipped next to the engine binary, which is where the engine
-            # loads it from at startup -- a plugin written in C or C# resolves
-            # its imports against this copy, not the one in build/bindings.
-            check build/bin/libfeather_c.so
             check build/bindings/python/feather.so
           fi
+
+      # The C bindings are compiled into the engine and exported from it, which
+      # is what a C or C# plugin resolves its imports against. A build that
+      # generated the sources but dropped them from the link would still pass
+      # every check above, so assert the symbols are actually in the binary.
+      - name: Check the engine exports the C bindings
+        if: runner.os != 'Windows'
+        run: |
+          set -e
+          exported=$(nm -D --defined-only build/bin/feather | grep -c ' T Feather_' || true)
+          if [ "$exported" -lt 100 ]; then
+            echo "engine exports $exported Feather_* symbols; expected the generated bindings"
+            exit 1
+          fi
+          echo "ok: engine exports $exported Feather_* symbols"
 
       # The Python module is deliberately NOT importable from a standalone
       # interpreter: it leaves engine symbols undefined and binds them to a

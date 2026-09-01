@@ -124,11 +124,19 @@ task("export-api")
         -- way it can on ELF, so it needs an import library at link time.
         -- Publishing it here keeps a plugin project pointing at one vendored
         -- directory rather than at an engine build tree.
+        --
+        -- This is the executable's own import library, and it covers both the
+        -- engine's FEATHER_API exports and the generated FEATHER_C_API ones,
+        -- since the C bindings are compiled into the executable (see
+        -- modules/c_bindings/xmake.lua). link.exe writes feather.lib alongside
+        -- the exe on its own; GNU ld is told to write libfeather.a explicitly
+        -- (xmake/engine.lua). Neither exists on a non-Windows build.
         local bindir = path.join(os.scriptdir(), "build", "bin")
-        for _, pattern in ipairs({"*feather_c*.lib", "*feather_c*.dll.a"}) do
-            for _, lib in ipairs(os.files(path.join(bindir, pattern))) do
+        for _, name in ipairs({"feather.lib", "libfeather.a"}) do
+            local lib = path.join(bindir, name)
+            if os.isfile(lib) then
                 os.vcp(lib, dist)
-                cprint("${green}export-api:${reset} %s", path.join(dist, path.filename(lib)))
+                cprint("${green}export-api:${reset} %s", path.join(dist, name))
             end
         end
     end)

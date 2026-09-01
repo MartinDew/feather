@@ -2,14 +2,23 @@
 -- (see xmake/bindings.lua) into C headers a consumer includes, plus C++
 -- implementation files that call into the engine.
 --
--- Those implementation files build into a shared library rather than into the
--- engine binary, because a consumer needs something it can actually load: a C
--- program links it, and the generated C# bindings P/Invoke it by name (see
--- modules/cs_bindings/xmake.lua). It resolves engine symbols the same way a
--- project DLL does -- against the engine's import library on Windows, and
--- against the host process at load time everywhere else (see
--- tools/SDK/FeatherSDK.lua, which sets up consumer DLLs the same way). It is
--- therefore loadable inside a running engine process, not standalone.
+-- Those implementation files compile into the engine binary itself. They are
+-- engine code: they are the C-callable face of the same singletons the C++ API
+-- exposes, so they belong in the process that owns those singletons rather than
+-- in a second artifact that has to find its way back to it.
+--
+-- The engine exports them the same way it exports every other API symbol -- via
+-- -rdynamic on ELF, and via the import library the linker already writes next to
+-- feather.exe on Windows (xmake/engine.lua). A C or C# plugin therefore resolves
+-- feather_* the way a C++ plugin resolves engine symbols: one mechanism, one
+-- artifact, nothing for the engine to locate and load at startup.
+--
+-- Compiled into the executable rather than linked as a static library on
+-- purpose: nothing in the engine references a generated feather_c_* symbol, so
+-- a static archive's members would all be dropped as unreferenced, and keeping
+-- them would mean --whole-archive/-force_load//WHOLEARCHIVE spelled per
+-- platform. The engine already declines to route its own core through a static
+-- library for kindred reasons (see xmake/engine.lua).
 
 if not has_config("enable_c_bindings") then
     return
@@ -17,135 +26,53 @@ end
 
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 local OUTPUT_DIR = path.join(FEATHER_ROOT, "build", "bindings", "c")
-local ENGINE_BIN_DIR = path.join(FEATHER_ROOT, "build", "bin")
 
-target("c_bindings")
-    set_kind("shared")
-    -- The name consumers link and the C# bindings load: libfeather_c.so,
-    -- feather_c.dll, libfeather_c.dylib.
-    set_basename("feather_c")
-    set_group("bindings")
-    -- Everything a C consumer needs ends up under build/bindings/c: headers in
-    -- include/, the library here.
-    set_targetdir(path.join(OUTPUT_DIR, "lib"))
-    -- Generated code, and a lot of it -- the engine's own warning settings
-    -- have nothing to say about it.
-    set_warnings("none")
-
-    -- bindings_api's on_config runs the parse this target generates from, and
-    -- on_config follows dependency order (unlike before_build, which does not
-    -- -- both confirmed empirically).
-    add_deps("bindings_api")
-    add_deps("feather_public_api")
-    -- Direct, not just via feather_public_api: see xmake/public_api.lua.
-    add_deps("simplemath")
-    -- Ordering only ({inherit = false}: an executable has no link flags to
-    -- pass on). On Windows the link below needs the engine's import library,
-    -- which doesn't exist until the engine has been linked.
-    add_deps("feather", {inherit = false})
-
-    -- Only this target's own generation step needs the generator binaries.
-    add_packages("mrbind")
-
-    -- Its own compiled copy of the global operator new/delete overrides, so
-    -- allocations made inside the bindings route through the engine's heap
-    -- rather than this library's own -- exactly what feather_sdk_setup() does
-    -- for a consumer DLL.
-    add_files(path.join(FEATHER_ROOT, "core", "framework", "alloc.cpp"))
-
-    -- Marks this as the build of the generated library itself, so its own
-    -- FEATHER_C_API resolves to dllexport rather than dllimport (see the
-    -- generated feather_helpers/exports.h). Distinct from the engine's
-    -- FEATHER_API on purpose -- see run_gen_c()'s macro-prefix comment.
-    add_defines("FEATHER_C_BUILD_LIBRARY")
-
-    -- Not FEATHER_BUILDING_ENGINE: this is a consumer of the engine's exported
-    -- API, so FEATHER_API has to resolve to dllimport here. The mode defines
-    -- must match the engine's, or headers compiled into both disagree about
-    -- #if BETA members.
-    if is_mode("debug", "releasedbg") then
-        add_defines("BETA")
-    end
-    if is_mode("release") then
-        add_defines("PRODUCTION")
-    end
-
-    -- The generated .cpp files include their sibling generated header by
-    -- quoted path, and it lives in include/ rather than next to them. Public:
-    -- a consumer target needs the same include dir.
-    add_includedirs(path.join(OUTPUT_DIR, "include"), {public = true})
-    -- mrbind_gen_c writes its internal helper header (__mrbind_c_details.h)
-    -- into the source dir, not the header dir -- implementation detail only.
-    add_includedirs(path.join(OUTPUT_DIR, "src"), {public = false})
-
-    if is_plat("windows", "mingw") then
-        -- mingw is a distinct is_plat() from "windows" but takes the same
-        -- link-time path, not the ELF branch's load-time binding.
-        add_linkdirs(ENGINE_BIN_DIR)
-        add_links("feather")
-        if is_plat("mingw") then
-            -- Windows has no guaranteed C++ runtime the way glibc is on Linux,
-            -- so this library carries its own -- the engine executable does the
-            -- same (xmake/engine.lua). add_shflags, not add_ldflags: this
-            -- target's kind is "shared", and ldflags are silently dropped there.
-            add_shflags("-static-libgcc", "-static-libstdc++", {force = true})
-            add_syslinks("stdc++exp")
-            -- And winpthread, for the same reason: without it the built DLL
-            -- imports libwinpthread-1.dll, which nothing deploys, and every
-            -- attempt to load it fails with a bare "Module not found" -- naming
-            -- the dependent, not the dependency.
-            add_shflags("-Wl,-Bstatic,--whole-archive", "-lwinpthread",
-                "-Wl,--no-whole-archive,-Bdynamic", {force = true})
-        end
-    elseif is_plat("macosx") then
-        -- Mach-O rejects undefined symbols in a dylib by default.
-        add_shflags("-undefined", "dynamic_lookup", {force = true})
-    end
-    -- ELF: engine symbols stay undefined here and bind to the host executable
-    -- when the library is loaded (the engine links with -rdynamic).
-
-    -- The engine loads this from its own directory at startup (see
-    -- _preload_c_bindings in core/main/engine.cpp), so extensions written in C
-    -- or C# resolve their feather_* imports without knowing where the engine
-    -- was built. build/bindings/c/lib stays the copy a consumer links against
-    -- on Windows.
-    after_build(function (target)
-        os.mkdir(ENGINE_BIN_DIR)
-        os.vcp(target:targetfile(), ENGINE_BIN_DIR)
-
-        -- Windows has no load-time symbol binding, so a plugin has to link an
-        -- import library at build time. Keep it next to the DLL; `xmake
-        -- export-api` publishes it for plugin projects to vendor.
-        if is_plat("windows", "mingw") then
-            for _, lib in ipairs(os.files(path.join(path.directory(target:targetfile()), "*feather_c*.lib"))) do
-                os.vcp(lib, ENGINE_BIN_DIR)
-            end
-            for _, lib in ipairs(os.files(path.join(path.directory(target:targetfile()), "*feather_c*.dll.a"))) do
-                os.vcp(lib, ENGINE_BIN_DIR)
-            end
-        end
-    end)
-
+-- A rule, not an on_config on the engine target: on_config is a setter, so a
+-- second one here would silently replace the engine's own (which applies its
+-- compile flags). Rules compose.
+rule("feather.c_bindings")
     on_config(function (target)
         import("feather_bindings")
-        import("feather_flags")
 
         local sources = feather_bindings.run_gen_c(target, {
             header_dir = path.join(OUTPUT_DIR, "include"),
             source_dir = path.join(OUTPUT_DIR, "src"),
             feather_root = FEATHER_ROOT,
         })
-        for _, src in ipairs(sources) do
-            -- always_added: none of these exist on disk when the target is
-            -- first loaded, only once the generation above has run.
-            target:add("files", src, {always_added = true})
-        end
 
-        -- Same LTO/sanitizer/optimization flags the engine compiles itself
-        -- with -- those have to match across the boundary. Its warning flags
-        -- come along with them, so silence warnings again afterwards: there's
-        -- nothing to act on in generated code, and there is a lot of it.
-        feather_flags.apply(target)
-        target:add("cxflags", target:has_tool("cxx", "cl", "clang_cl") and "/w" or "-w", {force = true})
+        -- Generated code, and a lot of it -- the engine's warning settings have
+        -- nothing to act on there. Per-file rather than per-target: these share
+        -- a target with the engine's own sources now, which stay warned about.
+        local no_warnings = target:has_tool("cxx", "cl", "clang_cl") and "/w" or "-w"
+        for _, src in ipairs(sources) do
+            -- always_added: none of these exist on disk when the target is first
+            -- loaded, only once the generation above has run.
+            target:add("files", src, {always_added = true, cxflags = no_warnings})
+        end
     end)
+rule_end()
+
+target("feather")
+    add_rules("feather.c_bindings")
+
+    -- bindings_api's on_config runs the parse the rule above generates from,
+    -- and on_config follows dependency order (unlike before_build, which does
+    -- not -- both confirmed empirically).
+    add_deps("bindings_api")
+    -- run_gen_c resolves the generator binary through this package handle.
+    add_packages("mrbind")
+
+    -- Marks this as the build of the generated bindings themselves, so
+    -- FEATHER_C_API resolves to dllexport rather than dllimport (see the
+    -- generated feather_helpers/exports.h). Distinct from the engine's
+    -- FEATHER_API on purpose -- see run_gen_c()'s macro-prefix comment -- but
+    -- both now resolve to "export" here, because both are built here.
+    add_defines("FEATHER_C_BUILD_LIBRARY")
+
+    -- The generated .cpp files include their sibling generated header by quoted
+    -- path, and it lives in include/ rather than next to them.
+    add_includedirs(path.join(OUTPUT_DIR, "include"))
+    -- mrbind_gen_c writes its internal helper header (__mrbind_c_details.h)
+    -- into the source dir, not the header dir -- implementation detail only.
+    add_includedirs(path.join(OUTPUT_DIR, "src"))
 target_end()

@@ -678,10 +678,10 @@ function run_gen_csharp(target, opts)
     local argv = {
         "--input-json", desc_json,
         "--output-dir", output_dir,
-        -- The C shared library the generated [DllImport]s load at runtime: no
-        -- extension and no "lib" prefix, so this resolves to feather_c.dll,
-        -- libfeather_c.so or libfeather_c.dylib. Must match
-        -- modules/c_bindings/xmake.lua's set_basename().
+        -- The name the generated [DllImport]s carry. It names no file on disk:
+        -- the C bindings are compiled into the engine executable
+        -- (modules/c_bindings/xmake.lua), so a plugin's DllImportResolver maps
+        -- this name onto the running process instead of loading anything.
         "--imported-lib-name", opts.imported_lib_name or "feather_c",
         -- C# has no free functions, so the generator puts helpers in a static
         -- class; the C++-style spelling here becomes Feather.Misc.* in C#.

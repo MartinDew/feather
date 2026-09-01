@@ -23,8 +23,8 @@ function output_layout()
     local root = bindings_dir()
     return {
         header_dir = path.join(root, "include"),
-        -- Generated but never compiled: the engine ships this code already
-        -- built, inside libfeather_c. mrbind has no way to skip emitting it.
+        -- Generated but never compiled: the engine has this code compiled
+        -- into its own binary. mrbind has no way to skip emitting it.
         source_dir = path.join(root, "unused-glue"),
         desc_json  = path.join(root, "desc.json"),
         csharp_dir = path.join(root, "csharp"),
@@ -102,13 +102,13 @@ local function check_flags_id(meta, api_meta_name)
     assert(ours == meta.gen_c_flags_id, string.format(
         "FeatherPluginSDK: binding flags disagree with the engine that produced this API file.\n"
         .. "  engine (%s): %s\n  this SDK:     %s\n"
-        .. "  The generated headers would not match the shipped libfeather_c.\n"
+        .. "  The generated headers would not match the engine's own bindings.\n"
         .. "  Update the vendored SDK to the one from that engine build.",
         api_meta_name, meta.gen_c_flags_id, ours))
 end
 
 -- Every shaping flag here must match the engine's run_gen_c() exactly: the
--- headers generated here describe an ABI that libfeather_c already implements.
+-- headers generated here describe an ABI the engine binary already implements.
 local function gen_c_argv(api_json, feather_root, out)
     return {
         "--input", api_json,
@@ -165,7 +165,9 @@ function generate(target, opts, want_csharp)
         os.vrunv(generator_bin(target, "mrbind_gen_csharp"), {
             "--input-json", out.desc_json,
             "--output-dir", out.csharp_dir,
-            -- The library the engine preloads; P/Invoke finds it by this name.
+            -- A logical name, not a file on disk: the bindings live in the
+            -- engine executable. The plugin's DllImportResolver maps it to
+            -- the running process (see the generated bootstrap).
             "--imported-lib-name", "feather_c",
             "--helpers-namespace", "Feather::Misc",
             -- No --force-namespace: the C++ `feather` namespace already maps
@@ -184,9 +186,16 @@ end
 --
 -- ELF and Mach-O let a plugin leave its feather_* imports undefined and bind
 -- them when the engine dlopens it. Windows has no equivalent, so the plugin has
--- to link feather_c's import library at build time. `xmake export-api`
--- publishes that library next to feather_api.json for exactly this, so a plugin
--- project still vendors one directory and never names an engine build tree.
+-- to link an import library at build time. That library is the engine
+-- executable's own: the C bindings are compiled into it, so one library covers
+-- both the engine's exports and the generated feather_c ones. `xmake export-api`
+-- publishes it next to feather_api.json for exactly this, so a plugin project
+-- still vendors one directory and never names an engine build tree.
+--
+-- link.exe names it feather.lib; GNU ld names it libfeather.a and is asked for
+-- it explicitly (xmake/engine.lua). Both link as "feather".
+local WINDOWS_IMPORT_LIBS = {"feather.lib", "libfeather.a"}
+
 function apply_windows_link(target, opts)
     if not is_plat("windows", "mingw") then
         return
@@ -196,24 +205,25 @@ function apply_windows_link(target, opts)
     if opts.api_json then
         table.insert(dirs, path.directory(path.absolute(opts.api_json, os.projectdir())))
     end
-    if opts.feather_c_libdir then
-        table.insert(dirs, path.absolute(opts.feather_c_libdir, os.projectdir()))
+    if opts.feather_libdir then
+        table.insert(dirs, path.absolute(opts.feather_libdir, os.projectdir()))
     end
 
     for _, dir in ipairs(dirs) do
-        for _, pattern in ipairs({"*feather_c*.lib", "*feather_c*.dll.a"}) do
-            if #os.files(path.join(dir, pattern)) > 0 then
+        for _, name in ipairs(WINDOWS_IMPORT_LIBS) do
+            if os.isfile(path.join(dir, name)) then
                 target:add("linkdirs", dir)
-                target:add("links", "feather_c")
+                target:add("links", "feather")
                 return
             end
         end
     end
 
-    raise("FeatherPluginSDK: no feather_c import library found for this Windows build.\n"
+    raise("FeatherPluginSDK: no engine import library ("
+        .. table.concat(WINDOWS_IMPORT_LIBS, " or ") .. ") found for this Windows build.\n"
         .. "  Looked in: " .. table.concat(dirs, ", ") .. "\n"
         .. "  Publish one from the engine with `xmake export-api` and copy it next to\n"
-        .. "  feather_api.json, or point opts.feather_c_libdir at the engine's build/bin.")
+        .. "  feather_api.json, or point opts.feather_libdir at the engine's build/bin.")
 end
 
 -- The .NET Runtime Identifier for the machine actually running dotnet.
