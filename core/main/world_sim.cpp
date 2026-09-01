@@ -15,6 +15,15 @@ WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_t
 #if BETA
 	_world.set<Ecs::Rest>({});
 #endif
+
+	// Declared here rather than in init(), because registering a component type
+	// is pure declaration -- no instances, no dependencies, just
+	// world.component<T>("Name") -- and because the world is of no use to
+	// anyone until its types exist. Doing it with the world means nothing
+	// afterwards has to be ordered against it: an extension or script loaded
+	// during project indexing, which happens long before init(), can already
+	// query Transform or define a system over it.
+	register_core_components(_world);
 }
 
 WorldSim::~WorldSim() {
@@ -22,9 +31,9 @@ WorldSim::~WorldSim() {
 }
 
 void WorldSim::init() {
-	// Every reflected Component registers before any EcsModule imports
-	register_core_components(_world);
-
+	// Component types were declared with the world itself (see the
+	// constructor), so anything loaded from the project could already query
+	// them. What is left is world content and modules.
 	_scene_prefab = _world.prefab("Scene");
 	auto scene = create_scene("new scene");
 	fassert(scene.is_valid());
