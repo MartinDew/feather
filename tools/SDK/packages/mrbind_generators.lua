@@ -63,11 +63,36 @@ package("mrbind_generators")
             local buildtype = buildtype_map[package:mode()] or "RELEASE"
             for _, key in ipairs({
                 "CMAKE_C_FLAGS", "CMAKE_C_FLAGS_" .. buildtype,
-                "CMAKE_CXX_FLAGS", "CMAKE_CXX_FLAGS_" .. buildtype,
+                "CMAKE_CXX_FLAGS_" .. buildtype,
                 "CMAKE_EXE_LINKER_FLAGS_" .. buildtype,
             }) do
                 table.insert(configs, "-D" .. key .. "=")
             end
+
+            -- MSVC's traditional preprocessor does not implement __VA_OPT__,
+            -- and /std:c++latest does not switch preprocessors -- for C++ that
+            -- needs /Zc:preprocessor explicitly (unlike C, where /std:c11 and
+            -- later imply it).
+            --
+            -- src/common/reflection.h leans on __VA_OPT__ heavily: MBREFL_STRUCT
+            -- pastes DETAIL_MBREFL_STRUCT_INIT_ onto the result of a macro whose
+            -- whole body is `__VA_OPT__(1)`. Without the conforming preprocessor
+            -- that token survives literally and the paste yields the identifier
+            -- DETAIL_MBREFL_STRUCT_INIT___VA_OPT__, which is the error actually
+            -- reported; every "undefined type mrbind::Entity" after it is
+            -- fallout from the struct never being declared.
+            --
+            -- Set as CMAKE_CXX_FLAGS rather than added to the cleared list
+            -- above, since the project appends its own -D_ITERATOR_DEBUG_LEVEL=0
+            -- to this same variable and both have to survive.
+            --
+            -- Passed unconditionally: which compiler builds this package is not
+            -- ours to choose (a host package takes the default host toolchain,
+            -- which is cl.exe even when the consuming project is configured for
+            -- clang-cl), and clang-cl accepts the flag as a no-op -- its own
+            -- preprocessor already conforms -- warning only that the argument
+            -- went unused.
+            table.insert(configs, "-DCMAKE_CXX_FLAGS=/Zc:preprocessor")
         end
 
         local builddir = path.join(package:builddir(), ".cmake_build")
