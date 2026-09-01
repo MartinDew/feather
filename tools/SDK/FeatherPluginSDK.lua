@@ -58,8 +58,9 @@ end
 -- engine symbols (tools/SDK/FeatherSDK.lua), and it is what keeps a built
 -- plugin independent of where the engine lives.
 -- Windows linking is handled in on_config instead (see the module's
--- apply_windows_link): it needs to look for the import library on disk and fail
--- with a useful message, and the description scope has no way to do either.
+-- apply_windows_link): PE has no load-time binding, so the plugin needs an
+-- import library -- which is generated there from the API descriptor, not
+-- shipped, and the description scope can neither run a tool nor fail cleanly.
 local function apply_plugin_link_setup()
     if is_plat("macosx") then
         -- Mach-O rejects undefined symbols in a dylib by default.
@@ -72,8 +73,10 @@ end
 --   opts.files             sources (string or list), required
 --   opts.api_json          the designated API file, required
 --   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
---   opts.feather_libdir    Windows only, and only if the engine's import library
---                          does not already sit next to opts.api_json
+--   opts.engine_binary     Windows only: the file name of the engine executable
+--                          the plugin will be loaded into. Defaults to
+--                          "feather.exe"; the import table records it, so a
+--                          renamed host needs it set.
 function feather_c_plugin(name, opts)
     opts = opts or {}
 
@@ -112,8 +115,8 @@ function feather_c_plugin(name, opts)
         -- fine, and set_values() cannot carry a table.
         on_config(function (target)
             import("feather_plugin_bindings")
-            feather_plugin_bindings.generate(target, opts, false)
-            feather_plugin_bindings.apply_windows_link(target, opts)
+            local out = feather_plugin_bindings.generate(target, opts, false)
+            feather_plugin_bindings.apply_windows_link(target, opts, out)
         end)
     target_end()
 end

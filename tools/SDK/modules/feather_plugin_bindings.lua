@@ -12,6 +12,7 @@
 -- entire toolchain a C or C# plugin needs.
 
 import("core.base.json")
+import("lib.detect.find_tool")
 
 -- Where generated bindings land: under build/ so it's disposable, and out of
 -- the source tree so the engine's project walk never sees it.
@@ -185,45 +186,103 @@ end
 -- Wires up linking for a Windows plugin.
 --
 -- ELF and Mach-O let a plugin leave its feather_* imports undefined and bind
--- them when the engine dlopens it. Windows has no equivalent, so the plugin has
--- to link an import library at build time. That library is the engine
--- executable's own: the C bindings are compiled into it, so one library covers
--- both the engine's exports and the generated feather_c ones. `xmake export-api`
--- publishes it next to feather_api.json for exactly this, so a plugin project
--- still vendors one directory and never names an engine build tree.
+-- them when the engine loads it. Windows has no equivalent: a PE image resolves
+-- imports through an import table, which the linker only writes if it was given
+-- an import library.
 --
--- link.exe names it feather.lib; GNU ld names it libfeather.a and is asked for
--- it explicitly (xmake/engine.lua). Both link as "feather".
-local WINDOWS_IMPORT_LIBS = {"feather.lib", "libfeather.a"}
+-- That library is synthesized here rather than shipped. Everything it needs is
+-- the list of exported names, and the API descriptor already carries it -- so a
+-- plugin project still needs nothing but feather_api.json, on every platform.
+-- Shipping a prebuilt .lib would put a per-platform binary, matched to one
+-- engine build, back into the plugin's inputs.
+--
+-- Imports resolve against the running engine executable, which is the module
+-- that exports these symbols (the C bindings are compiled into it). The name
+-- below is what the loader looks for; opts.engine_binary overrides it for a
+-- host that is not called feather.exe.
+-- The exported names, read out of the headers the generator just wrote.
+--
+-- Not from the API descriptor: that names types, and leaves each type's
+-- functions -- constructors, destructors, accessors -- to be synthesized by the
+-- generator from the type's traits. Deriving those names here would mean
+-- reimplementing the generator's naming rules and keeping them in step forever.
+-- The headers are the generator's own answer to the same question, so they
+-- cannot disagree with what the engine exports.
+local function import_lib_names(header_dir)
+    local names = {}
+    local seen = {}
 
-function apply_windows_link(target, opts)
-    if not is_plat("windows", "mingw") then
-        return
-    end
-
-    local dirs = {}
-    if opts.api_json then
-        table.insert(dirs, path.directory(path.absolute(opts.api_json, os.projectdir())))
-    end
-    if opts.feather_libdir then
-        table.insert(dirs, path.absolute(opts.feather_libdir, os.projectdir()))
-    end
-
-    for _, dir in ipairs(dirs) do
-        for _, name in ipairs(WINDOWS_IMPORT_LIBS) do
-            if os.isfile(path.join(dir, name)) then
-                target:add("linkdirs", dir)
-                target:add("links", "feather")
-                return
+    for _, header in ipairs(os.files(path.join(header_dir, "**.h"))) do
+        local content = io.readfile(header)
+        -- Every declaration is "FEATHER_C_API <return type> <name>(". The
+        -- non-greedy match stops at the first parenthesis, and the name is the
+        -- last identifier before it.
+        for declaration in content:gmatch("FEATHER_C_API(.-)%(") do
+            local name = declaration:match("([%a_][%w_]*)%s*$")
+            -- Prefix-checked so the macro's own definition in exports.h
+            -- (FEATHER_C_API __declspec(dllexport)) contributes nothing.
+            if name and (name:startswith("feather_") or name:startswith("Feather_")) and not seen[name] then
+                seen[name] = true
+                table.insert(names, name)
             end
         end
     end
 
-    raise("FeatherPluginSDK: no engine import library ("
-        .. table.concat(WINDOWS_IMPORT_LIBS, " or ") .. ") found for this Windows build.\n"
-        .. "  Looked in: " .. table.concat(dirs, ", ") .. "\n"
-        .. "  Publish one from the engine with `xmake export-api` and copy it next to\n"
-        .. "  feather_api.json, or point opts.feather_libdir at the engine's build/bin.")
+    table.sort(names)
+    return names
+end
+
+-- Builds the import library, and returns its directory and link name.
+local function build_import_lib(target, out, engine_binary)
+    local names = import_lib_names(out.header_dir)
+    assert(#names > 0, "FeatherPluginSDK: found no exported functions in the generated headers")
+
+    local libname = "feather_imports"
+    local def_path = path.join(bindings_dir(), libname .. ".def")
+
+    -- LIBRARY names the module the loader resolves against at run time.
+    local lines = { "LIBRARY " .. engine_binary, "EXPORTS" }
+    for _, name in ipairs(names) do
+        table.insert(lines, "    " .. name)
+    end
+    io.writefile(def_path, table.concat(lines, "\n") .. "\n")
+
+    local libdir = bindings_dir()
+    if target:has_tool("cxx", "cl", "clang_cl") then
+        -- MSVC: lib.exe turns a .def straight into an import library. It is the
+        -- same tool xmake already uses to archive static libraries.
+        local lib = assert(target:tool("ar"), "FeatherPluginSDK: no MSVC librarian (lib.exe) found")
+        local machine = is_arch("x64", "x86_64") and "x64" or (is_arch("arm64") and "ARM64" or "x86")
+        os.vrunv(lib, {
+            "/nologo", "/def:" .. def_path, "/name:" .. engine_binary,
+            "/machine:" .. machine, "/out:" .. path.join(libdir, libname .. ".lib"),
+        })
+    else
+        -- mingw: dlltool does the same job, and ships with the binutils that
+        -- come with any toolchain able to link a DLL.
+        local dlltool = find_tool("dlltool") or find_tool("x86_64-w64-mingw32-dlltool")
+        assert(dlltool, "FeatherPluginSDK: dlltool not found; it ships with the mingw binutils")
+        os.vrunv(dlltool.program, {
+            "--dllname", engine_binary,
+            "--def", def_path,
+            "--output-lib", path.join(libdir, "lib" .. libname .. ".a"),
+        })
+    end
+
+    cprint("${cyan}[feather]${reset} import library for %s (%d symbols)", engine_binary, #names)
+    return libdir, libname
+end
+
+function apply_windows_link(target, opts, out)
+    if not is_plat("windows", "mingw") then
+        return
+    end
+
+    local engine_binary = opts.engine_binary or "feather.exe"
+    local libdir, libname = build_import_lib(target, out, engine_binary)
+
+    target:add("linkdirs", libdir)
+    target:add("links", libname)
 end
 
 -- The .NET Runtime Identifier for the machine actually running dotnet.
@@ -276,8 +335,6 @@ end
 -- Publishes a C# plugin with NativeAOT, so the result is an ordinary native
 -- shared library the engine loads exactly like a C one.
 function publish_csharp(target, opts, out)
-    import("lib.detect.find_tool")
-
     local dotnet = assert(find_tool("dotnet"),
         "FeatherPluginSDK: dotnet SDK not found on PATH (needed for C# extensions)")
     local csproj = path.absolute(assert(opts.csproj, "FeatherPluginSDK: opts.csproj is required"),

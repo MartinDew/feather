@@ -120,24 +120,11 @@ task("export-api")
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_json_path())
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_meta_path())
 
-        -- On Windows a plugin cannot leave its feather_* imports undefined the
-        -- way it can on ELF, so it needs an import library at link time.
-        -- Publishing it here keeps a plugin project pointing at one vendored
-        -- directory rather than at an engine build tree.
-        --
-        -- This is the executable's own import library, and it covers both the
-        -- engine's FEATHER_API exports and the generated FEATHER_C_API ones,
-        -- since the C bindings are compiled into the executable (see
-        -- modules/c_bindings/xmake.lua). link.exe writes feather.lib alongside
-        -- the exe on its own; GNU ld is told to write libfeather.a explicitly
-        -- (xmake/engine.lua). Neither exists on a non-Windows build.
-        local bindir = path.join(os.scriptdir(), "build", "bin")
-        for _, name in ipairs({"feather.lib", "libfeather.a"}) do
-            local lib = path.join(bindir, name)
-            if os.isfile(lib) then
-                os.vcp(lib, dist)
-                cprint("${green}export-api:${reset} %s", path.join(dist, name))
-            end
-        end
+        -- Two files, on every platform. Nothing binary is published, and in
+        -- particular no import library: a Windows plugin does need one, but the
+        -- SDK builds it from the descriptor these files produce (see
+        -- apply_windows_link in tools/SDK/modules/feather_plugin_bindings.lua).
+        -- Shipping a prebuilt one would put a per-platform binary, matched to a
+        -- single engine build, back among a plugin's inputs.
     end)
 task_end()
