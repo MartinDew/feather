@@ -338,6 +338,15 @@ function api_parser_flags()
         -- --skip-mentions-of does not reach a function that only names the type
         -- through a pointer return, so the lookups go by name as well.
         "--ignore", "feather::find_scripted_component",
+        -- Same for what a scripted system's callback is handed
+        -- (core/world/scripted_system.h): raw component storage plus the
+        -- ClassInfo describing it, and a std::function to call. The registering
+        -- side of that API is meant for the engine's own language hosts.
+        "--ignore", "feather::ScriptedSystemComponent",
+        "--skip-mentions-of", "feather::ScriptedSystemComponent",
+        "--ignore", "feather::ScriptedSystemInvocation",
+        "--skip-mentions-of", "feather::ScriptedSystemInvocation",
+        "--ignore", "feather::register_scripted_system",
         -- StaticString's implicit conversions and comparisons don't survive
         -- the trip to C#. std::string_view maps to ReadOnlySpan<char>, a ref
         -- struct, and the generator's IEquatable implementation for

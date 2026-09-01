@@ -171,6 +171,17 @@ public:
 			AccessLevel access = AccessLevel::Public
 	);
 
+	// The registered description of a class, or nullptr.
+	//
+	// Exposed for code that has to read a type's members without knowing the
+	// type: a scripted system reaching the fields of a component it queried,
+	// for instance. For a value type the accessors' void* is the object itself,
+	// so the caller needs nothing but the raw storage.
+	//
+	// FEATHER_NO_BIND: ClassInfo holds std::function accessors, which have no C
+	// or C# spelling.
+	FEATHER_NO_BIND static const ClassInfo* get_class_info(std::string_view class_name);
+
 	// Returns an unmanaged raw pointer to a reflected object
 	static Reflected* create_object_unsafe(std::string_view object_name);
 
