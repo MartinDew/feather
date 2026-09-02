@@ -18,7 +18,9 @@
 --
 -- Vendor this file, modules/, packages/ and the api/ files into the plugin
 -- repo -- the same way a Godot project vendors nothing but its .gdextension.
--- See tools/templates/plugin_c_template/.
+-- A C# plugin also needs csharp/ (feather_cs_plugin copies its one file,
+-- FeatherPluginBootstrap.cs, in beside the generated bindings).
+-- See tools/templates/plugin_c_template/ and plugin_cs_template/.
 --
 -- Usage (in the plugin's xmake.lua):
 --

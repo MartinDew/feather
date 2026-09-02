@@ -1,52 +1,50 @@
-// TODO: rename this file, the class, the entry point, and the names in
-// my_plugin.fext.
+// TODO: rename this file, the class, and the names in my_plugin.fext.
+//
+// Note what is *not* here: no entry point, no DllImport resolver, no dispatch
+// on the init level. The SDK's bootstrap (sdk/csharp/FeatherPluginBootstrap.cs,
+// copied in alongside the generated bindings) supplies all three and finds the
+// types below by reflecting over this assembly. my_plugin.fext's "entry" names
+// the bootstrap's own fixed entry point, not one this file exports -- every C#
+// plugin's manifest names the same one.
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Numerics;
+using FeatherPlugin;
 
 internal static class MyPlugin {
-	// The generated [DllImport]s name "feather_c" with no path. The engine has
-	// already loaded that library into the global symbol scope before it loads
-	// any extension, so the main program's handle is the right answer: it finds
-	// the copy the process already has instead of mapping a second one.
-	//
-	// Resolving explicitly also turns a lookup failure into a readable message
-	// rather than an abort -- an exception cannot escape an
-	// UnmanagedCallersOnly entry point.
-	[ModuleInitializer]
-	internal static void RegisterResolver() {
-		NativeLibrary.SetDllImportResolver(typeof(MyPlugin).Assembly, static (name, assembly, searchPath) => {
-			if (name != "feather_c") {
-				return IntPtr.Zero;
-			}
-			IntPtr main = NativeLibrary.GetMainProgramHandle();
-			if (NativeLibrary.TryGetExport(main, "feather_to_string", out _)) {
-				return main;
-			}
-			if (NativeLibrary.TryLoad("libfeather_c.so", out IntPtr handle)) {
-				return handle;
-			}
-			Console.Error.WriteLine("[my_plugin] could not resolve libfeather_c");
-			return IntPtr.Zero;
-		});
+
+	// An ECS component: a type with public fields, describing a layout. It is
+	// never instantiated -- systems get a view onto the entity's real storage.
+	// Supported field types: bool, int, float, double, Vector2, Vector3, Vector4
+	// (a colour).
+	[FeatherComponent]
+	private struct Wobble {
+		public float Speed;
+		public int Ticks;
 	}
 
-	// Mirrors feather::InitLevel, which crosses the boundary as a uint8_t.
-	private const byte InitLevelCore = 0;
+	// A system over it, run every frame at the named phase. Components are
+	// named as strings, so a system can query the engine's own components --
+	// "Transform" -- as readily as one declared here.
+	[FeatherSystem("Wobble", Phase = "on_update")]
+	private static void Advance(ulong entity, ComponentView[] components, double deltaTime) {
+		ComponentView wobble = components[0];
+		wobble.SetInt("Ticks", wobble.GetInt("Ticks") + 1);
+	}
 
-	// The entry point named by my_plugin.fext. Called once per initialization
-	// level the engine enters, ascending.
-	[UnmanagedCallersOnly(EntryPoint = "register_my_plugin")]
-	public static void Register(byte level) {
-		try {
-			if (level != InitLevelCore) {
-				return;
-			}
-			Console.WriteLine("[my_plugin] hello from a C# extension");
-		} catch (Exception ex) {
-			// Never let this escape: the runtime would abort the engine.
-			Console.Error.WriteLine($"[my_plugin] register failed: {ex}");
+	// Called once per init level the engine enters, ascending. Mirrors
+	// feather::InitLevel, which crosses the boundary as a uint8_t; Core is 0.
+	[FeatherInit]
+	private static void OnInitLevel(byte level) {
+		if (level != 0) {
+			return;
 		}
+
+		Console.WriteLine("[my_plugin] hello from a C# extension");
+
+		// Spawn an entity carrying the component above, so Advance has
+		// something to match. Remove this and the component/system if your
+		// plugin only needs to call the engine, the way the C example does.
+		World.Spawn("WobbleDemo", "Wobble");
 	}
 }

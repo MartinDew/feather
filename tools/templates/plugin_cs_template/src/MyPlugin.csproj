@@ -15,11 +15,20 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
-  <!-- FeatherCsharpDir is where the SDK generated the bindings from
-       api/feather_api.json; the xmake target passes it in. -->
+  <!-- FeatherCsharpDir is where the SDK generated the bindings (and copied in
+       its bootstrap) from api/feather_api.json; the xmake target passes it in. -->
   <ItemGroup>
     <Compile Include="MyPlugin.cs" />
     <Compile Include="$(FeatherCsharpDir)/**/*.cs" />
+  </ItemGroup>
+
+  <!-- The bootstrap finds this plugin's [FeatherComponent]/[FeatherSystem]
+       types by reflecting over the assembly, and NativeAOT trims what it
+       cannot see being used. Rooting the assembly keeps those types and
+       methods, and the metadata needed to invoke them, in the published
+       binary. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MyPlugin" />
   </ItemGroup>
 
 </Project>

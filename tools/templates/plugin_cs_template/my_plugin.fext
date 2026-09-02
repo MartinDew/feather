@@ -2,8 +2,10 @@
     "fext_version": 1,
     "name": "my_plugin",
     "type": "native",
-    "entry": "register_my_plugin",
+    "entry": "feather_cs_plugin_entry",
     "libraries": {
-        "linux.x86_64": "bin/libmy_plugin.so"
+        "linux.x86_64": "bin/libmy_plugin.so",
+        "windows.x86_64": "bin/my_plugin.dll",
+        "macos.arm64": "bin/libmy_plugin.dylib"
     }
 }
