@@ -204,10 +204,27 @@ package("mrbind")
 
         -- No install() rules upstream: copy the three tool binaries out of
         -- the build tree by hand.
+        --
+        -- Checks both spellings rather than trusting is_plat("windows")
+        -- alone: this is a host = true package (thirdparty/xmake.lua), always
+        -- built for the machine actually running the build, and package:
+        -- is_plat() was observed disagreeing with that on Windows CI for the
+        -- otherwise-identical assert in tools/SDK/packages/mrbind_generators.lua
+        -- -- xmake itself logged "checking for platform ... windows (x64)" in
+        -- the same run where is_plat("windows") read false inside that
+        -- package's on_install. A Windows PE binary carries .exe regardless
+        -- of which compiler produced it, so accepting either spelling is
+        -- correct in every case, not just the one this was found in.
         local bindir = package:installdir("bin")
         for _, name in ipairs({"mrbind", "mrbind_gen_c", "mrbind_gen_csharp"}) do
-            local built = path.join(builddir, package:is_plat("windows") and (name .. ".exe") or name)
-            assert(os.isfile(built), "mrbind: expected build output missing: " .. built)
+            local preferred = os.host() == "windows" and (name .. ".exe") or name
+            local fallback = os.host() == "windows" and name or (name .. ".exe")
+            local built = path.join(builddir, preferred)
+            if not os.isfile(built) then
+                built = path.join(builddir, fallback)
+            end
+            assert(os.isfile(built), "mrbind: expected build output missing: "
+                .. path.join(builddir, preferred) .. " (also checked " .. fallback .. ")")
             os.cp(built, bindir)
         end
 
@@ -220,6 +237,6 @@ package("mrbind")
     end)
 
     on_test(function (package)
-        os.vrun(path.join(package:installdir("bin"), "mrbind" .. (package:is_plat("windows") and ".exe" or "")) .. " --help")
+        os.vrun(path.join(package:installdir("bin"), "mrbind" .. (os.host() == "windows" and ".exe" or "")) .. " --help")
     end)
 package_end()

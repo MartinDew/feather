@@ -156,6 +156,8 @@ bool Engine::run() {
 	std::signal(SIGTERM, &_on_terminate_signal);
 
 	// update
+	const int run_frames = LaunchSettings::get().run_frames.Get();
+	int frames_run = 0;
 	double accumulator = 0.0;
 	while (keep_running && !quit_requested) {
 		keep_running = _main_window.update();
@@ -177,6 +179,13 @@ bool Engine::run() {
 
 		// Tell the renderer to render here
 		_rendering_server.update(frame_time);
+
+		// --run-frames: a headless test hook, see launch_settings.h. Checked
+		// after the frame that reaches the target count has fully run, so its
+		// systems' output is never cut off mid-frame.
+		if (run_frames > 0 && ++frames_run >= run_frames) {
+			keep_running = false;
+		}
 	}
 
 	_rendering_server.stop();
