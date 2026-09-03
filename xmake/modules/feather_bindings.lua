@@ -667,6 +667,25 @@ function gen_c_flags_id()
     return hash.strhash128(table.concat(shape, "\0"))
 end
 
+-- The math types a C++ plugin defines itself rather than reaching through a
+-- wrapper: it compiles the same SimpleMath sources the engine did, so the
+-- generator aliases these and asserts the published layout.
+--
+-- Matrix is here too even though it is not an exposed struct: it still crosses
+-- as itself, just through a pointer to a copy.
+-- KEEP IN SYNC with native_math_types() in the SDK's
+-- tools/SDK/modules/feather_plugin_bindings.lua.
+function native_math_types()
+    return {
+        "DirectX::SimpleMath::Vector2",
+        "DirectX::SimpleMath::Vector3",
+        "DirectX::SimpleMath::Vector4",
+        "DirectX::SimpleMath::Quaternion",
+        "DirectX::SimpleMath::Color",
+        "DirectX::SimpleMath::Matrix",
+    }
+end
+
 -- The C++ types emitted as real C structs rather than opaque pointers, so they
 -- cross the ABI by value with a layout a consumer can rely on.
 --
@@ -884,6 +903,73 @@ function run_gen_c(target, opts)
 
     io.writefile(gen_c_stamp_path(), _gen_stamp_value(api_json_path(), gen_c_flags_id()))
     return _list_gen_c_sources(source_dir)
+end
+
+-- The flags feather_gen_cpp needs beyond its input and output paths. Shared so
+-- the engine's own generation and a plugin's cannot disagree about which types
+-- the consumer defines itself.
+-- KEEP IN SYNC with the SDK's gen_cpp_argv().
+function gen_cpp_shape_flags()
+    local argv = {}
+    for _, t in ipairs(native_math_types()) do
+        table.insert(argv, "--native-type")
+        table.insert(argv, t)
+        table.insert(argv, "SimpleMath.h")
+    end
+    -- The engine spells these unqualified in its own headers (core/math/math_defs.h);
+    -- a plugin gets the same spellings.
+    table.insert(argv, "--native-alias-namespace")
+    table.insert(argv, "feather")
+    return argv
+end
+
+-- Generates the C++ wrappers from the C generator's descriptor into
+-- opts.output_dir, and copies in the hand-written headers that go with them.
+function run_gen_cpp(target, opts)
+    opts = opts or {}
+    local output_dir = assert(opts.output_dir, "run_gen_cpp: opts.output_dir required")
+    local sdk_cpp_dir = assert(opts.sdk_cpp_dir, "run_gen_cpp: opts.sdk_cpp_dir required")
+
+    local desc_json = c_desc_json_path()
+    assert(os.isfile(desc_json),
+        "feather_bindings: " .. desc_json .. " is missing -- the C bindings must be generated first")
+
+    local flags = gen_cpp_shape_flags()
+    local flags_id = hash.strhash128(table.concat(flags, "\0"))
+
+    local stamp = output_dir .. ".stamp"
+    if _gen_outputs_fresh(stamp, desc_json, flags_id,
+            #os.files(path.join(output_dir, "**.hpp")) > 0) then
+        return output_dir
+    end
+
+    -- Staged and content-synced for the same reason as the other generators: an
+    -- unchanged regeneration must not bump mtimes on the emitted headers.
+    local stage = output_dir .. ".stage"
+    os.tryrm(stage)
+    os.mkdir(stage)
+
+    local argv = {"--input-json", desc_json, "--output-dir", stage, "--clean-output-dir"}
+    for _, f in ipairs(flags) do
+        table.insert(argv, f)
+    end
+
+    cprint("${cyan}[cpp_bindings]${reset} feather_gen_cpp -> %s", path.relative(output_dir, os.projectdir()))
+    os.vrunv(mrbind_bin(target, "feather_gen_cpp"), argv)
+
+    -- The hand-written half of the surface: the plugin entry point macro and
+    -- the ECS registration API, which describe a plugin rather than the engine
+    -- and so are not generated.
+    for _, f in ipairs(os.files(path.join(sdk_cpp_dir, "feather_cpp", "*.hpp"))) do
+        os.cp(f, path.join(stage, "feather_cpp", path.filename(f)))
+    end
+
+    os.mkdir(output_dir)
+    _sync_tree(stage, output_dir)
+    os.tryrm(stage)
+
+    io.writefile(stamp, _gen_stamp_value(desc_json, flags_id))
+    return output_dir
 end
 
 -- Generates the C# bindings from the C generator's descriptor into

@@ -49,6 +49,11 @@ option("enable_cs_bindings")
     set_description("Generate C# bindings from the C bindings' descriptor (build/bindings/csharp)")
 option_end()
 
+option("enable_cpp_bindings")
+    set_default(true)
+    set_description("Generate C++ wrappers from the C bindings' descriptor (build/bindings/cpp)")
+option_end()
+
 -- Ignored on windows/mingw, where it's treated as off: the module must be
 -- built by a Clang in MSVC-compatible mode against the official Python's ABI,
 -- which this repo's Windows toolchain setup doesn't cover yet (see

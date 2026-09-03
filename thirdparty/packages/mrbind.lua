@@ -20,6 +20,26 @@
 local FEATHER_GEN_CPP_DIR = path.join(path.directory(path.directory(os.scriptdir())),
     "tools", "SDK", "gen_cpp")
 
+-- Content hash of the grafted generator's sources, for the requiring side to
+-- pass as a package config. A package's install hash comes from the configs it
+-- was asked for, so one the package set itself would never invalidate it and an
+-- edit here would silently keep the old binary.
+-- Global, so an includes()'ing description file can call it.
+-- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+function feather_gen_cpp_rev(dir)
+    dir = dir or FEATHER_GEN_CPP_DIR
+    if not os.isdir(dir) then
+        return ""
+    end
+    local files = os.files(path.join(dir, "**"))
+    table.sort(files)
+    local parts = {}
+    for _, f in ipairs(files) do
+        table.insert(parts, path.relative(f, dir) .. ":" .. hash.sha256(f))
+    end
+    return hash.strhash128(table.concat(parts, "\0"))
+end
+
 package("mrbind")
     set_kind("binary")
     set_homepage("https://github.com/MeshInspector/mrbind")
@@ -42,23 +62,6 @@ package("mrbind")
 
     on_load(function (package)
         import("lib.detect.find_tool")
-
-        -- Content hash of the grafted generator's sources, as a config so the
-        -- install hash follows them: editing the generator reinstalls the
-        -- package instead of silently keeping a stale binary.
-        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
-        local rev = ""
-        local gen_cpp = FEATHER_GEN_CPP_DIR
-        if os.isdir(gen_cpp) then
-            local files = os.files(path.join(gen_cpp, "**"))
-            table.sort(files)
-            local parts = {}
-            for _, f in ipairs(files) do
-                table.insert(parts, path.relative(f, gen_cpp) .. ":" .. hash.sha256(f))
-            end
-            rev = hash.strhash128(table.concat(parts, "\0"))
-        end
-        package:config_set("gen_cpp_rev", rev)
 
         local llvm_config, suffix
         if not package:is_plat("windows") then

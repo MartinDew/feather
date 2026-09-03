@@ -35,6 +35,7 @@ function output_layout()
         source_dir = path.join(root, "unused-glue"),
         desc_json  = path.join(root, "desc.json"),
         csharp_dir = path.join(root, "csharp"),
+        cpp_dir    = path.join(root, "cpp"),
     }
 end
 
@@ -94,6 +95,40 @@ function exposed_struct_types()
         "DirectX::SimpleMath::Quaternion",
         "DirectX::SimpleMath::Color",
     }
+end
+
+-- The math types a C++ plugin defines itself rather than reaching through a
+-- wrapper: it compiles the same SimpleMath sources the engine did, so the
+-- generator aliases these and asserts the published layout.
+--
+-- Matrix is here too even though it is not an exposed struct: it still crosses
+-- as itself, just through a pointer to a copy.
+-- KEEP IN SYNC with native_math_types() in the engine's
+-- xmake/modules/feather_bindings.lua.
+function native_math_types()
+    return {
+        "DirectX::SimpleMath::Vector2",
+        "DirectX::SimpleMath::Vector3",
+        "DirectX::SimpleMath::Vector4",
+        "DirectX::SimpleMath::Quaternion",
+        "DirectX::SimpleMath::Color",
+        "DirectX::SimpleMath::Matrix",
+    }
+end
+
+-- KEEP IN SYNC with gen_cpp_shape_flags() in the engine's feather_bindings.lua.
+local function gen_cpp_shape_flags()
+    local argv = {}
+    for _, t in ipairs(native_math_types()) do
+        table.insert(argv, "--native-type")
+        table.insert(argv, t)
+        table.insert(argv, "SimpleMath.h")
+    end
+    -- The engine spells these unqualified in its own headers; a plugin gets the
+    -- same spellings.
+    table.insert(argv, "--native-alias-namespace")
+    table.insert(argv, "feather")
+    return argv
 end
 
 local function shape_flags()
@@ -225,9 +260,11 @@ local function sync_file(src, dst)
     end
 end
 
--- Generates the C headers, and with want_csharp the C# sources, that a plugin
--- compiles against. Returns the output layout.
-function generate(target, opts, want_csharp)
+-- Generates the C headers a plugin compiles against, plus the C# sources or C++
+-- wrappers when `langs` asks for them (`{csharp = true}` / `{cpp = true}`).
+-- Returns the output layout.
+function generate(target, opts, langs)
+    langs = langs or {}
     local api_json = assert(opts.api_json, "FeatherPluginSDK: opts.api_json is required")
     api_json = path.absolute(api_json, os.projectdir())
     assert(os.isfile(api_json), "FeatherPluginSDK: API file not found: " .. api_json
@@ -266,7 +303,7 @@ function generate(target, opts, want_csharp)
         write_gen_stamp(c_stamp, api_json)
     end
 
-    if want_csharp then
+    if langs.csharp then
         local bootstrap = path.join(sdk_dir(), "csharp", "FeatherPluginBootstrap.cs")
         assert(os.isfile(bootstrap),
             "FeatherPluginSDK: missing " .. bootstrap .. "\n"
@@ -306,6 +343,46 @@ function generate(target, opts, want_csharp)
             -- Generation skipped, but a vendored-SDK update can still change the
             -- bootstrap while desc.json stays put.
             sync_file(bootstrap, path.join(out.csharp_dir, path.filename(bootstrap)))
+        end
+    end
+
+    if langs.cpp then
+        local sdk_cpp = path.join(sdk_dir(), "cpp", "feather_cpp")
+        assert(os.isdir(sdk_cpp),
+            "FeatherPluginSDK: missing " .. sdk_cpp .. "\n"
+            .. "  Vendor the SDK's cpp/ directory alongside modules/ and packages/.")
+
+        local cpp_stamp = out.cpp_dir .. ".stamp"
+        if gen_stale(cpp_stamp, out.desc_json, #os.files(path.join(out.cpp_dir, "**.hpp")) > 0) then
+            local stage = out.cpp_dir .. ".stage"
+            os.tryrm(stage)
+            os.mkdir(stage)
+            cprint("${cyan}[feather]${reset} feather_gen_cpp -> %s",
+                path.relative(out.cpp_dir, os.projectdir()))
+
+            local argv = {"--input-json", out.desc_json, "--output-dir", stage, "--clean-output-dir"}
+            for _, f in ipairs(gen_cpp_shape_flags()) do
+                table.insert(argv, f)
+            end
+            os.vrunv(generator_bin(target, "feather_gen_cpp"), argv)
+
+            -- Staged alongside the generated headers so sync_tree treats them as
+            -- one set: these describe a plugin rather than the engine, so they
+            -- are hand-written and shipped rather than generated.
+            for _, f in ipairs(os.files(path.join(sdk_cpp, "*.hpp"))) do
+                os.cp(f, path.join(stage, "feather_cpp", path.filename(f)))
+            end
+
+            os.mkdir(out.cpp_dir)
+            sync_tree(stage, out.cpp_dir)
+            os.tryrm(stage)
+            write_gen_stamp(cpp_stamp, out.desc_json)
+        else
+            -- Generation skipped, but a vendored-SDK update can still change the
+            -- hand-written headers while desc.json stays put.
+            for _, f in ipairs(os.files(path.join(sdk_cpp, "*.hpp"))) do
+                sync_file(f, path.join(out.cpp_dir, "feather_cpp", path.filename(f)))
+            end
         end
     end
 

@@ -14,10 +14,10 @@ package("directxmath_feather")
             os.cp(path.join("Inc", "*.h"),   dst_inc)
             os.cp(path.join("Inc", "*.inl"), dst_inc)
         end
-        -- os.scriptdir() is thirdparty/packages/, go up two levels to the
-        -- engine root. Not os.projectdir(): a downstream consumer's build
-        -- would resolve that to the wrong repo.
-        local sal_src = path.join(path.directory(path.directory(os.scriptdir())), "thirdparty", "DirectXMath", "sal.h")
+        -- os.scriptdir() is <sdk>/packages, so the vendored sal.h is one level
+        -- up. Not os.projectdir(): a downstream consumer's build would resolve
+        -- that to the wrong repo.
+        local sal_src = path.join(path.directory(os.scriptdir()), "thirdparty", "DirectXMath", "sal.h")
         if os.isfile(sal_src) then
             os.cp(sal_src, dst_inc)
         end

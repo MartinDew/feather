@@ -3,6 +3,12 @@ for _, pkg_file in ipairs(os.files(path.join(os.scriptdir(), "packages", "*.lua"
     includes(pkg_file)
 end
 
+-- DirectXMath's package lives in the SDK instead, next to the SimpleMath
+-- sources it supplies a sal.h shim for: a plugin vendors both and builds the
+-- same math types the engine did, which is what lets those types cross the C
+-- boundary as themselves. One definition, used from both sides.
+includes(path.join(path.directory(os.scriptdir()), "tools", "SDK", "packages", "directxmath.lua"))
+
 -- CMake's Development config mapped to RelWithDebInfo, so thirdparties built in
 -- release mode; mirror that by only requesting debug packages in debug mode.
 if is_mode("debug") then
@@ -73,11 +79,17 @@ end
 -- generator, a host tool nothing links against. Required here so it's built
 -- at `xmake f` time -- but only when a bindings module actually needs it,
 -- since without a system Clang install the package builds LLVM from source.
-if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
+if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings", "enable_cpp_bindings") then
     -- host = true: mrbind is a build tool this machine runs, not something the
     -- engine links. Without it a cross-compile (mingw, say) would build the
     -- parser for the target and then be unable to execute it.
-    add_requires("mrbind", {system = false, alias = "mrbind", host = true})
+    --
+    -- gen_cpp_rev is passed here rather than computed inside the package: a
+    -- package's install hash comes from the configs the requiring side asks
+    -- for, so a config the package sets itself would never invalidate it, and
+    -- editing the grafted generator would silently keep the old binary.
+    add_requires("mrbind", {system = false, alias = "mrbind", host = true,
+        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(path.directory(os.scriptdir()), "tools", "SDK", "gen_cpp"))}})
 
     -- Windows always takes mrbind's libllvm path (see packages/mrbind.lua's
     -- on_load). Required directly, not just transitively, so the bindings

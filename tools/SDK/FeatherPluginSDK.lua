@@ -46,9 +46,14 @@ local SDK_DIR = os.scriptdir()
 function feather_plugin_sdk_init()
     add_moduledirs(path.join(SDK_DIR, "modules"))
     includes(path.join(SDK_DIR, "packages", "mrbind_generators.lua"))
+    -- Header-only, and the C++ wrappers alias its types rather than wrapping
+    -- them; a C or C# plugin never resolves it.
+    includes(path.join(SDK_DIR, "packages", "directxmath.lua"))
+    add_requires("directxmath_feather", {system = false, alias = "directxmath"})
     -- host = true: these are build tools this machine runs, not libraries the
     -- plugin links, so a cross-compiling plugin build still gets runnable ones.
-    add_requires("mrbind_generators", {system = false, host = true})
+    add_requires("mrbind_generators", {system = false, host = true,
+        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(SDK_DIR, "gen_cpp"))}})
 end
 
 -- Shared link setup: a plugin links nothing of the engine's.
@@ -117,7 +122,73 @@ function feather_c_plugin(name, opts)
         -- fine, and set_values() cannot carry a table.
         on_config(function (target)
             import("feather_plugin_bindings")
-            local out = feather_plugin_bindings.generate(target, opts, false)
+            local out = feather_plugin_bindings.generate(target, opts, {})
+            feather_plugin_bindings.apply_windows_link(target, opts, out)
+        end)
+    target_end()
+end
+
+-- Declares a C++ extension. Unlike the old C++ path, this needs no engine
+-- checkout: it compiles the generated wrappers, which resolve to the same flat
+-- feather_* symbols a C plugin uses.
+--
+--   opts.files             sources (string or list), required
+--   opts.api_json          the designated API file, required
+--   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
+--   opts.engine_binary     Windows only: the file name of the engine executable
+--                          the plugin will be loaded into. Defaults to
+--                          "feather.exe"; the import table records it, so a
+--                          renamed host needs it set.
+function feather_cpp_plugin(name, opts)
+    opts = opts or {}
+
+    -- The description scope has no assert(); report and skip rather than
+    -- failing with an opaque error from add_files().
+    if not opts.files then
+        print("FeatherPluginSDK: feather_cpp_plugin(\"" .. name .. "\") needs opts.files; skipping.")
+        return
+    end
+
+    target(name)
+        set_kind("shared")
+        set_basename(name)
+        set_languages("cxx23")
+        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll. The
+        -- .fext manifest has to name one file, so pin the spelling that does
+        -- not depend on which toolchain built it.
+        if is_plat("windows", "mingw") then
+            set_prefixname("")
+        end
+        -- Flat, not bin/$(mode): the engine finds extensions by walking the
+        -- project directory, and a per-mode subdirectory would leave stale
+        -- copies of other configurations for it to load too.
+        set_targetdir(path.join(os.projectdir(), "bin"))
+        add_files(opts.files)
+        -- The same SimpleMath the engine compiled. Building it here rather than
+        -- linking the engine's is what makes the math types cross as themselves:
+        -- the layouts agree because the sources do, and the generated headers
+        -- assert it.
+        add_files(path.join(SDK_DIR, "thirdparty", "SimpleMath", "SimpleMath.cpp"))
+        add_includedirs(path.join(SDK_DIR, "thirdparty", "SimpleMath"))
+        add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
+        -- Generated before the compiler runs; see on_config below.
+        add_includedirs(
+            path.join(os.projectdir(), "build", "feather_bindings", "include"),
+            path.join(os.projectdir(), "build", "feather_bindings", "cpp"))
+        add_packages("mrbind_generators", "directxmath")
+
+        -- Only the entry point is meant to be findable; everything else,
+        -- including this plugin's own copy of SimpleMath's statics, stays
+        -- private to the library.
+        if not is_plat("windows") then
+            add_cxflags("-fvisibility=hidden")
+        end
+
+        apply_plugin_link_setup()
+
+        on_config(function (target)
+            import("feather_plugin_bindings")
+            local out = feather_plugin_bindings.generate(target, opts, {cpp = true})
             feather_plugin_bindings.apply_windows_link(target, opts, out)
         end)
     target_end()
@@ -151,7 +222,7 @@ function feather_cs_plugin(name, opts)
 
         on_build(function (target)
             import("feather_plugin_bindings")
-            local out = feather_plugin_bindings.generate(target, opts, true)
+            local out = feather_plugin_bindings.generate(target, opts, {csharp = true})
             feather_plugin_bindings.publish_csharp(target, opts, out)
         end)
     target_end()
