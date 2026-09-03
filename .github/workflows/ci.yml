@@ -85,7 +85,7 @@ jobs:
           path: |
             ~/AppData/Local/.xmake/packages/**/m/mrbind
             ~/AppData/Local/.xmake/packages/**/m/mrbind_generators
-          key: mrbind-${{ matrix.mode }}-${{ hashFiles('thirdparty/packages/mrbind.lua', 'tools/SDK/packages/mrbind_generators.lua') }}
+          key: mrbind-${{ matrix.mode }}-${{ hashFiles('thirdparty/packages/mrbind.lua', 'tools/SDK/packages/mrbind_generators.lua', 'tools/SDK/gen_cpp/**') }}
           restore-keys: mrbind-${{ matrix.mode }}-
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
@@ -239,6 +239,11 @@ jobs:
           check build/bindings/csharp
           # The generated C headers a plugin includes through.
           check build/bindings/c/include/feather_c
+          # The C++ wrappers, and the hand-written headers shipped beside them.
+          check build/bindings/cpp/feather_cpp/feather.hpp
+          check build/bindings/cpp/feather_cpp/math.hpp
+          check build/bindings/cpp/feather_cpp/plugin.hpp
+          check build/bindings/cpp/feather_cpp/scripted_abi.hpp
           if [ "$RUNNER_OS" != "Windows" ]; then
             check build/bindings/python/feather.so
           fi
@@ -369,6 +374,59 @@ jobs:
             exit 1
           fi
           xmake build
+
+      # Same, for plugin_cpp_template. This is the one that proves a C++ plugin
+      # needs no engine checkout: it compiles the generated wrappers and the
+      # SDK's vendored SimpleMath, and links nothing.
+      - name: Build the C++ plugin template (consumer smoke test)
+        if: matrix.mode == 'debug'
+        shell: bash
+        run: |
+          set -e
+          smoke="${{ runner.temp }}/consumer-smoke-cpp"
+          rm -rf "$smoke"
+          mkdir -p "$smoke/sdk" "$smoke/api"
+          cp -r tools/templates/plugin_cpp_template/* "$smoke/"
+          cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
+          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/cpp tools/SDK/gen_cpp tools/SDK/thirdparty "$smoke/sdk/"
+          cp build/bindings/dist/*.json "$smoke/api/"
+          cd "$smoke"
+          if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then
+            echo "---- xmake f failed; dumping failed package install logs ----"
+            for root in ~/.xmake/cache/packages ~/AppData/Local/.xmake/cache/packages; do
+              [ -d "$root" ] || continue
+              find "$root" -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read -r f; do
+                echo "========== $f =========="
+                tail -300 "$f"
+              done
+            done
+            exit 1
+          fi
+          xmake build
+
+      # The property the whole plugin design rests on: a built plugin needs
+      # nothing from the engine but flat C symbols. A mangled feather symbol
+      # here would mean a C++ ABI crept back in, which links fine on ELF and
+      # only fails once the engine is built with a different compiler.
+      - name: Check plugins need only the C ABI
+        if: matrix.mode == 'debug' && runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
+          for smoke in consumer-smoke-c consumer-smoke-cpp; do
+            lib=$(find "${{ runner.temp }}/$smoke/bin" -name "*.so" | head -1)
+            if [ -z "$lib" ]; then echo "no plugin built for $smoke"; exit 1; fi
+            if nm -D --undefined-only "$lib" | grep -qE "_ZN7feather|_ZN5flecs"; then
+              echo "$smoke: needs C++ symbols from the engine"
+              nm -D --undefined-only "$lib" | grep -E "_ZN7feather|_ZN5flecs" | head
+              exit 1
+            fi
+            if readelf -d "$lib" | grep -qE "NEEDED.*feather|RUNPATH.*Feather"; then
+              echo "$smoke: links or points into an engine build tree"
+              exit 1
+            fi
+            echo "ok: $(basename "$lib") needs only the flat C ABI"
+          done
 
       # Same, for plugin_cs_template. Needs the .NET SDK (installed below);
       # NativeAOT itself needs no separate workload, just the platform's own

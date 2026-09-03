@@ -55,7 +55,7 @@ cd ../feather-example-project && examples/run_examples_test.sh                 #
 examples/run_examples_test.sh /path/to/FeatherEngine                            # or name one explicitly
 ```
 
-CI (`.github/workflows/ci.yml`) matrixes Linux (gcc) and Windows (clang-cl) × {debug, releasedbg, release}: builds the engine, checks the bindings output and exported symbol counts, runs `export-api`, then builds the plugin SDK's C and C# templates as standalone smoke tests (no engine checkout, just the exported API) to exercise what an external plugin author actually does.
+CI (`.github/workflows/ci.yml`) matrixes Linux (gcc) and Windows (clang-cl) × {debug, releasedbg, release}: builds the engine, checks the bindings output and exported symbol counts, runs `export-api`, then builds the plugin SDK's C, C++ and C# templates as standalone smoke tests (no engine checkout, just the exported API) to exercise what an external plugin author actually does, and asserts the resulting plugins need nothing from the engine but flat C symbols.
 
 ## Architecture
 
