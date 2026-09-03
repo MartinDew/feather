@@ -3,7 +3,6 @@
 #include "simulation.h"
 
 #include <framework/delegate.h>
-#include <framework/export_defs.h>
 #include <framework/reflection_macros.h>
 #include <world/components/scene.h>
 #include <world/ecs_defs.h>
@@ -17,7 +16,7 @@
 
 namespace feather {
 
-class FEATHER_API WorldSim final : public Simulation {
+class WorldSim final : public Simulation {
 	FCLASS(singleton);
 
 	World _world;

@@ -53,7 +53,6 @@ for _, p in ipairs({
     "core/resources/texture.cpp",
     "core/resources/texture_format_loader.cpp",
     "core/resources/extension.cpp",
-    "core/resources/extension_format_loader.cpp",
     "core/resources/extension_loading.cpp",
     "core/resources/script_extension_runner.cpp",
     "core/resources/fext_format_loader.cpp",
@@ -132,7 +131,6 @@ if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
         add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
         add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
 
-        add_defines("FEATHER_BUILDING_ENGINE")
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end
@@ -166,10 +164,6 @@ target("feather")
     add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
     add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
 
-    -- Flips FEATHER_API to dllexport; consumer DLLs never define this, so
-    -- they get dllimport and resolve against this exe's import lib.
-    add_defines("FEATHER_BUILDING_ENGINE")
-
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
     end
@@ -187,7 +181,9 @@ target("feather")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
-        -- Lets a dlopen'd project DLL resolve engine symbols at runtime.
+        -- Exports the engine's own symbols to what it dlopens: the generated C
+        -- bindings a plugin calls, and the engine symbols py_bindings leaves
+        -- undefined.
         add_ldflags("-rdynamic", {force = true})
     end
 

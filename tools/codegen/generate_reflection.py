@@ -53,15 +53,11 @@ ACCESS_ENUM = {"public": "AccessLevel::Public", "protected": "AccessLevel::Prote
 _FCLASS_RE = re.compile(r"\b(FCLASS|FSTRUCT)\b\s*\(([^)]*)\)")
 _ATTR_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
-# `class Name ... {` / `struct Name ... {`, optionally an export macro
-# (FEATHER_API, see core/framework/export_defs.h), optionally `final`,
-# optionally a base-clause. Requires the opening `{` right after, so a
-# forward declaration ("class Foo;") never matches.
-#
-# Matches the literal "FEATHER_API" only, not generic \w+: a generic token
-# there would greedily misparse "class Foo final {" as name="final".
+# `class Name ... {` / `struct Name ... {`, optionally `final`, optionally a
+# base-clause. Requires the opening `{` right after, so a forward declaration
+# ("class Foo;") never matches.
 _CLASS_DEF_RE = re.compile(
-    r"\b(class|struct)\s+(?:FEATHER_API\s+)?(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
+    r"\b(class|struct)\s+(\w+)\b\s*(?:final\s*)?(?::\s*([^{;]*))?\{"
 )
 
 _ACCESS_SPEC_RE = re.compile(r"\s*(public|protected|private)\s*:")

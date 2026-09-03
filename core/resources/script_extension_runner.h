@@ -1,7 +1,6 @@
 #pragma once
 
 #include <core/framework/path.h>
-#include <framework/export_defs.h>
 
 #include <functional>
 #include <string>
@@ -19,10 +18,10 @@ namespace feather {
 // Returns false if the script could not be run; the loader reports it.
 using ScriptExtensionRunner = std::function<bool(const Path& script)>;
 
-FEATHER_API void register_script_extension_runner(std::string type, ScriptExtensionRunner runner);
+void register_script_extension_runner(std::string type, ScriptExtensionRunner runner);
 
 // Null when nothing has registered that type -- typically because the module
 // providing it wasn't built into this engine.
-FEATHER_API const ScriptExtensionRunner* find_script_extension_runner(const std::string& type);
+const ScriptExtensionRunner* find_script_extension_runner(const std::string& type);
 
 } // namespace feather

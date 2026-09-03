@@ -106,10 +106,8 @@ target("bindings_api")
     end
 
     -- Same defines the engine's own targets set (xmake/engine.lua,
-    -- feather_module_target). Without them the parse sees a different API
-    -- than the one that actually gets compiled: FEATHER_API flips between
-    -- dllexport and dllimport, and #if BETA members disappear.
-    add_defines("FEATHER_BUILDING_ENGINE")
+    -- feather_module_target); without them the parse sees a different API than
+    -- the one that gets compiled, since #if BETA members would disappear.
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
     end

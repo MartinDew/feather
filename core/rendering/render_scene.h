@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "framework/cow_vector.h"
-#include "framework/export_defs.h"
 #include "math/projection.h"
 #include "math/transform.h"
 #include "mesh_data.h"
@@ -18,7 +17,7 @@ class Material;
 
 struct Light;
 
-class FEATHER_API RenderScene : public Reflected {
+class RenderScene : public Reflected {
 	FCLASS();
 
 public:

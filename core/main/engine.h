@@ -15,7 +15,7 @@ using TimePoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
 struct Main;
 
-class FEATHER_API Engine {
+class Engine {
 	friend Main;
 	static Engine* _instance;
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <framework/export_defs.h>
-
 #include <cstdint>
 #include <memory>
 
@@ -32,30 +30,30 @@ enum class InitLevel : uint8_t {
 
 inline constexpr uint8_t INIT_LEVEL_COUNT = static_cast<uint8_t>(InitLevel::Max);
 
-FEATHER_API const char* to_string(InitLevel level);
+const char* to_string(InitLevel level);
 
 // The signature every extension entry point must have. Called once per level
 // the engine enters, ascending, and once per level it leaves, descending.
 using ExtensionEntryFn = void (*)(InitLevel);
 
 // The deepest level entered so far, or nothing before the first enter_init_level().
-FEATHER_API bool has_entered_init_level(InitLevel level);
+bool has_entered_init_level(InitLevel level);
 
 // Enters `level`: registers every built-in module and every loaded extension
 // at that level. Levels must be entered in ascending order, each exactly once
 // (Editor may be skipped -- see above).
-FEATHER_API void enter_init_level(InitLevel level);
+void enter_init_level(InitLevel level);
 
 // Leaves `level`, unregistering the built-in modules registered at it.
-FEATHER_API void exit_init_level(InitLevel level);
+void exit_init_level(InitLevel level);
 
 // Leaves every entered level, deepest first.
-FEATHER_API void exit_all_init_levels();
+void exit_all_init_levels();
 
-// Called by ExtensionFormatLoader once an extension's entry point resolves.
+// Called by FextFormatLoader once an extension's entry point resolves.
 // The extension is caught up immediately: its entry point is called once for
 // every level already entered, so an extension loaded mid-startup sees the
 // same level sequence as one that was there from the beginning.
-FEATHER_API void register_extension_entry(const std::shared_ptr<Extension>& extension, ExtensionEntryFn entry);
+void register_extension_entry(const std::shared_ptr<Extension>& extension, ExtensionEntryFn entry);
 
 } //namespace feather

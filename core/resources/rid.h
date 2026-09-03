@@ -1,14 +1,12 @@
 ﻿#pragma once
 
-#include <framework/export_defs.h>
-
 #include <cstddef>
 #include <iomanip>
 #include <type_traits>
 
 namespace feather {
 
-struct FEATHER_API RID {
+struct RID {
 	size_t id { 0 };
 
 	static constexpr RID invalid();

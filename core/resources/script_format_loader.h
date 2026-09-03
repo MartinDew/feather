@@ -1,7 +1,6 @@
 #pragma once
 
 #include "resource_format_loader.h"
-#include <framework/export_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "script_format_loader.gen.h"
@@ -21,7 +20,7 @@ namespace feather {
 // A .fext manifest of type "python" still works and is still the way to give a
 // script a name and a declared type; this is the lighter path, for a project
 // that just wants to drop a script in.
-class FEATHER_API ScriptFormatLoader : public ResourceFormatLoader {
+class ScriptFormatLoader : public ResourceFormatLoader {
 	FCLASS();
 
 protected:

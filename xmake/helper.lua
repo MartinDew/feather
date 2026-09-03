@@ -78,7 +78,6 @@ function feather_module_target(name, module_dir, files, opts)
         end
         add_defines(name .. "_ENABLED", {public = true})
         -- Not {public=true}: a consumer must never see this define.
-        add_defines("FEATHER_BUILDING_ENGINE")
         if is_mode("debug", "releasedbg") then
             add_defines("BETA")
         end

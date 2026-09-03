@@ -339,7 +339,6 @@ function api_parser_flags()
         -- of the two extension loaders (core/resources/extension_loading.h).
         -- It is not part of the API a plugin talks to, and being unexported it
         -- cannot be linked from outside the engine at all.
-        "--ignore", "feather::probe_legacy_extension",
         "--ignore", "feather::resolve_and_register_extension_entry",
         -- Likewise the resolved layout of a scripted component
         -- (core/world/scripted_component.h). Its fields are std::function
@@ -829,7 +828,7 @@ function run_gen_c(target, opts)
         "--output-source-dir", stage_sources,
         "--helper-name-prefix", opts.helper_prefix or "Feather_",
         -- NOT "FEATHER_": the generated exports.h would then define
-        -- FEATHER_API, which core/framework/export_defs.h already defines
+        -- FEATHER_API, a name core/framework/export_defs.h used to define
         -- unconditionally. A generated .cpp includes both, so on Windows the
         -- generated functions would be declared dllimport at their own
         -- definitions (or the two definitions would just collide). Harmless on

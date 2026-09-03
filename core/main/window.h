@@ -1,7 +1,6 @@
 #pragma once
 
 #include "framework/delegate.h"
-#include "framework/export_defs.h"
 #include "notification.h"
 
 #include <SDL3/SDL_events.h>
@@ -10,7 +9,7 @@ struct SDL_Window;
 
 namespace feather {
 
-class FEATHER_API Window {
+class Window {
 	friend class Renderer;
 
 public:

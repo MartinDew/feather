@@ -1,7 +1,6 @@
 #pragma once
 
 #include "framework/cow_vector.h"
-#include "framework/export_defs.h"
 #include <math/math_defs.h>
 #include <array>
 #include <vector>
@@ -10,7 +9,7 @@ namespace feather {
 
 using Index = uint32_t;
 
-class FEATHER_API MeshData {
+class MeshData {
 public:
 	MeshData() = default;
 	MeshData(std::vector<Vertex> vertices, std::vector<Index> indices);

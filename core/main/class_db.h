@@ -18,7 +18,7 @@
 
 namespace feather {
 
-class FEATHER_API ClassDB {
+class ClassDB {
 	friend Variant;
 	friend struct Main;
 	FDECLARE_SINGLETON(ClassDB);

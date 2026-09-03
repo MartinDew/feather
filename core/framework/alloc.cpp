@@ -7,10 +7,6 @@
 #include <malloc.h>
 #endif
 
-// Guarded on FEATHER_BUILDING_ENGINE: a consumer only has the dllimport
-// declaration for these, and defining them there wouldn't compile.
-#if defined(FEATHER_BUILDING_ENGINE)
-
 extern "C" void* feather_alloc(std::size_t size) {
 	return std::malloc(size);
 }
@@ -38,11 +34,8 @@ extern "C" void feather_free_aligned(void* ptr, std::size_t alignment) noexcept 
 #endif
 }
 
-#endif // FEATHER_BUILDING_ENGINE
-
 // Not `inline` -- replaceable global allocation/deallocation functions
-// aren't allowed to be. Each binary (engine + every consumer DLL) compiles
-// this file once, giving it exactly one definition per link unit.
+// aren't allowed to be.
 
 void* operator new(std::size_t size) {
 	if (void* ptr = feather_alloc(size)) {

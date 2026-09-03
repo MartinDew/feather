@@ -4,7 +4,6 @@
 #include "resource_format_loader.h"
 #include "rid.h"
 
-#include <framework/export_defs.h>
 #include <framework/reflected.h>
 #include <framework/reflection_macros.h>
 
@@ -16,7 +15,7 @@
 
 namespace feather {
 
-class FEATHER_API ResourceLoader : public Reflected {
+class ResourceLoader : public Reflected {
 	FCLASS(singleton);
 
 	std::atomic<size_t> m_counter { 1 };

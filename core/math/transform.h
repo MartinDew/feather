@@ -1,7 +1,6 @@
 #pragma once
 
 #include "math_defs.h"
-#include <framework/export_defs.h>
 #include <framework/reflection_macros.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
@@ -10,7 +9,7 @@
 
 namespace feather {
 
-struct FEATHER_API Transform {
+struct Transform {
 	FSTRUCT(Component);
 
 	// Feather uses right-handed coordinates

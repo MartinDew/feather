@@ -1,14 +1,13 @@
 #pragma once
 
 #include "callable.h"
-#include "export_defs.h"
 
 #include <memory>
 #include <string>
 
 namespace feather {
 
-class FEATHER_API SharedLibrary {
+class SharedLibrary {
 	void* _handle;
 
 public:

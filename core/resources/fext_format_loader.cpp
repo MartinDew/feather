@@ -153,31 +153,18 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 		return nullptr;
 	}
 
-	std::shared_ptr<Extension> ext;
 	const auto entry_point = manifest.value("entry", std::string {});
 	if (entry_point.empty()) {
-		// No entry named: the library is expected to hand back an Extension
-		// the old way. Lets a C++ extension adopt a manifest -- for the
-		// explicit declaration and the skipped probing -- without changing
-		// any of its code.
-		ext = probe_legacy_extension(lib, library_path, "FextFormatLoader");
-		if (!ext) {
-			std::cerr << "FextFormatLoader: Extension '" << name
-					  << "' declares no \"entry\" and its library exports no _load_extension: " << library_path
-					  << std::endl;
-			return nullptr;
-		}
-	} else {
-		ext = std::make_shared<Extension>(name, entry_point);
+		std::cerr << "FextFormatLoader: Extension '" << name << "' declares no \"entry\": " << path << std::endl;
+		return nullptr;
 	}
 
+	auto ext = std::make_shared<Extension>(name, entry_point);
 	ext->_library_handle = lib;
 	ext->set_path(path);
 
-	// The project walk would otherwise reach this library on its own and try
-	// to open it a second time. Harmless for a manifest-style plugin, which
-	// exports no _load_extension for the probe to find, but a C++ extension
-	// using a manifest for its declaration would genuinely load twice.
+	// Claims the library so the project walk does not reach it on its own and
+	// open it a second time.
 	ResourceLoader::get()->alias_resource_path(library_path, ext);
 
 	return ext;

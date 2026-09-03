@@ -1,7 +1,6 @@
 #pragma once
 
 #include "rid.h"
-#include <core/framework/export_defs.h>
 #include <core/framework/reflected.h>
 #include <core/framework/reflection_macros.h>
 
@@ -11,7 +10,7 @@
 
 namespace feather {
 
-class FEATHER_API Resource : public Reflected {
+class Resource : public Reflected {
 	FCLASS();
 	friend class ResourceLoader;
 

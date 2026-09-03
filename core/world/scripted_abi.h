@@ -67,7 +67,7 @@ typedef void (*FeatherScriptSystemFn)(
 
 // Returns the component id, or 0 on failure. On failure `error` receives a
 // message (truncated to error_size, always null-terminated) when non-null.
-FEATHER_NO_BIND FEATHER_API uint64_t feather_script_define_component(
+FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_component(
 		const char* name,
 		int32_t field_count,
 		const char* const* field_names,
@@ -79,7 +79,7 @@ FEATHER_NO_BIND FEATHER_API uint64_t feather_script_define_component(
 // Returns the system id, or 0 on failure. `user_data` is handed back to the
 // callback untouched; it is never freed, since the engine cannot know what it
 // is. The callback outlives the call and must remain valid for the process.
-FEATHER_NO_BIND FEATHER_API uint64_t feather_script_define_system(
+FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_system(
 		const char* name,
 		int32_t component_count,
 		const char* const* component_names,
@@ -92,22 +92,22 @@ FEATHER_NO_BIND FEATHER_API uint64_t feather_script_define_system(
 
 // Returns the entity id, or 0 on failure. An empty or null name makes an
 // unnamed entity.
-FEATHER_NO_BIND FEATHER_API uint64_t feather_script_create_entity(const char* name);
+FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_create_entity(const char* name);
 
 // Non-zero on success.
-FEATHER_NO_BIND FEATHER_API int32_t feather_script_add_component(uint64_t entity, const char* component_name);
+FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_add_component(uint64_t entity, const char* component_name);
 
 // A handle to one component of one entity, for use outside a system callback.
 // Valid until the entity's archetype changes -- adding or removing a component
 // moves its storage -- so it is meant to be used and dropped.
-FEATHER_NO_BIND FEATHER_API void* feather_script_component_handle(uint64_t entity, const char* component_name);
+FEATHER_NO_BIND FEATHER_C_ABI void* feather_script_component_handle(uint64_t entity, const char* component_name);
 
 // How many fields a component has, or -1 if it names no registered component.
-FEATHER_NO_BIND FEATHER_API int32_t feather_script_field_count(const char* component_name);
+FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_field_count(const char* component_name);
 
 // Describes one field. `out_name` receives a pointer to a string owned by the
 // engine and valid for the process. Non-zero on success.
-FEATHER_NO_BIND FEATHER_API int32_t feather_script_field_info(
+FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_field_info(
 		const char* component_name,
 		int32_t index,
 		const char** out_name,
@@ -116,7 +116,7 @@ FEATHER_NO_BIND FEATHER_API int32_t feather_script_field_info(
 
 // Reads a field into `values`, writing how many doubles it used to
 // `out_count`. Non-zero on success.
-FEATHER_NO_BIND FEATHER_API int32_t feather_script_get_field(
+FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_get_field(
 		void* component_handle,
 		const char* component_name,
 		const char* field_name,
@@ -127,7 +127,7 @@ FEATHER_NO_BIND FEATHER_API int32_t feather_script_get_field(
 
 // Writes a field from `values`. Non-zero on success; fails if the count does
 // not match what the field's type needs.
-FEATHER_NO_BIND FEATHER_API int32_t feather_script_set_field(
+FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_set_field(
 		void* component_handle,
 		const char* component_name,
 		const char* field_name,

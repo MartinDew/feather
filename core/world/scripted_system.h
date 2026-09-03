@@ -3,7 +3,6 @@
 #include "ecs_defs.h"
 
 #include <framework/class_info.h>
-#include <framework/export_defs.h>
 
 #include <functional>
 #include <span>
@@ -56,7 +55,7 @@ using ScriptedSystemCallback = std::function<void(const ScriptedSystemInvocation
 //
 // Returns the flecs system id, or 0 on failure, writing the reason to *error
 // when given one.
-FEATHER_API Ecs::entity_t register_scripted_system(
+Ecs::entity_t register_scripted_system(
 		World& world,
 		const std::string& name,
 		const std::vector<std::string>& component_names,

@@ -1,6 +1,5 @@
 #pragma once
 #include "container_utils.h"
-#include "export_defs.h"
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
@@ -9,7 +8,7 @@ namespace feather {
 
 class Variant;
 
-class FEATHER_API VariantArray {
+class VariantArray {
 	class Buffer;
 	std::unique_ptr<Buffer> _buffer;
 

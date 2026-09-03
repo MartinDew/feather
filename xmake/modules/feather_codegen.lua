@@ -49,7 +49,7 @@ local function _resolve_extensions(extensions_opt)
     return out
 end
 
--- feather_root defaults to os.projectdir(); FeatherSDK.lua passes an
+-- feather_root defaults to os.projectdir(); a caller may pass an
 -- explicit one for a downstream project.
 local function common_argv(extra, feather_root, project_root)
     feather_root = feather_root or os.projectdir()
@@ -102,41 +102,4 @@ function run_module_codegen(module_dir, opts)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py --module-path %s", module_dir)
     os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
-end
-
--- Runs generate_reflection.py for a downstream "project DLL" repo: only its
--- own source dirs, never core (--skip-core).
---
--- dirs: plain path strings, "name=dir" strings, or {dir=..., name=...};
--- name overrides the generated register_<name>_types symbol.
-function run_project_codegen(feather_root, project_root, dirs, opts)
-    opts = opts or {}
-    local extensions = _resolve_extensions(opts.extensions)
-
-    local abs_dirs = {}
-    local extra = {"--skip-core"}
-    for _, entry in ipairs(dirs or {}) do
-        local d, name
-        if type(entry) == "table" then
-            d, name = entry.dir, entry.name
-        else
-            local n, sep, rest = entry:match("^([^=]*)(=?)(.*)$")
-            if sep == "=" then
-                d, name = rest, n
-            else
-                d = entry
-            end
-        end
-        local abs = path.absolute(d, project_root)
-        table.insert(abs_dirs, abs)
-        table.insert(extra, "--module-path")
-        table.insert(extra, name and (name .. "=" .. abs) or abs)
-    end
-    for _, a in ipairs(_extension_argv(extensions, abs_dirs)) do
-        table.insert(extra, a)
-    end
-    local argv = common_argv(extra, feather_root, project_root)
-
-    cprint("${cyan}[codegen]${reset} generate_reflection.py --skip-core (project: %s)", project_root)
-    os.vrunv("python3", argv, {curdir = project_root})
 end

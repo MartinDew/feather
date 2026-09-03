@@ -10,20 +10,10 @@ namespace feather {
 class Extension;
 class SharedLibrary;
 
-// The two steps every extension goes through once its library is mapped,
-// shared by the loaders that can produce one: ExtensionFormatLoader, which
-// discovers extensions by probing every shared library in the project, and
-// FextFormatLoader, which is told about them by a manifest.
+// The last step an extension goes through once its library is mapped.
 //
-// Neither helper touches Extension's private library handle -- the calling
-// loader owns that, and is the friend that may set it.
-
-// Builds an Extension from a library exporting the legacy
-// _load_extension/_destroy_extension pair. Returns nullptr when
-// _load_extension is absent, which just means the library isn't a feather
-// extension; anything else that goes wrong is reported against `loader_name`.
-std::shared_ptr<Extension> probe_legacy_extension(
-		const std::shared_ptr<SharedLibrary>& lib, const Path& path, std::string_view loader_name);
+// This does not touch Extension's private library handle -- the calling loader
+// owns that, and is the friend that may set it.
 
 // Resolves the extension's entry point in `lib` and hands it to the
 // init-level machinery, which catches it up on every level already entered.

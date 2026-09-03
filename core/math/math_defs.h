@@ -3,8 +3,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <framework/export_defs.h>
-
 #include <DirectXMath.h>
 #include <SimpleMath.h>
 
@@ -33,7 +31,7 @@ using Vector4i = DirectX::XMINT4;
 using Vector3i = DirectX::XMINT3;
 using Vector2i = DirectX::XMINT2;
 
-struct FEATHER_API Vertex {
+struct Vertex {
 	Vector3 position;
 	Vector3 normal;
 	Vector2 uv;
@@ -52,7 +50,7 @@ struct FEATHER_API Vertex {
 	bool operator==(const Vertex&) const;
 };
 
-struct FEATHER_API AABB {
+struct AABB {
 	Vector3 min;
 	Vector3 max;
 
@@ -73,13 +71,13 @@ struct FEATHER_API AABB {
 };
 
 // Helper Functions
-FEATHER_API float deg_to_rad(float degrees);
-FEATHER_API float rad_to_deg(float radians);
+float deg_to_rad(float degrees);
+float rad_to_deg(float radians);
 
-FEATHER_API Vector3 deg_to_rad(const Vector3& degrees);
-FEATHER_API Vector3 rad_to_deg(const Vector3& radians);
+Vector3 deg_to_rad(const Vector3& degrees);
+Vector3 rad_to_deg(const Vector3& radians);
 
-FEATHER_API uint32_t round_up_to_next_pow_2(uint32_t x);
+uint32_t round_up_to_next_pow_2(uint32_t x);
 
 template <class T>
 	requires std::is_integral_v<T>

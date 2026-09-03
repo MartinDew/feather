@@ -96,7 +96,6 @@ target("py_bindings")
 
     -- Same defines the engine compiles itself with: the bindings call into it
     -- directly, so their view of its headers has to match.
-    add_defines("FEATHER_BUILDING_ENGINE")
     if is_mode("debug", "releasedbg") then
         add_defines("BETA")
     end

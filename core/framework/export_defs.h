@@ -1,15 +1,13 @@
 #pragma once
 
-// Cross-DLL export macro; FEATHER_BUILDING_ENGINE (xmake/engine.lua) flips
-// export/import. _WIN32 not _MSC_VER: mingw needs this too.
+// Exports a hand-written C entry point from the engine binary. Export only:
+// nothing imports through this header, because no plugin includes engine
+// headers -- a plugin declares these itself, against the flat C ABI.
+// _WIN32 not _MSC_VER: mingw needs this too.
 #if defined(_WIN32)
-#if defined(FEATHER_BUILDING_ENGINE)
-#define FEATHER_API __declspec(dllexport)
+#define FEATHER_C_ABI __declspec(dllexport)
 #else
-#define FEATHER_API __declspec(dllimport)
-#endif
-#else
-#define FEATHER_API __attribute__((visibility("default")))
+#define FEATHER_C_ABI __attribute__((visibility("default")))
 #endif
 
 // Hides a declaration from the binding generator without hiding it from the

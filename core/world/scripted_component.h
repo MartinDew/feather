@@ -3,7 +3,6 @@
 #include "ecs_defs.h"
 
 #include <framework/class_info.h>
-#include <framework/export_defs.h>
 #include <framework/variant.h>
 
 #include <string>
@@ -60,7 +59,7 @@ struct ScriptedComponentLayout {
 // *error when given one. Failure is a normal outcome here: the description
 // comes from outside the engine and can name a duplicate class or a field type
 // that has no layout.
-FEATHER_API Ecs::entity_t register_scripted_component(
+Ecs::entity_t register_scripted_component(
 		World& world,
 		const std::string& name,
 		const std::vector<ScriptedField>& fields,
@@ -71,9 +70,9 @@ FEATHER_API Ecs::entity_t register_scripted_component(
 // component. Pointers stay valid for the life of the process: layouts are only
 // ever added, since a registered component cannot be withdrawn from a world
 // that may already store it.
-FEATHER_API const ScriptedComponentLayout* find_scripted_component(Ecs::entity_t component);
+const ScriptedComponentLayout* find_scripted_component(Ecs::entity_t component);
 
 // The same, by the name the script registered.
-FEATHER_API const ScriptedComponentLayout* find_scripted_component(const std::string& name);
+const ScriptedComponentLayout* find_scripted_component(const std::string& name);
 
 } //namespace feather

@@ -2,7 +2,6 @@
 
 #include "resource.h"
 #include <core/framework/path.h>
-#include <framework/export_defs.h>
 #include <framework/reflected.h>
 #include <framework/reflection_macros.h>
 
@@ -16,7 +15,7 @@ namespace feather {
 
 class ResourceLoader;
 
-class FEATHER_API ResourceFormatLoader : public Reflected {
+class ResourceFormatLoader : public Reflected {
 	FCLASS();
 	friend ResourceLoader;
 

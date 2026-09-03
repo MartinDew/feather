@@ -1,6 +1,5 @@
 #pragma once
 #include "resource.h"
-#include <framework/export_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "script.gen.h"
@@ -19,7 +18,7 @@ class ScriptFormatLoader;
 // not here.
 //
 // Its presence is what marks the file as indexed, so it is not picked up twice.
-class FEATHER_API Script final : public Resource {
+class Script final : public Resource {
 	FCLASS();
 
 	friend class ScriptFormatLoader;

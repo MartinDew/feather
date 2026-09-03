@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "resource.h"
-#include <core/framework/export_defs.h>
 #include <core/math/math_defs.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
@@ -14,7 +13,7 @@ class RenderingServer;
 class Shader;
 class Texture;
 
-class FEATHER_API Material : public Resource {
+class Material : public Resource {
 	FCLASS();
 	friend RenderingServer;
 
@@ -27,21 +26,21 @@ public:
 	std::shared_ptr<Shader> get_shader() const { return _shader; }
 };
 
-class FEATHER_API PlaceholderMaterial : public Material {
+class PlaceholderMaterial : public Material {
 	FCLASS();
 
 public:
 	PlaceholderMaterial();
 };
 
-class FEATHER_API ShaderMaterial : public Material {
+class ShaderMaterial : public Material {
 	FCLASS();
 
 public:
 	void set_shader(std::shared_ptr<Shader> shader) { _shader = std::move(shader); }
 };
 
-class FEATHER_API PBRMaterial : public Material {
+class PBRMaterial : public Material {
 	FCLASS();
 
 protected:

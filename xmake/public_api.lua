@@ -1,9 +1,9 @@
 -- feather_public_api: public API surface (include dirs + PUBLIC thirdparty
 -- packages) for the engine, consumed via add_deps("feather_public_api") by
--- root xmake.lua and by tools/SDK/FeatherSDK.lua for external consumers.
+-- root xmake.lua. Engine-internal: a plugin compiles none of these headers.
 --
 -- os.scriptdir(), not os.projectdir(): the latter resolves to the CONSUMER's
--- repo when this file is includes()'d cross-repo from FeatherSDK.lua.
+-- repo if this file were ever includes()'d cross-repo.
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 target("feather_public_api")

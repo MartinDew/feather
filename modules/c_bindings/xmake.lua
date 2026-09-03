@@ -65,7 +65,8 @@ target("feather")
     -- Marks this as the build of the generated bindings themselves, so
     -- FEATHER_C_API resolves to dllexport rather than dllimport (see the
     -- generated feather_helpers/exports.h). Distinct from the engine's
-    -- FEATHER_API on purpose -- see run_gen_c()'s macro-prefix comment -- but
+    -- FEATHER_C_API, not a name of the engine's own -- see run_gen_c()'s
+    -- macro-prefix comment -- but
     -- both now resolve to "export" here, because both are built here.
     add_defines("FEATHER_C_BUILD_LIBRARY")
 

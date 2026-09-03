@@ -1,5 +1,5 @@
 -- Toolchain-conditional compile/link flags, shared between the engine's own
--- targets and downstream project DLLs (tools/SDK/FeatherSDK.lua). Applied
+-- targets. Applied
 -- from on_config, not on_load: queries the resolved toolchain.
 
 function apply(target)

@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "math_defs.h"
-#include <framework/export_defs.h>
 
 namespace feather {
 
@@ -10,7 +9,7 @@ enum class ProjectionType : uint8_t {
 	Orthographic
 };
 
-class FEATHER_API Projection {
+class Projection {
 	Matrix _projection_matrix = Matrix::identity;
 	ProjectionType _type = ProjectionType::Perspective;
 

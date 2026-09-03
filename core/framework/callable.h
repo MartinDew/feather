@@ -1,7 +1,6 @@
 #pragma once
 
 #include "assert.h"
-#include "export_defs.h"
 #include "variant.h"
 
 #include <cstdint>
@@ -12,7 +11,7 @@
 
 namespace feather {
 
-class FEATHER_API Callable {
+class Callable {
 	std::function<Variant(std::span<Variant>)> _internal_func;
 	uint8_t _param_amount;
 
