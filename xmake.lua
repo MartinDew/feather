@@ -109,6 +109,11 @@ task("export-api")
             -- so their path mappings line up; nothing ever opens it, so it
             -- needs not exist on the consumer's machine.
             feather_root = feather_root,
+            -- Likewise for DirectXMath's headers, which the parse reaches
+            -- through SimpleMath's bases and which live outside the engine
+            -- tree, so they need a path mapping of their own.
+            directxmath_root = feather_bindings.to_forward_slashes(
+                feather_bindings.directxmath_includedir(project.target("feather"))),
             engine_commit = commit,
             gen_c_flags_id = feather_bindings.gen_c_flags_id(),
             -- Which mrbind produced this file. The schema is undocumented, so

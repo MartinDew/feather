@@ -85,6 +85,9 @@ function parser_flags_id()
     for _, f in ipairs(api_parser_flags()) do
         table.insert(parts, f)
     end
+    for _, f in ipairs(c_abi_parser_flags()) do
+        table.insert(parts, f)
+    end
     for _, f in ipairs(python_parser_flags()) do
         table.insert(parts, f)
     end
@@ -286,6 +289,18 @@ function mrbind_includedir(target)
     return path.join(pkg:installdir(), "include")
 end
 
+-- DirectXMath's headers are parsed (SimpleMath's vector types keep their fields
+-- in XMFLOAT bases), so their filenames need a --map-path of their own: every
+-- parsed filename must match some prefix or mrbind_gen_c refuses to run.
+--
+-- Published in the API metadata as directxmath_root, because a plugin's
+-- generator has to reproduce the same mapping from the same api.json.
+function directxmath_includedir(target)
+    local pkg = assert(target:pkg("directxmath"),
+        "feather_bindings: target must have the directxmath package (via feather_public_api)")
+    return path.join(pkg:installdir(), "include")
+end
+
 -- Entities excluded from the parse, for every language at once (the parser
 -- runs once and every generator reads its output). Each exclusion is a type
 -- mrbind can't currently express, not a deliberate choice about the API.
@@ -370,11 +385,9 @@ function api_parser_flags()
         "--skip-mentions-of", "/std::tuple<.*>/",
         "--skip-mentions-of", "/std::unordered_map<.*>/",
 
-        -- Third-party types reachable from core's headers. Exposing
-        -- SimpleMath's Vector2/3/4, Matrix, Quaternion and Color as real C
-        -- structs (mrbind_gen_c's --expose-as-struct) is the obvious follow-up
-        -- -- they're PODs of floats -- but is left out of this pass.
-        "--skip-mentions-of", "/DirectX::SimpleMath::.*/",
+        -- Third-party types reachable from core's headers. SimpleMath is
+        -- handled separately, per-parse: the C ABI binds it (see
+        -- c_abi_parser_flags), the Python one does not.
         "--skip-mentions-of", "/flecs::.*/",
         "--skip-mentions-of", "/args::.*/",
 
@@ -446,12 +459,85 @@ function api_parser_flags()
     }
 end
 
+-- Flags that apply only to the parse the C ABI is generated from (the JSON
+-- one). They exist to let SimpleMath's math types cross the C boundary, which
+-- is what gives a C or C++ plugin a Transform with a position.
+--
+-- Only the six types core actually uses (core/math/math_defs.h) are admitted,
+-- not all of SimpleMath.
+function c_abi_parser_flags()
+    return {
+        -- Exposed structs take their fields from their bases, and the parser
+        -- only copies base members when asked. Also what lets a derived class
+        -- offer its inherited methods in C.
+        "--copy-inherited-members",
+
+        -- --ignore "::" above blacklists everything outside feather/nassimp, so
+        -- the math types need admitting by name.
+        --
+        -- The optional member tail is load-bearing: these patterns are matched
+        -- whole, so a pattern naming only the class admits the class and
+        -- rejects every one of its members -- including the constructors and
+        -- destructor, without which mrbind treats the type as not
+        -- constructible or destructible and refuses to return one at all.
+        --
+        -- Only constructors and destructors are admitted (the tail matches the
+        -- class's own name, optionally with a "~"), never a general "::.*":
+        -- SimpleMath defines most of its methods out of line in SimpleMath.inl,
+        -- and admitting an out-of-line member definition walks into a parser
+        -- assertion -- the enclosing class is not on its stack there. The
+        -- arithmetic is not wanted anyway; a plugin calls its own copy.
+        "--allow", "/DirectX::SimpleMath::(Vector2|Vector3|Vector4|Quaternion|Color|Matrix)"
+            .. "(::~?(Vector2|Vector3|Vector4|Quaternion|Color|Matrix))?/",
+        -- Their fields live in these bases, and a base the parse never saw is
+        -- dropped from the class entirely -- leaving something with no members
+        -- and no destructor, which cannot be bound at all.
+        --
+        -- XMFLOAT4X4 (Matrix's base) holds an anonymous union, which the parser
+        -- refuses to record as a field. That only rules Matrix out of
+        -- --expose-as-struct, not out of the bindings: it stays an opaque class
+        -- and crosses the ABI as a pointer.
+        "--allow", "/DirectX::XMFLOAT[234](::.*)?/",
+        -- The class only, without the "(::.*)?" tail the others carry: its
+        -- members live in an anonymous union, and admitting those crashes the
+        -- parser, which never pushes an entity for the anonymous record to
+        -- attach them to. Matrix is opaque, so only its own members matter.
+        "--allow", "DirectX::XMFLOAT4X4",
+
+        -- The SIMD types the math methods take and return. Nothing can pass an
+        -- __m128 through a C ABI, so every method mentioning one drops out --
+        -- which is most of SimpleMath's arithmetic. The wrapper does not need
+        -- them: it aliases these types to the plugin's own SimpleMath copy and
+        -- calls its operators directly, in the plugin.
+        -- The XMFLOAT matrix shapes and the packed formats appear only in
+        -- Matrix's and Color's four out-of-line constructors, which must stay
+        -- rejected for the reason given above.
+        "--skip-mentions-of", "/DirectX::(XMVECTOR[A-Z0-9]*|XMMATRIX|[FGHC]XMVECTOR|[FC]XMMATRIX|XMFLOAT[34]X[34]|XM(U?INT)[234])/",
+        -- XMVECTOR is a typedef for a compiler vector type, and matching is by
+        -- canonical spelling, so the name above never catches it off MSVC.
+        "--skip-mentions-of", "/.*__vector_size__.*/",
+        "--skip-mentions-of", "/DirectX::PackedVector::.*/",
+
+        -- The comparison categories a defaulted operator<=> returns. They have
+        -- no C spelling, and DirectXMath's structs default their comparisons.
+        "--skip-mentions-of", "/std::(partial|weak|strong)_ordering/",
+
+        -- Members are deliberately NOT ignored: mrbind decides whether a class
+        -- can be default-constructed, copied or assigned by looking at the
+        -- constructors it parsed, and an opaque Matrix needs those to be
+        -- constructible and returnable at all.
+    }
+end
+
 -- Exclusions that apply only to the Python parse. Pybind11 has opinions the C
 -- backend doesn't, and since Python is parsed separately anyway (it needs the
 -- macro format), these cost nothing to keep out of the shared set -- the C and
 -- C# bindings keep everything here.
 function python_parser_flags()
     return {
+        -- Pybind11 has no exposed-struct equivalent, and binding SimpleMath
+        -- through it was never part of the Python surface.
+        "--skip-mentions-of", "/DirectX::SimpleMath::.*/",
         -- StaticString's conversion operators to std::string and
         -- std::string_view. Pybind11 converts both of those to Python str
         -- through built-in casters rather than binding them as classes, and
@@ -570,8 +656,33 @@ function gen_c_flags_id()
         "assume-include-dir=<root>",
         "force-emit-common-helpers",
         "helper-header-dir=feather_helpers",
+        -- Placeholder, like the <root> entries above: the mapping's shape is
+        -- what must agree between engine and plugin, never the absolute path.
+        "map-path=<directxmath>->feather_c/_ext/directxmath",
+        "assume-include-dir=<directxmath>",
     }
+    for _, t in ipairs(exposed_struct_types()) do
+        table.insert(shape, "expose-as-struct=" .. t)
+    end
     return hash.strhash128(table.concat(shape, "\0"))
+end
+
+-- The C++ types emitted as real C structs rather than opaque pointers, so they
+-- cross the ABI by value with a layout a consumer can rely on.
+--
+-- Only the union-free SimpleMath types qualify: Matrix's XMFLOAT4X4 base holds
+-- an anonymous union, which the parser refuses to record as a field, so it
+-- stays opaque and is copied through a pointer instead.
+-- KEEP IN SYNC with the SDK's shape_flags() and gen_c_argv() in
+-- tools/SDK/modules/feather_plugin_bindings.lua.
+function exposed_struct_types()
+    return {
+        "DirectX::SimpleMath::Vector2",
+        "DirectX::SimpleMath::Vector3",
+        "DirectX::SimpleMath::Vector4",
+        "DirectX::SimpleMath::Quaternion",
+        "DirectX::SimpleMath::Color",
+    }
 end
 
 -- mrbind_gen_c's exception-relaying helper (__mrbind_c_details.cpp) calls
@@ -730,7 +841,13 @@ function run_gen_c(target, opts)
         -- SDK derives the same strings the same way.
         "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
+        -- Parsed from outside the engine tree entirely; see
+        -- directxmath_includedir.
+        "--map-path", to_forward_slashes(directxmath_includedir(target)), "feather_c/_ext/directxmath",
         "--assume-include-dir", to_forward_slashes(feather_root),
+        -- The glue includes the real <DirectXMath.h> to call into it. Distinct
+        -- from the mapping above, which spells the generated header instead.
+        "--assume-include-dir", to_forward_slashes(directxmath_includedir(target)),
         "--clean-output-dirs",
         "--output-desc-json", stage_desc,
         -- The C# bindings are generated from the descriptor above and need the
@@ -743,6 +860,11 @@ function run_gen_c(target, opts)
         -- include dir, where they'd sit among the mirrored engine headers.
         "--helper-header-dir", "feather_helpers",
     }
+    -- Math types cross by value as real structs; see exposed_struct_types.
+    for _, t in ipairs(exposed_struct_types()) do
+        table.insert(argv, "--expose-as-struct")
+        table.insert(argv, t)
+    end
     for _, f in ipairs(opts.extra_flags or {}) do
         table.insert(argv, f)
     end

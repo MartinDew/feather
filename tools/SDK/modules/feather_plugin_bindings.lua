@@ -60,6 +60,11 @@ function read_api_meta(api_json, api_meta)
     local meta = json.loadfile(api_meta)
     assert(meta and meta.feather_root,
         "FeatherPluginSDK: " .. api_meta .. " has no \"feather_root\"")
+    -- Same role as feather_root, for the DirectXMath headers the parse reached
+    -- through SimpleMath's bases.
+    assert(meta.directxmath_root,
+        "FeatherPluginSDK: " .. api_meta .. " has no \"directxmath_root\""
+        .. "\n  Re-export it from an engine build of the same version as this SDK.")
     return meta, api_meta
 end
 
@@ -77,8 +82,22 @@ end
 --
 -- KEEP IN SYNC with the engine's gen_c_flags_id() in
 -- xmake/modules/feather_bindings.lua.
-local function shape_flags()
+-- The C++ types the engine emits as real C structs rather than opaque
+-- pointers, so they cross the ABI by value with a layout a plugin can rely on.
+-- KEEP IN SYNC with exposed_struct_types() in the engine's
+-- xmake/modules/feather_bindings.lua.
+function exposed_struct_types()
     return {
+        "DirectX::SimpleMath::Vector2",
+        "DirectX::SimpleMath::Vector3",
+        "DirectX::SimpleMath::Vector4",
+        "DirectX::SimpleMath::Quaternion",
+        "DirectX::SimpleMath::Color",
+    }
+end
+
+local function shape_flags()
+    local shape = {
         "helper-name-prefix=Feather_",
         "helper-macro-name-prefix=FEATHER_C_",
         "map-path=<root>/core->feather_c",
@@ -86,7 +105,15 @@ local function shape_flags()
         "assume-include-dir=<root>",
         "force-emit-common-helpers",
         "helper-header-dir=feather_helpers",
+        -- Placeholder, like the <root> entries above: the mapping's shape is
+        -- what must agree with the engine, never the absolute path.
+        "map-path=<directxmath>->feather_c/_ext/directxmath",
+        "assume-include-dir=<directxmath>",
     }
+    for _, t in ipairs(exposed_struct_types()) do
+        table.insert(shape, "expose-as-struct=" .. t)
+    end
+    return shape
 end
 
 function gen_c_flags_id()
@@ -116,8 +143,8 @@ end
 
 -- Every shaping flag here must match the engine's run_gen_c() exactly: the
 -- headers generated here describe an ABI the engine binary already implements.
-local function gen_c_argv(api_json, feather_root, out)
-    return {
+local function gen_c_argv(api_json, feather_root, directxmath_root, out)
+    local argv = {
         "--input", api_json,
         "--output-header-dir", out.header_dir,
         "--output-source-dir", out.source_dir,
@@ -128,12 +155,25 @@ local function gen_c_argv(api_json, feather_root, out)
         -- engine's run_gen_c() derives these exactly the same way.
         "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
+        -- DirectXMath's headers were parsed from outside the engine tree
+        -- (SimpleMath's vector types keep their fields in XMFLOAT bases), and
+        -- every parsed filename must match some prefix or the generator stops.
+        "--map-path", to_forward_slashes(directxmath_root), "feather_c/_ext/directxmath",
         "--assume-include-dir", to_forward_slashes(feather_root),
+        -- The glue includes the real <DirectXMath.h> to call into it. Distinct
+        -- from the mapping above, which spells the generated header instead.
+        "--assume-include-dir", to_forward_slashes(directxmath_root),
         "--clean-output-dirs",
         "--output-desc-json", out.desc_json,
         "--force-emit-common-helpers",
         "--helper-header-dir", "feather_helpers",
     }
+    -- Math types cross by value as real structs; see exposed_struct_types.
+    for _, t in ipairs(exposed_struct_types()) do
+        table.insert(argv, "--expose-as-struct")
+        table.insert(argv, t)
+    end
+    return argv
 end
 
 -- A generator only needs to re-run when its input file's contents change.
@@ -215,7 +255,7 @@ function generate(target, opts, want_csharp)
         cprint("${cyan}[feather]${reset} mrbind_gen_c -> %s",
             path.relative(out.header_dir, os.projectdir()))
         os.vrunv(generator_bin(target, "mrbind_gen_c"),
-            gen_c_argv(api_json, meta.feather_root, staged))
+            gen_c_argv(api_json, meta.feather_root, meta.directxmath_root, staged))
 
         os.mkdir(out.header_dir)
         os.mkdir(out.source_dir)

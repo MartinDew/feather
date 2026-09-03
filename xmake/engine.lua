@@ -178,9 +178,12 @@ target("feather")
     end
 
     add_deps("feather_public_api")
-    -- Direct, not just via feather_public_api: see public_api.lua.
+    -- Direct, not just via feather_public_api: see public_api.lua. directxmath
+    -- additionally because the C bindings rule needs its include dir by name
+    -- (feather_bindings.directxmath_includedir), and a package reached only
+    -- through a dep isn't in target:pkg().
     add_deps("simplemath")
-    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
+    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json", "directxmath")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")

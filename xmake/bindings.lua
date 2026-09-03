@@ -61,6 +61,9 @@ rule("feather.mrbind_api")
             combined_header = combined_header,
             output = feather_bindings.api_json_path(),
             format = "json",
+            -- The C ABI binds SimpleMath's math types; the Python parse below
+            -- does not. See feather_bindings.c_abi_parser_flags.
+            extra_parser_flags = feather_bindings.c_abi_parser_flags(),
         })
 
         -- The Python backend needs the same parse in mrbind's macro format --
