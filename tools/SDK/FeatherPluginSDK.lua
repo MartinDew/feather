@@ -42,14 +42,21 @@
 -- CONSUMER's directory instead.
 local SDK_DIR = os.scriptdir()
 
+-- The C++ half of the SDK -- the wrapper generator, its headers and the math
+-- sources -- is optional. A C or C# plugin vendors none of it and must not be
+-- made to build a generator it never runs, nor fetch DirectXMath.
+local HAVE_CPP_SDK = os.isdir(path.join(SDK_DIR, "gen_cpp"))
+
 -- Call once, before any feather_*_plugin().
 function feather_plugin_sdk_init()
     add_moduledirs(path.join(SDK_DIR, "modules"))
     includes(path.join(SDK_DIR, "packages", "mrbind_generators.lua"))
-    -- Header-only, and the C++ wrappers alias its types rather than wrapping
-    -- them; a C or C# plugin never resolves it.
-    includes(path.join(SDK_DIR, "packages", "directxmath.lua"))
-    add_requires("directxmath_feather", {system = false, alias = "directxmath"})
+    if HAVE_CPP_SDK then
+        -- Header-only, and the C++ wrappers alias its types rather than
+        -- wrapping them; a C or C# plugin never resolves it.
+        includes(path.join(SDK_DIR, "packages", "directxmath.lua"))
+        add_requires("directxmath_feather", {system = false, alias = "directxmath"})
+    end
     -- host = true: these are build tools this machine runs, not libraries the
     -- plugin links, so a cross-compiling plugin build still gets runnable ones.
     add_requires("mrbind_generators", {system = false, host = true,
@@ -145,6 +152,11 @@ function feather_cpp_plugin(name, opts)
     -- failing with an opaque error from add_files().
     if not opts.files then
         print("FeatherPluginSDK: feather_cpp_plugin(\"" .. name .. "\") needs opts.files; skipping.")
+        return
+    end
+    if not HAVE_CPP_SDK then
+        print("FeatherPluginSDK: feather_cpp_plugin(\"" .. name .. "\") needs the SDK's C++ half; skipping.")
+        print("FeatherPluginSDK:   vendor cpp/, gen_cpp/ and thirdparty/ alongside modules/ and packages/.")
         return
     end
 

@@ -196,10 +196,13 @@ package("mrbind_generators")
         -- CMAKE_MSVC_RUNTIME_LIBRARY at directory scope, and a target missing any
         -- of them fails to link against mrbind_c_interop (LNK2038 on Windows).
         -- KEEP IN SYNC with thirdparty/packages/mrbind.lua.
+        -- Returns false when the C++ half of the SDK is not vendored: a C or C#
+        -- plugin needs no wrapper generator, and must not be made to build one.
         local function _graft_feather_gen_cpp()
             local src = FEATHER_GEN_CPP_DIR
-            assert(os.isdir(src), "mrbind_generators: feather_gen_cpp sources not found at " .. src
-                .. "\n  Vendor the SDK's gen_cpp/ directory alongside packages/.")
+            if not os.isdir(src) then
+                return false
+            end
             os.tryrm("feather_gen_cpp")
             os.cp(src, "feather_gen_cpp")
 
@@ -210,10 +213,11 @@ package("mrbind_generators")
             if not contents:find(line, 1, true) then
                 io.writefile("CMakeLists.txt", contents:rtrim() .. "\n" .. line .. "\n")
             end
+            return true
         end
 
         _allow_exposed_structs_with_bases()
-        _graft_feather_gen_cpp()
+        local have_gen_cpp = _graft_feather_gen_cpp()
 
         local builddir = path.join(package:builddir(), ".cmake_build")
         cmake.build(package, configs, {builddir = builddir, cmake_generator = "Ninja"})
@@ -228,7 +232,11 @@ package("mrbind_generators")
         -- above is precisely that this package's own view of "is this
         -- Windows" cannot always be trusted for that decision either.
         local bindir = package:installdir("bin")
-        for _, name in ipairs({"mrbind_gen_c", "mrbind_gen_csharp", "feather_gen_cpp"}) do
+        local tools = {"mrbind_gen_c", "mrbind_gen_csharp"}
+        if have_gen_cpp then
+            table.insert(tools, "feather_gen_cpp")
+        end
+        for _, name in ipairs(tools) do
             local preferred = os.host() == "windows" and (name .. ".exe") or name
             local fallback = os.host() == "windows" and name or (name .. ".exe")
             local built = path.join(builddir, preferred)
