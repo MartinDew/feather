@@ -25,6 +25,8 @@ if(CMAKE_CURRENT_BINARY_DIR STREQUAL "${CMAKE_BINARY_DIR}/feather_gen_cpp")
 endif()
 
 add_executable(feather_gen_cpp
+    src/emit.cpp
+    src/generator.cpp
     src/main.cpp
 )
 
