@@ -606,6 +606,67 @@ function _fixup_missing_typeinfo_include(source_dir)
     end
 end
 
+-- Content-compare copy of a generated tree. A file whose bytes are unchanged
+-- keeps its mtime, so a regeneration that produced identical output doesn't
+-- make xmake rebuild the generated glue and every consumer of the headers.
+-- Files that vanished from `src` are removed from `dst` -- the job
+-- --clean-output-dirs used to do, now that the generator writes to a staging
+-- dir instead of straight into the build.
+local function _sync_tree(src, dst)
+    local kept = {}
+    for _, f in ipairs(os.files(path.join(src, "**"))) do
+        local rel = path.relative(f, src)
+        kept[rel] = true
+        local into = path.join(dst, rel)
+        if not os.isfile(into) or io.readfile(into) ~= io.readfile(f) then
+            os.mkdir(path.directory(into))
+            os.cp(f, into)
+        end
+    end
+    for _, f in ipairs(os.files(path.join(dst, "**"))) do
+        if not kept[path.relative(f, dst)] then
+            os.rm(f)
+        end
+    end
+end
+
+local function _sync_file(src, dst)
+    if not os.isfile(dst) or io.readfile(dst) ~= io.readfile(src) then
+        os.mkdir(path.directory(dst))
+        os.cp(src, dst)
+    end
+end
+
+local function _list_gen_c_sources(source_dir)
+    local sources = os.files(path.join(source_dir, "**.cpp"))
+    if #sources == 0 then
+        -- The generator is documented to emit .cpp implementation files; fall
+        -- back to .c in case a given version differs.
+        sources = os.files(path.join(source_dir, "**.c"))
+    end
+    return sources
+end
+
+-- A generator only needs to re-run when its input file's contents or its flags
+-- change. A stamp holding a hash of both, written after a successful run, lets
+-- an unchanged rebuild skip the generator outright -- more robust than an mtime
+-- comparison, which a `touch` or a byte-identical re-export would defeat.
+local function _gen_stamp_value(input_file, flags_id)
+    return hash.sha256(input_file) .. ":" .. flags_id
+end
+
+local function _gen_outputs_fresh(stamp_path, input_file, flags_id, present)
+    if not present then
+        return false
+    end
+    return os.isfile(stamp_path)
+        and io.readfile(stamp_path):trim() == _gen_stamp_value(input_file, flags_id)
+end
+
+local function gen_c_stamp_path()
+    return path.join(output_dir("c"), ".gen_c_stamp")
+end
+
 -- Generates the C bindings from api.json into opts.header_dir/opts.source_dir,
 -- and returns every generated implementation file.
 function run_gen_c(target, opts)
@@ -614,13 +675,28 @@ function run_gen_c(target, opts)
     local source_dir = assert(opts.source_dir, "run_gen_c: opts.source_dir required")
     local feather_root = assert(opts.feather_root, "run_gen_c: opts.feather_root required")
 
-    os.mkdir(header_dir)
-    os.mkdir(source_dir)
+    -- Nothing that feeds the C bindings changed: skip the generator entirely.
+    if _gen_outputs_fresh(gen_c_stamp_path(), api_json_path(), gen_c_flags_id(),
+            os.isfile(c_desc_json_path()) and #_list_gen_c_sources(source_dir) > 0) then
+        return _list_gen_c_sources(source_dir)
+    end
+
+    -- mrbind_gen_c rewrites every output file on every run. Generate into a
+    -- staging tree, then copy across only the files that actually differ (see
+    -- _sync_tree), so an unchanged regeneration leaves mtimes -- and the
+    -- downstream build -- untouched.
+    local stage = path.join(output_dir("c"), ".stage")
+    local stage_headers = path.join(stage, "include")
+    local stage_sources = path.join(stage, "src")
+    local stage_desc = path.join(stage, "desc.json")
+    os.tryrm(stage)
+    os.mkdir(stage_headers)
+    os.mkdir(stage_sources)
 
     local argv = {
         "--input", api_json_path(),
-        "--output-header-dir", header_dir,
-        "--output-source-dir", source_dir,
+        "--output-header-dir", stage_headers,
+        "--output-source-dir", stage_sources,
         "--helper-name-prefix", opts.helper_prefix or "Feather_",
         -- NOT "FEATHER_": the generated exports.h would then define
         -- FEATHER_API, which core/framework/export_defs.h already defines
@@ -656,7 +732,7 @@ function run_gen_c(target, opts)
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
         "--assume-include-dir", to_forward_slashes(feather_root),
         "--clean-output-dirs",
-        "--output-desc-json", c_desc_json_path(),
+        "--output-desc-json", stage_desc,
         -- The C# bindings are generated from the descriptor above and need the
         -- common helpers header (C++-compatible allocation functions among
         -- other things) to exist whether or not the C bindings alone would
@@ -673,15 +749,19 @@ function run_gen_c(target, opts)
 
     cprint("${cyan}[c_bindings]${reset} mrbind_gen_c -> %s", path.relative(header_dir, os.projectdir()))
     os.vrunv(mrbind_bin(target, "mrbind_gen_c"), argv)
-    _fixup_missing_typeinfo_include(source_dir)
+    _fixup_missing_typeinfo_include(stage_sources)
 
-    local sources = os.files(path.join(source_dir, "**.cpp"))
-    if #sources == 0 then
-        -- The generator is documented to emit .cpp implementation files; fall
-        -- back to .c in case a given version differs.
-        sources = os.files(path.join(source_dir, "**.c"))
-    end
-    return sources
+    os.mkdir(header_dir)
+    os.mkdir(source_dir)
+    _sync_tree(stage_headers, header_dir)
+    _sync_tree(stage_sources, source_dir)
+    -- desc.json feeds the C# generator; only replace it when it changed, so an
+    -- unchanged C parse doesn't cascade into a C# regeneration.
+    _sync_file(stage_desc, c_desc_json_path())
+    os.tryrm(stage)
+
+    io.writefile(gen_c_stamp_path(), _gen_stamp_value(api_json_path(), gen_c_flags_id()))
+    return _list_gen_c_sources(source_dir)
 end
 
 -- Generates the C# bindings from the C generator's descriptor into
@@ -694,11 +774,26 @@ function run_gen_csharp(target, opts)
     assert(os.isfile(desc_json),
         "feather_bindings: " .. desc_json .. " is missing -- the C bindings must be generated first")
 
-    os.mkdir(output_dir)
+    -- Skip the generator when its input (the C descriptor) is byte-for-byte
+    -- what produced the current output. The lib name is the only caller-varied
+    -- flag that reaches the output.
+    local csharp_flags_id = opts.imported_lib_name or "feather_c"
+    local stamp = output_dir .. ".stamp"
+    if _gen_outputs_fresh(stamp, desc_json, csharp_flags_id,
+            #os.files(path.join(output_dir, "**.cs")) > 0) then
+        return output_dir
+    end
+
+    -- Staged and content-synced for the same reason as the C generator: an
+    -- unchanged regeneration must not bump mtimes on the emitted .cs files.
+    -- A sibling of output_dir, not a child, so the sync walk never sees it.
+    local stage = output_dir .. ".stage"
+    os.tryrm(stage)
+    os.mkdir(stage)
 
     local argv = {
         "--input-json", desc_json,
-        "--output-dir", output_dir,
+        "--output-dir", stage,
         -- The name the generated [DllImport]s carry. It names no file on disk:
         -- the C bindings are compiled into the engine executable
         -- (modules/c_bindings/xmake.lua), so a plugin's DllImportResolver maps
@@ -720,6 +815,12 @@ function run_gen_csharp(target, opts)
 
     cprint("${cyan}[cs_bindings]${reset} mrbind_gen_csharp -> %s", path.relative(output_dir, os.projectdir()))
     os.vrunv(mrbind_bin(target, "mrbind_gen_csharp"), argv)
+
+    os.mkdir(output_dir)
+    _sync_tree(stage, output_dir)
+    os.tryrm(stage)
+
+    io.writefile(stamp, _gen_stamp_value(desc_json, csharp_flags_id))
     return output_dir
 end
 

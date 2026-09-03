@@ -136,13 +136,53 @@ local function gen_c_argv(api_json, feather_root, out)
     }
 end
 
--- Regenerating takes a few seconds over a multi-megabyte JSON file, so skip it
--- when nothing that feeds it has changed.
-local function outputs_are_stale(api_json, out)
-    if not os.isfile(out.desc_json) or not os.isdir(out.header_dir) then
+-- A generator only needs to re-run when its input file's contents change.
+-- A stamp holding a hash of the input, written after a successful run, lets an
+-- unchanged rebuild skip the generator (a few seconds over a multi-megabyte
+-- JSON) -- and, unlike an mtime check, isn't fooled by a `touch` or a
+-- byte-identical re-export.
+local function gen_stale(stamp_path, input_file, present)
+    if not present then
         return true
     end
-    return os.mtime(api_json) > os.mtime(out.desc_json)
+    if not os.isfile(stamp_path) then
+        return true
+    end
+    return io.readfile(stamp_path):trim() ~= hash.sha256(input_file)
+end
+
+local function write_gen_stamp(stamp_path, input_file)
+    io.writefile(stamp_path, hash.sha256(input_file))
+end
+
+-- Content-compare copy of a generated tree. A file whose bytes are unchanged
+-- keeps its mtime, so a regeneration that produced identical output doesn't
+-- rebuild the plugin -- or, for C#, re-run a slow NativeAOT publish. Files gone
+-- from `src` are dropped from `dst`, the job --clean-output-dir(s) did before
+-- the generators started writing to a staging dir.
+local function sync_tree(src, dst)
+    local kept = {}
+    for _, f in ipairs(os.files(path.join(src, "**"))) do
+        local rel = path.relative(f, src)
+        kept[rel] = true
+        local into = path.join(dst, rel)
+        if not os.isfile(into) or io.readfile(into) ~= io.readfile(f) then
+            os.mkdir(path.directory(into))
+            os.cp(f, into)
+        end
+    end
+    for _, f in ipairs(os.files(path.join(dst, "**"))) do
+        if not kept[path.relative(f, dst)] then
+            os.rm(f)
+        end
+    end
+end
+
+local function sync_file(src, dst)
+    if not os.isfile(dst) or io.readfile(dst) ~= io.readfile(src) then
+        os.mkdir(path.directory(dst))
+        os.cp(src, dst)
+    end
 end
 
 -- Generates the C headers, and with want_csharp the C# sources, that a plugin
@@ -157,43 +197,76 @@ function generate(target, opts, want_csharp)
     local meta, meta_path = read_api_meta(api_json, opts.api_meta)
     check_flags_id(meta, meta_path)
 
-    if outputs_are_stale(api_json, out) then
-        os.mkdir(out.header_dir)
-        os.mkdir(out.source_dir)
+    local c_stamp = path.join(bindings_dir(), ".gen_c_stamp")
+    if gen_stale(c_stamp, api_json,
+            os.isfile(out.desc_json) and os.isdir(out.header_dir)) then
+        -- The generators rewrite every file on every run. Stage the output, then
+        -- copy across only what actually differs (see sync_tree), so an
+        -- unchanged regeneration doesn't rebuild the plugin.
+        local stage = bindings_dir() .. "/.c-stage"
+        local staged = {
+            header_dir = path.join(stage, "include"),
+            source_dir = path.join(stage, "unused-glue"),
+            desc_json  = path.join(stage, "desc.json"),
+        }
+        os.tryrm(stage)
+        os.mkdir(staged.header_dir)
+        os.mkdir(staged.source_dir)
         cprint("${cyan}[feather]${reset} mrbind_gen_c -> %s",
             path.relative(out.header_dir, os.projectdir()))
-        os.vrunv(generator_bin(target, "mrbind_gen_c"), gen_c_argv(api_json, meta.feather_root, out))
+        os.vrunv(generator_bin(target, "mrbind_gen_c"),
+            gen_c_argv(api_json, meta.feather_root, staged))
+
+        os.mkdir(out.header_dir)
+        os.mkdir(out.source_dir)
+        sync_tree(staged.header_dir, out.header_dir)
+        sync_tree(staged.source_dir, out.source_dir)
+        sync_file(staged.desc_json, out.desc_json)
+        os.tryrm(stage)
+        write_gen_stamp(c_stamp, api_json)
     end
 
     if want_csharp then
-        os.mkdir(out.csharp_dir)
-        cprint("${cyan}[feather]${reset} mrbind_gen_csharp -> %s",
-            path.relative(out.csharp_dir, os.projectdir()))
-        os.vrunv(generator_bin(target, "mrbind_gen_csharp"), {
-            "--input-json", out.desc_json,
-            "--output-dir", out.csharp_dir,
-            -- A logical name, not a file on disk: the bindings live in the
-            -- engine executable. The plugin's DllImportResolver maps it to
-            -- the running process (see the generated bootstrap).
-            "--imported-lib-name", "feather_c",
-            "--helpers-namespace", "Feather::Misc",
-            -- No --force-namespace: the C++ `feather` namespace already maps
-            -- to `Feather`. Forcing it too yields `Feather.Feather.X` and does
-            -- not compile. KEEP IN SYNC with the engine's run_gen_csharp().
-            -- Required once the directory exists; the generator refuses to
-            -- write into a non-empty output dir otherwise.
-            "--clean-output-dir",
-        })
-
-        -- Copied in after the generator has cleaned the directory, not before.
-        -- This is what turns an assembly into a plugin: the entry point the
-        -- manifest names, the DllImport resolver, and the reflection pass that
-        -- registers whatever the author attributed.
         local bootstrap = path.join(sdk_dir(), "csharp", "FeatherPluginBootstrap.cs")
         assert(os.isfile(bootstrap),
             "FeatherPluginSDK: missing " .. bootstrap .. "\n"
             .. "  Vendor the SDK's csharp/ directory alongside modules/ and packages/.")
-        os.vcp(bootstrap, out.csharp_dir)
+
+        local cs_stamp = out.csharp_dir .. ".stamp"
+        if gen_stale(cs_stamp, out.desc_json, #os.files(path.join(out.csharp_dir, "**.cs")) > 0) then
+            local stage = out.csharp_dir .. ".stage"
+            os.tryrm(stage)
+            os.mkdir(stage)
+            cprint("${cyan}[feather]${reset} mrbind_gen_csharp -> %s",
+                path.relative(out.csharp_dir, os.projectdir()))
+            os.vrunv(generator_bin(target, "mrbind_gen_csharp"), {
+                "--input-json", out.desc_json,
+                "--output-dir", stage,
+                -- A logical name, not a file on disk: the bindings live in the
+                -- engine executable. The plugin's DllImportResolver maps it to
+                -- the running process (see the generated bootstrap).
+                "--imported-lib-name", "feather_c",
+                "--helpers-namespace", "Feather::Misc",
+                -- No --force-namespace: the C++ `feather` namespace already maps
+                -- to `Feather`. Forcing it too yields `Feather.Feather.X` and
+                -- does not compile. KEEP IN SYNC with the engine's
+                -- run_gen_csharp().
+                "--clean-output-dir",
+            })
+            -- Staged alongside the generated sources so sync_tree treats it as
+            -- part of the set: this is what turns an assembly into a plugin
+            -- (manifest entry point, DllImport resolver, reflection pass).
+            os.cp(bootstrap, path.join(stage, path.filename(bootstrap)))
+
+            os.mkdir(out.csharp_dir)
+            sync_tree(stage, out.csharp_dir)
+            os.tryrm(stage)
+            write_gen_stamp(cs_stamp, out.desc_json)
+        else
+            -- Generation skipped, but a vendored-SDK update can still change the
+            -- bootstrap while desc.json stays put.
+            sync_file(bootstrap, path.join(out.csharp_dir, path.filename(bootstrap)))
+        end
     end
 
     return out
@@ -417,6 +490,8 @@ function publish_csharp(target, opts, out)
     local output_name = opts.output_name or default_output_name(target:name())
     local bindir = path.join(os.projectdir(), "bin")
     os.mkdir(bindir)
-    os.vcp(produced, path.join(bindir, output_name))
+    -- Content-compare: dotnet's publish is incremental, so an unchanged plugin
+    -- must not land a newer bin/ file for the engine's project walk to re-open.
+    sync_file(produced, path.join(bindir, output_name))
     cprint("${cyan}[feather]${reset} -> bin/%s", output_name)
 end
