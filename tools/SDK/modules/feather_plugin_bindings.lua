@@ -216,18 +216,25 @@ end
 -- unchanged rebuild skip the generator (a few seconds over a multi-megabyte
 -- JSON) -- and, unlike an mtime check, isn't fooled by a `touch` or a
 -- byte-identical re-export.
-local function gen_stale(stamp_path, input_file, present)
+-- `extra` identifies anything besides the input that changes the output --
+-- for the C++ wrappers, the generator binary itself, which ships in a package
+-- whose install xmake caches.
+local function gen_stamp_value(input_file, extra)
+    return hash.sha256(input_file) .. (extra and (":" .. extra) or "")
+end
+
+local function gen_stale(stamp_path, input_file, present, extra)
     if not present then
         return true
     end
     if not os.isfile(stamp_path) then
         return true
     end
-    return io.readfile(stamp_path):trim() ~= hash.sha256(input_file)
+    return io.readfile(stamp_path):trim() ~= gen_stamp_value(input_file, extra)
 end
 
-local function write_gen_stamp(stamp_path, input_file)
-    io.writefile(stamp_path, hash.sha256(input_file))
+local function write_gen_stamp(stamp_path, input_file, extra)
+    io.writefile(stamp_path, gen_stamp_value(input_file, extra))
 end
 
 -- Content-compare copy of a generated tree. A file whose bytes are unchanged
@@ -352,8 +359,11 @@ function generate(target, opts, langs)
             "FeatherPluginSDK: missing " .. sdk_cpp .. "\n"
             .. "  Vendor the SDK's cpp/ directory alongside modules/ and packages/.")
 
+        local generator = generator_bin(target, "feather_gen_cpp")
+        local generator_id = hash.sha256(generator)
+
         local cpp_stamp = out.cpp_dir .. ".stamp"
-        if gen_stale(cpp_stamp, out.desc_json, #os.files(path.join(out.cpp_dir, "**.hpp")) > 0) then
+        if gen_stale(cpp_stamp, out.desc_json, #os.files(path.join(out.cpp_dir, "**.hpp")) > 0, generator_id) then
             local stage = out.cpp_dir .. ".stage"
             os.tryrm(stage)
             os.mkdir(stage)
@@ -364,7 +374,7 @@ function generate(target, opts, langs)
             for _, f in ipairs(gen_cpp_shape_flags()) do
                 table.insert(argv, f)
             end
-            os.vrunv(generator_bin(target, "feather_gen_cpp"), argv)
+            os.vrunv(generator, argv)
 
             -- Staged alongside the generated headers so sync_tree treats them as
             -- one set: these describe a plugin rather than the engine, so they
@@ -376,7 +386,7 @@ function generate(target, opts, langs)
             os.mkdir(out.cpp_dir)
             sync_tree(stage, out.cpp_dir)
             os.tryrm(stage)
-            write_gen_stamp(cpp_stamp, out.desc_json)
+            write_gen_stamp(cpp_stamp, out.desc_json, generator_id)
         else
             -- Generation skipped, but a vendored-SDK update can still change the
             -- hand-written headers while desc.json stays put.

@@ -303,10 +303,11 @@ namespace feather_gen
         out += "#pragma once\n\n";
         out += "// Runtime support for the generated wrappers: the ownership tag, string\n";
         out += "// conversion, and raising an engine-side failure on this side of the call.\n\n";
+        out += "#include <feather_cpp/assert.hpp>\n";
         out += "#include <feather_helpers/common.h>\n";
         if (have_string)
             out += "#include <feather_helpers/std_string.h>\n";
-        out += "\n#include <cstdio>\n#include <exception>\n#include <stdexcept>\n#include <string>\n\n";
+        out += "\n#include <exception>\n#include <source_location>\n#include <stdexcept>\n#include <string>\n\n";
 
         out += "// Whether this translation unit can throw. The engine builds with\n";
         out += "// exceptions off, and a plugin may too, so nothing here throws\n";
@@ -327,12 +328,14 @@ namespace feather_gen
         out += "        // Throws where the caller allows it, and otherwise ends the process\n";
         out += "        // the way the engine's own fassert does -- a failure here means the\n";
         out += "        // engine already refused the call, so returning is not an option.\n";
-        out += "        [[noreturn]] inline void fail(const std::string &message)\n        {\n";
+        out += "        [[noreturn]] inline void fail(const std::string &message,\n";
+        out += "            std::source_location loc = std::source_location::current())\n        {\n";
         out += "#if FEATHER_CPP_EXCEPTIONS\n";
+        out += "            (void)loc;\n";
         out += "            throw ::feather::Error(message);\n";
         out += "#else\n";
-        out += "            std::fprintf(stderr, \"feather: %s\\n\", message.c_str());\n";
-        out += "            std::terminate();\n";
+        out += "            ::fassert(false, message, loc);\n";
+        out += "            std::terminate(); // fassert already did; this is for [[noreturn]].\n";
         out += "#endif\n        }\n\n";
         out += "        struct AdoptTag { explicit AdoptTag() = default; };\n\n";
         out += "        inline bool &pending_flag() { static thread_local bool flag = false; return flag; }\n";
@@ -350,10 +353,6 @@ namespace feather_gen
         out += "            pending_flag() = false;\n";
         out += "            fail(pending_message());\n        }\n    }\n\n";
 
-        out += "    // The engine's fassert, on this side of the boundary: same report,\n";
-        out += "    // same halt, without needing the engine's headers.\n";
-        out += "    inline void assert_that(bool condition, const std::string &message)\n    {\n";
-        out += "        if (!condition) detail::fail(message);\n    }\n\n";
         out += "    namespace detail\n    {\n";
 
         if (have_string)

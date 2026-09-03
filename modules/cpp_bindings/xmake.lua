@@ -74,6 +74,7 @@ target("cpp_bindings_check")
 
         local lines = {
             "// Generated: compiles the C++ wrappers against the C bindings alone.",
+            "#include <feather_cpp/assert.hpp>",
             "#include <feather_cpp/feather.hpp>",
             "#include <feather_cpp/plugin.hpp>",
             "#include <feather_cpp/scripted_abi.hpp>",
