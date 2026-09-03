@@ -8,7 +8,7 @@ Feather is an ECS-based game engine in C++23, built with xmake (not raw CMake/Ma
 
 ## Comments
 
-Comment blocks are at most two lines. A comment explains how the system works — an invariant, a non-obvious reason something is the way it is — never what a change did or why it was made. No "fixed X", no "this used to be Y", no narrating the diff.
+Comment blocks are at most two lines except for file headers. A comment explains how the system works — an invariant, a non-obvious reason something is the way it is — never what a change did or why it was made. No "fixed X", no "this used to be Y", no narrating the diff.
 
 ## Build
 
