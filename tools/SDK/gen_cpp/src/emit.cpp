@@ -302,19 +302,38 @@ namespace feather_gen
         std::string out;
         out += "#pragma once\n\n";
         out += "// Runtime support for the generated wrappers: the ownership tag, string\n";
-        out += "// conversion, and turning an engine-side exception back into a C++ one.\n\n";
+        out += "// conversion, and raising an engine-side failure on this side of the call.\n\n";
         out += "#include <feather_helpers/common.h>\n";
         if (have_string)
             out += "#include <feather_helpers/std_string.h>\n";
-        out += "\n#include <stdexcept>\n#include <string>\n\n";
+        out += "\n#include <cstdio>\n#include <exception>\n#include <stdexcept>\n#include <string>\n\n";
+
+        out += "// Whether this translation unit can throw. The engine builds with\n";
+        out += "// exceptions off, and a plugin may too, so nothing here throws\n";
+        out += "// unconditionally.\n";
+        out += "#if defined(__cpp_exceptions) || defined(_CPPUNWIND)\n";
+        out += "#define FEATHER_CPP_EXCEPTIONS 1\n";
+        out += "#else\n";
+        out += "#define FEATHER_CPP_EXCEPTIONS 0\n";
+        out += "#endif\n\n";
 
         out += "namespace feather\n{\n";
-        out += "    // Thrown where the engine threw. An exception cannot propagate through\n";
-        out += "    // the bindings' extern \"C\" frames, so one is recorded there and\n";
-        out += "    // re-thrown on this side of the call.\n";
+        out += "    // Carries what the engine reported. An exception cannot propagate\n";
+        out += "    // through the bindings' extern \"C\" frames, so a failure is recorded\n";
+        out += "    // there and raised again on this side of the call.\n";
         out += "    class Error : public std::runtime_error\n    {\n      public:\n        using std::runtime_error::runtime_error;\n    };\n\n";
 
         out += "    namespace detail\n    {\n";
+        out += "        // Throws where the caller allows it, and otherwise ends the process\n";
+        out += "        // the way the engine's own fassert does -- a failure here means the\n";
+        out += "        // engine already refused the call, so returning is not an option.\n";
+        out += "        [[noreturn]] inline void fail(const std::string &message)\n        {\n";
+        out += "#if FEATHER_CPP_EXCEPTIONS\n";
+        out += "            throw ::feather::Error(message);\n";
+        out += "#else\n";
+        out += "            std::fprintf(stderr, \"feather: %s\\n\", message.c_str());\n";
+        out += "            std::terminate();\n";
+        out += "#endif\n        }\n\n";
         out += "        struct AdoptTag { explicit AdoptTag() = default; };\n\n";
         out += "        inline bool &pending_flag() { static thread_local bool flag = false; return flag; }\n";
         out += "        inline std::string &pending_message() { static thread_local std::string message; return message; }\n\n";
@@ -329,7 +348,13 @@ namespace feather_gen
         out += "        inline void rethrow_pending()\n        {\n";
         out += "            if (!pending_flag()) return;\n";
         out += "            pending_flag() = false;\n";
-        out += "            throw ::feather::Error(pending_message());\n        }\n\n";
+        out += "            fail(pending_message());\n        }\n    }\n\n";
+
+        out += "    // The engine's fassert, on this side of the boundary: same report,\n";
+        out += "    // same halt, without needing the engine's headers.\n";
+        out += "    inline void assert_that(bool condition, const std::string &message)\n    {\n";
+        out += "        if (!condition) detail::fail(message);\n    }\n\n";
+        out += "    namespace detail\n    {\n";
 
         if (have_string)
         {

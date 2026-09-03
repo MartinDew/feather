@@ -5,12 +5,13 @@
 // Hand-written, not generated: core/world/scripted_abi.h carries FEATHER_NO_BIND
 // because mrbind has no spelling for a function pointer, so the flat C entry
 // points are redeclared here -- the same arrangement the C# bootstrap uses.
-// What this adds over them is only ergonomics: std types, real enums, and an
-// error that throws instead of a buffer the caller has to check.
+// What this adds over them is only ergonomics: std types, real enums, and a
+// failure that raises itself instead of a buffer the caller has to check.
 
 #include <feather_cpp/core.hpp>
 #include <feather_cpp/math.hpp>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <span>
@@ -117,15 +118,17 @@ namespace feather::ecs
         void set(std::string_view field, const Color &value) const { const double v[] = {value.x, value.y, value.z, value.w}; _write(field, v, 4); }
 
       private:
+        [[noreturn]] static void detail_fail(const std::string &message) { ::feather::detail::fail(message); }
+
         [[nodiscard]] std::array<double, 4> _read(std::string_view field, std::int32_t expected) const
         {
             std::array<double, 4> values{};
             std::int32_t count = 0;
             const std::string name(field);
             if (!::feather_script_get_field(_handle, _component, name.c_str(), values.data(), 4, &count))
-                throw Error("cannot read field '" + name + "' of component '" + _component + "'");
+                detail_fail("cannot read field '" + name + "' of component '" + _component + "'");
             if (count != expected)
-                throw Error("field '" + name + "' of component '" + _component + "' is not the type it was read as");
+                detail_fail("field '" + name + "' of component '" + _component + "' is not the type it was read as");
             return values;
         }
 
@@ -133,7 +136,7 @@ namespace feather::ecs
         {
             const std::string name(field);
             if (!::feather_script_set_field(_handle, _component, name.c_str(), values, count))
-                throw Error("cannot write field '" + name + "' of component '" + _component + "'");
+                detail_fail("cannot write field '" + name + "' of component '" + _component + "'");
         }
     };
 
@@ -170,18 +173,25 @@ namespace feather::ecs
             for (std::int32_t i = 0; i < component_count; i++)
                 views.emplace_back(components[i], state->component_names[std::size_t(i)].c_str());
 
-            // Nothing may escape into the engine's C frame above us.
+            const Invocation invocation{
+                .entity = entity,
+                .components = views,
+                .delta_time = delta_time,
+            };
+
+            // Nothing may escape into the engine's C frame above us. With
+            // exceptions off there is nothing that could.
+#if FEATHER_CPP_EXCEPTIONS
             try
             {
-                state->callback(Invocation{
-                    .entity = entity,
-                    .components = views,
-                    .delta_time = delta_time,
-                });
+                state->callback(invocation);
             }
             catch (...)
             {
             }
+#else
+            state->callback(invocation);
+#endif
         }
     }
 
@@ -205,7 +215,7 @@ namespace feather::ecs
         const std::uint64_t id = ::feather_script_define_component(
             owned.c_str(), std::int32_t(fields.size()), name_ptrs.data(), types.data(), error, sizeof(error));
         if (id == 0)
-            throw Error(error[0] ? error : "cannot define component '" + owned + "'");
+            ::feather::detail::fail(error[0] ? error : "cannot define component '" + owned + "'");
         return id;
     }
 
@@ -231,7 +241,7 @@ namespace feather::ecs
         if (id == 0)
         {
             delete state;
-            throw Error(error[0] ? error : "cannot define system '" + owned + "'");
+            ::feather::detail::fail(error[0] ? error : "cannot define system '" + owned + "'");
         }
         return id;
     }
@@ -241,7 +251,7 @@ namespace feather::ecs
         const std::string owned(name);
         const std::uint64_t entity = ::feather_script_create_entity(owned.empty() ? nullptr : owned.c_str());
         if (entity == 0)
-            throw Error("cannot create entity '" + owned + "'");
+            ::feather::detail::fail("cannot create entity '" + owned + "'");
         return entity;
     }
 
@@ -249,7 +259,7 @@ namespace feather::ecs
     {
         const std::string owned(component);
         if (!::feather_script_add_component(entity, owned.c_str()))
-            throw Error("cannot add component '" + owned + "' to the entity");
+            ::feather::detail::fail("cannot add component '" + owned + "' to the entity");
     }
 
     // A handle to one component of a live entity. Empty if the entity does not
@@ -264,7 +274,7 @@ namespace feather::ecs
     {
         const std::int32_t count = ::feather_script_field_count(component);
         if (count < 0)
-            throw Error(std::string("no component named '") + component + "'");
+            ::feather::detail::fail(std::string("no component named '") + component + "'");
 
         std::vector<Field> ret;
         ret.reserve(std::size_t(count));
@@ -273,7 +283,7 @@ namespace feather::ecs
             const char *field_name = nullptr;
             std::uint8_t type = 0;
             if (!::feather_script_field_info(component, i, &field_name, &type))
-                throw Error(std::string("cannot describe field ") + std::to_string(i) + " of '" + component + "'");
+                ::feather::detail::fail(std::string("cannot describe field ") + std::to_string(i) + " of '" + component + "'");
             ret.push_back(Field{.name = field_name ? field_name : "", .type = static_cast<FieldType>(type)});
         }
         return ret;

@@ -39,7 +39,11 @@ target("cpp_bindings")
 
     on_config(function (target)
         import("feather_bindings")
-        feather_bindings.run_gen_cpp(target, {output_dir = OUTPUT_DIR, sdk_cpp_dir = SDK_CPP_DIR})
+        feather_bindings.run_gen_cpp(target, {
+            output_dir = OUTPUT_DIR,
+            sdk_cpp_dir = SDK_CPP_DIR,
+            gen_cpp_dir = path.join(FEATHER_ROOT, "tools", "SDK", "gen_cpp"),
+        })
     end)
 target_end()
 

@@ -289,6 +289,22 @@ function mrbind_includedir(target)
     return path.join(pkg:installdir(), "include")
 end
 
+-- Content hash of the C++ generator's sources, matching what
+-- thirdparty/packages/mrbind.lua records as the package's gen_cpp_rev config.
+-- KEEP IN SYNC with the copy there.
+function feather_gen_cpp_rev(dir)
+    if not os.isdir(dir) then
+        return ""
+    end
+    local files = os.files(path.join(dir, "**"))
+    table.sort(files)
+    local parts = {}
+    for _, f in ipairs(files) do
+        table.insert(parts, path.relative(f, dir) .. ":" .. hash.sha256(f))
+    end
+    return hash.strhash128(table.concat(parts, "\0"))
+end
+
 -- DirectXMath's headers are parsed (SimpleMath's vector types keep their fields
 -- in XMFLOAT bases), so their filenames need a --map-path of their own: every
 -- parsed filename must match some prefix or mrbind_gen_c refuses to run.
@@ -934,7 +950,30 @@ function run_gen_cpp(target, opts)
         "feather_bindings: " .. desc_json .. " is missing -- the C bindings must be generated first")
 
     local flags = gen_cpp_shape_flags()
-    local flags_id = hash.strhash128(table.concat(flags, "\0"))
+    -- The generator's own binary is part of the identity of its output: unlike
+    -- mrbind's generators, this one is ours and changes with the engine, so a
+    -- stamp over the input and flags alone would keep stale headers after an
+    -- edit to it.
+    local generator = mrbind_bin(target, "feather_gen_cpp")
+
+    -- The generator ships inside a package, and xmake caches package
+    -- resolution: editing its sources changes the requested config without
+    -- necessarily reinstalling. Silently generating from a stale binary is the
+    -- worst outcome, so compare what the installed package was built from
+    -- against what is on disk. Content, not mtimes -- a fresh checkout writes
+    -- every file with the current time.
+    if opts.gen_cpp_dir and os.isdir(opts.gen_cpp_dir) then
+        local manifest = path.join(path.directory(path.directory(generator)), "manifest.txt")
+        local recorded = os.isfile(manifest) and io.readfile(manifest):match('gen_cpp_rev = "([^"]*)"')
+        local current = feather_gen_cpp_rev(opts.gen_cpp_dir)
+        if recorded and recorded ~= "" and current ~= "" and recorded ~= current then
+            raise("feather_gen_cpp was built from different sources than tools/SDK/gen_cpp holds now.\n"
+                .. "  It lives in the mrbind package, whose install xmake has cached, so editing it\n"
+                .. "  does not reinstall on its own. Rebuild with:  xmake f -c -y")
+        end
+    end
+
+    local flags_id = hash.strhash128(table.concat(flags, "\0") .. "\0" .. hash.sha256(generator))
 
     local stamp = output_dir .. ".stamp"
     if _gen_outputs_fresh(stamp, desc_json, flags_id,
@@ -954,7 +993,7 @@ function run_gen_cpp(target, opts)
     end
 
     cprint("${cyan}[cpp_bindings]${reset} feather_gen_cpp -> %s", path.relative(output_dir, os.projectdir()))
-    os.vrunv(mrbind_bin(target, "feather_gen_cpp"), argv)
+    os.vrunv(generator, argv)
 
     -- The hand-written half of the surface: the plugin entry point macro and
     -- the ECS registration API, which describe a plugin rather than the engine
