@@ -3,11 +3,32 @@
 -- mrbind_gen_c, mrbind_gen_csharp -- no linkable library, so this package
 -- just builds and installs the binaries; nothing in the engine links against
 -- it (yet).
+--
+-- Feather's own C++ wrapper generator (tools/SDK/gen_cpp) is grafted into this
+-- source tree and installed as a fourth tool, feather_gen_cpp. See
+-- _graft_feather_gen_cpp below for why it is built here rather than separately.
+
+-- Where the grafted generator's sources live. Captured as a value while this
+-- file is being loaded, not computed inside a callback: os.scriptdir() resolves
+-- against whichever script the sandbox is currently running, which during
+-- on_install is not this file. Same capture-at-include pattern as
+-- tools/SDK/FeatherPluginSDK.lua's SDK_DIR.
+--
+-- Two levels up from thirdparty/packages/ is the engine root -- not
+-- os.projectdir(), which is a consumer's project when this is included
+-- cross-repo (same reasoning as thirdparty/packages/directxmath.lua).
+local FEATHER_GEN_CPP_DIR = path.join(path.directory(path.directory(os.scriptdir())),
+    "tools", "SDK", "gen_cpp")
+
 package("mrbind")
     set_kind("binary")
     set_homepage("https://github.com/MeshInspector/mrbind")
     set_description("A Clang-based C++ header parser and C/C# binding generator")
     set_license("MIT")
+
+    -- Not a user-facing option: it exists so the install hash follows the
+    -- grafted generator's sources (see feather_gen_cpp_rev).
+    add_configs("gen_cpp_rev", {description = "Content hash of the vendored feather_gen_cpp sources.", default = "", type = "string"})
 
     -- Pinned, not tracking master. The parse output (build/bindings/api.json)
     -- is published for plugin projects to generate from, and its schema is
@@ -21,6 +42,23 @@ package("mrbind")
 
     on_load(function (package)
         import("lib.detect.find_tool")
+
+        -- Content hash of the grafted generator's sources, as a config so the
+        -- install hash follows them: editing the generator reinstalls the
+        -- package instead of silently keeping a stale binary.
+        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+        local rev = ""
+        local gen_cpp = FEATHER_GEN_CPP_DIR
+        if os.isdir(gen_cpp) then
+            local files = os.files(path.join(gen_cpp, "**"))
+            table.sort(files)
+            local parts = {}
+            for _, f in ipairs(files) do
+                table.insert(parts, path.relative(f, gen_cpp) .. ":" .. hash.sha256(f))
+            end
+            rev = hash.strhash128(table.concat(parts, "\0"))
+        end
+        package:config_set("gen_cpp_rev", rev)
 
         local llvm_config, suffix
         if not package:is_plat("windows") then
@@ -199,11 +237,61 @@ package("mrbind")
             end
         end
 
+        -- Lets --expose-as-struct accept standard-layout classes that have base
+        -- classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
+        -- with their fields inherited from XMFLOAT2/3/4. The size/alignment/
+        -- offset validation mrbind does when emitting the struct is untouched,
+        -- so an unsuitable type still fails loudly. Rationale in full:
+        -- tools/SDK/gen_cpp/patches/expose-as-struct-standard-layout-bases.md.
+        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+        local function _allow_exposed_structs_with_bases()
+            local f = path.join("src", "generators", "c", "generator.cpp")
+            local needle = '                // Must have no bases. I ain\'t dealing with those.\n'
+                .. '                if (!class_info.parsed->bases.empty())\n'
+                .. '                    throw std::runtime_error("The class `" + cpp_type_name + "` is whitelisted by `--expose-as-struct`, but it has a base class. This flag only supports the structs/classes with no base classes.");\n'
+
+            local contents = io.readfile(f)
+            if contents:find(needle, 1, true) then
+                -- Parenthesized: replace() also returns a count, which would
+                -- otherwise land in writefile's opt parameter.
+                io.writefile(f, (contents:replace(needle, "", {plain = true})))
+            end
+            -- An upstream edit to this text must fail the build rather than
+            -- silently leave the check in and break the math bindings.
+            assert(not io.readfile(f):find("I ain't dealing with those", 1, true),
+                "mrbind: could not remove the --expose-as-struct no-bases check from " .. f
+                .. " -- upstream source moved; see tools/SDK/gen_cpp/patches/")
+        end
+
+        -- Copies Feather's C++ wrapper generator into the fetched source tree
+        -- and hooks it into mrbind's own CMakeLists. Grafted rather than built
+        -- standalone because mrbind sets -std=c++23, _ITERATOR_DEBUG_LEVEL=0 and
+        -- CMAKE_MSVC_RUNTIME_LIBRARY at directory scope, and a target missing any
+        -- of them fails to link against mrbind_c_interop (LNK2038 on Windows).
+        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+        local function _graft_feather_gen_cpp()
+            local src = FEATHER_GEN_CPP_DIR
+            assert(os.isdir(src), "mrbind: feather_gen_cpp sources not found at " .. src)
+            os.tryrm("feather_gen_cpp")
+            os.cp(src, "feather_gen_cpp")
+
+            -- Explicit binary dir: the executable goes to the build root, so a
+            -- build folder named after it would be the linker's output path.
+            local line = "add_subdirectory(feather_gen_cpp _feather_gen_cpp_build)"
+            local contents = io.readfile("CMakeLists.txt")
+            if not contents:find(line, 1, true) then
+                io.writefile("CMakeLists.txt", contents:rtrim() .. "\n" .. line .. "\n")
+            end
+        end
+
+        _allow_exposed_structs_with_bases()
+        _graft_feather_gen_cpp()
+
         local builddir = path.join(package:builddir(), ".cmake_build")
         cmake.build(package, configs, {builddir = builddir, cmake_generator = "Ninja"})
 
-        -- No install() rules upstream: copy the three tool binaries out of
-        -- the build tree by hand.
+        -- No install() rules upstream: copy the tool binaries out of the build
+        -- tree by hand.
         --
         -- Checks both spellings rather than trusting is_plat("windows")
         -- alone: this is a host = true package (thirdparty/xmake.lua), always
@@ -216,7 +304,7 @@ package("mrbind")
         -- of which compiler produced it, so accepting either spelling is
         -- correct in every case, not just the one this was found in.
         local bindir = package:installdir("bin")
-        for _, name in ipairs({"mrbind", "mrbind_gen_c", "mrbind_gen_csharp"}) do
+        for _, name in ipairs({"mrbind", "mrbind_gen_c", "mrbind_gen_csharp", "feather_gen_cpp"}) do
             local preferred = os.host() == "windows" and (name .. ".exe") or name
             local fallback = os.host() == "windows" and name or (name .. ".exe")
             local built = path.join(builddir, preferred)
