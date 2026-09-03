@@ -120,6 +120,10 @@ namespace feather_gen
         // one the class declares itself. Cleared per class.
         mutable std::set<std::string> emitted_signatures;
 
+        // Types that made a function unbindable, counted for --verbose so the
+        // gaps in coverage are visible rather than silent.
+        mutable std::map<std::string, std::size_t> skip_reasons;
+
         std::size_t num_emitted = 0;
         std::size_t num_skipped = 0;
 

@@ -94,5 +94,11 @@ int main(int argc, char **argv)
     std::printf("feather_gen_cpp: %zu functions emitted, %zu skipped (types with no C++ spelling yet)\n",
         generator.num_emitted, generator.num_skipped);
 
+    if (opts.verbose)
+    {
+        for (const auto &[reason, count] : generator.skip_reasons)
+            std::printf("  skipped %4zu x %s\n", count, reason.c_str());
+    }
+
     return 0;
 }

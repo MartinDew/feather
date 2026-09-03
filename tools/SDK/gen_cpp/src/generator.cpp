@@ -214,6 +214,11 @@ namespace feather_gen
     ParamBinding Generator::BindParam(const CI::FuncParam &param, std::size_t index) const
     {
         ParamBinding ret;
+        struct Note
+        {
+            const Generator &g; const std::string &t; const ParamBinding &r;
+            ~Note() { if (!r.ok) g.skip_reasons["param " + t]++; }
+        } note{*this, param.cpp_type, ret};
         const std::string name = SafeName(param.name_or_placeholder.empty()
             ? "_arg" + std::to_string(index) : param.name_or_placeholder);
         const ParsedType type = ParseType(param.cpp_type);
@@ -251,11 +256,13 @@ namespace feather_gen
 
         if (info->cat == Cat::arithmetic)
         {
-            if (type.IsIndirect())
+            if (type.form == ParsedType::Form::rref)
                 return ret;
             ret.ok = true;
+            // Taken by value either way: that gives an addressable lvalue for
+            // the forms the C side spells as a pointer.
             ret.decl = type.base + " " + name;
-            ret.arg = name;
+            ret.arg = type.IsIndirect() ? "&" + name : name;
             return ret;
         }
 
@@ -328,6 +335,11 @@ namespace feather_gen
     ReturnBinding Generator::BindReturn(const CI::FuncReturn &ret_desc) const
     {
         ReturnBinding ret;
+        struct Note
+        {
+            const Generator &g; const std::string &t; const ReturnBinding &r;
+            ~Note() { if (!r.ok) g.skip_reasons["return " + t]++; }
+        } note{*this, ret_desc.cpp_type, ret};
         const ParsedType type = ParseType(ret_desc.cpp_type);
 
         if (ret_desc.is_array_pointer)
@@ -352,15 +364,14 @@ namespace feather_gen
                 : "::feather::detail::take_string($)";
             return ret;
         }
-        if (ret_desc.uses_sugar)
-            return ret;
-
         if (type.base == "char" && type.form == ParsedType::Form::ptr && type.is_const)
         {
             ret.ok = true;
             ret.type = "const char *";
             return ret;
         }
+        if (ret_desc.uses_sugar)
+            return ret;
 
         const TypeInfo *info = Find(type.base);
         if (!info)
@@ -368,20 +379,24 @@ namespace feather_gen
 
         if (info->cat == Cat::arithmetic)
         {
-            if (type.IsIndirect())
+            if (type.form == ParsedType::Form::rref)
                 return ret;
             ret.ok = true;
             ret.type = type.base;
+            if (type.IsIndirect())
+                ret.expr = "*$"; // Copied out: a reference into engine memory has no lifetime here.
             return ret;
         }
 
         if (info->cat == Cat::enum_)
         {
-            if (type.IsIndirect())
+            if (type.form == ParsedType::Form::rref)
                 return ret;
             ret.ok = true;
             ret.type = info->wrapper;
-            ret.expr = "static_cast<" + info->wrapper + ">($)";
+            ret.expr = type.IsIndirect()
+                ? "static_cast<" + info->wrapper + ">(*$)"
+                : "static_cast<" + info->wrapper + ">($)";
             return ret;
         }
 
