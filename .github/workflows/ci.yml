@@ -262,7 +262,7 @@ jobs:
           cp -r tools/templates/plugin_c_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
           cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_c "$smoke/sdk/"
-          cp build/bindings/dist/*.json "$smoke/api/"
+          cp build/bindings/dist/feather_api.json "$smoke/api/"
           cd "$smoke"
           # A failed package build (mrbind_generators, no engine-repo cache to fall back on) reports only "expected build output missing" by default.
           # The actual compiler error is in the package's own install log, dumped here instead.
@@ -297,7 +297,7 @@ jobs:
           cp -r tools/templates/plugin_cpp_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
           cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_cpp "$smoke/sdk/"
-          cp build/bindings/dist/*.json "$smoke/api/"
+          cp build/bindings/dist/feather_api.json "$smoke/api/"
           cd "$smoke"
           if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then
             echo "---- xmake f failed; dumping failed package install logs ----"
@@ -347,7 +347,7 @@ jobs:
           cp -r tools/templates/plugin_cs_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
           cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_cs "$smoke/sdk/"
-          cp build/bindings/dist/*.json "$smoke/api/"
+          cp build/bindings/dist/feather_api.json "$smoke/api/"
           cd "$smoke"
           if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then
             echo "---- xmake f failed; dumping failed package install logs ----"

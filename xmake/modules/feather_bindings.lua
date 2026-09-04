@@ -233,13 +233,10 @@ function directxmath_includedir(target)
     return path.join(pkg:installdir(), "include")
 end
 
--- The same directory, resolved without a target handle: a task runs outside the
--- target graph, where project.target() sees only part of it.
-function directxmath_includedir_global()
-    import("core.project.project")
-    local pkg = assert(project.required_package("directxmath"),
-        "feather_bindings: the directxmath package is not required by this configuration")
-    return path.join(pkg:installdir(), "include")
+-- The DirectXMath include dir as the parse itself recorded it, found through the one header every such parse names. Preferred over asking
+-- the current configuration, whose package hash differs from the one api.json was produced under after any reconfigure.
+function directxmath_root_in(api_json_content)
+    return api_json_content:match('"([^"]*)/DirectXMath%.h"')
 end
 
 -- Entities excluded from the parse for every language at once -- each exclusion is a type mrbind can't express, not an API choice.
@@ -408,16 +405,20 @@ function c_desc_json_path()
     return path.join(output_dir("c"), "desc.json")
 end
 
--- The mrbind revision thirdparty/packages/mrbind.lua pins, duplicated as a plain string since a package's URL spec isn't reachable from here.
--- The export task asserts the two stay equal.
-function mrbind_pinned_commit()
-    return "232ff33159d5e76e57b11669453d7d25ad22a14d"
-end
-
--- Paths inside api.json and the exported metadata are always spelled with forward slashes.
--- Every flag derived from them must be too, or Windows backslashes stop matching.
+-- Paths inside api.json are always spelled with forward slashes. Every flag
+-- derived from them must be too, or Windows backslashes stop matching.
 function to_forward_slashes(p)
     return (tostring(p):gsub("\\", "/"))
+end
+
+-- What the export task writes in place of the two absolute prefixes baked into api.json, and what a consumer substitutes back
+-- (tools/SDK/modules/feather_plugin_bindings.lua). "@" starts no real path on any platform. KEEP IN SYNC with the SDK's copies.
+function feather_token()
+    return "@feather"
+end
+
+function directxmath_token()
+    return "@directxmath"
 end
 
 function dist_dir()
@@ -428,12 +429,8 @@ function dist_api_json_path()
     return path.join(dist_dir(), "feather_api.json")
 end
 
-function dist_api_meta_path()
-    return path.join(dist_dir(), "feather_api.meta.json")
-end
-
--- Identifies the ABI-shaping flags run_gen_c() passes, so a plugin can tell its own flags still match (published as gen_c_flags_id; FeatherPluginSDK.lua refuses to build on a mismatch).
--- Shape only, never paths -- feather_root's absolute path made the hash host-separator-dependent. KEEP IN SYNC with run_gen_c() and FeatherPluginSDK's feather_plugin_bindings.lua.
+-- Identifies the ABI-shaping flags run_gen_c() passes, so an edit to them re-runs the generator even when api.json is unchanged.
+-- Shape only, never paths -- an absolute path made the hash host-separator-dependent. KEEP IN SYNC with run_gen_c() and FeatherPluginSDK's feather_plugin_bindings.lua.
 function gen_c_flags_id()
     local shape = {
         "helper-name-prefix=Feather_",

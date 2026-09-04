@@ -11,13 +11,18 @@
 -- JSON-to-text tools -- no Clang, no LLVM, no engine checkout -- so this is the
 -- entire toolchain a C or C# plugin needs.
 
-import("core.base.json")
 import("lib.detect.find_tool")
 
 -- This module lives in <sdk>/modules, so the SDK root is one level up. Used to
 -- find the C# bootstrap that ships beside it.
 function sdk_dir()
     return path.directory(os.scriptdir())
+end
+
+-- Paths in api.json are spelled with forward slashes; every flag derived from them must be too.
+-- Windows would otherwise translate them to backslashes and the prefix stops matching what the parse recorded.
+local function to_forward_slashes(p)
+    return (tostring(p):gsub("\\", "/"))
 end
 
 -- Where generated bindings land: under build/ so it's disposable, and out of
@@ -36,6 +41,13 @@ function output_layout()
         desc_json  = path.join(root, "desc.json"),
         csharp_dir = path.join(root, "csharp"),
         cpp_dir    = path.join(root, "cpp"),
+        -- The published API with its path tokens substituted back; see
+        -- resolve_api_json.
+        resolved_json = path.join(root, "feather_api.resolved.json"),
+        roots = {
+            feather    = to_forward_slashes(path.join(root, "roots", "feather")),
+            directxmath = to_forward_slashes(path.join(root, "roots", "directxmath")),
+        },
     }
 end
 
@@ -46,23 +58,32 @@ function generator_bin(target, name)
     return path.join(pkg:installdir(), "bin", name .. suffix)
 end
 
--- Reads the sidecar the engine's `export-api` task writes next to feather_api.json -- above all feather_root, the checkout path baked into
--- every filename inside api.json, which --map-path/--assume-include-dir must match verbatim. Need not exist on this machine; nothing opens it.
-function read_api_meta(api_json, api_meta)
-    api_meta = api_meta or path.join(path.directory(api_json),
-        path.basename(api_json) .. ".meta.json")
-    assert(os.isfile(api_meta), "FeatherPluginSDK: missing API metadata file: " .. api_meta
-        .. "\n  It is published alongside feather_api.json by the engine's `xmake export-api` task.")
+-- What the engine's `export-api` wrote in place of the two absolute prefixes
+-- baked into the parse. KEEP IN SYNC with the engine's feather_bindings.lua.
+local FEATHER_TOKEN = "@feather"
+local DIRECTXMATH_TOKEN = "@directxmath"
 
-    local meta = json.loadfile(api_meta)
-    assert(meta and meta.feather_root,
-        "FeatherPluginSDK: " .. api_meta .. " has no \"feather_root\"")
-    -- Same role as feather_root, for the DirectXMath headers the parse reached
-    -- through SimpleMath's bases.
-    assert(meta.directxmath_root,
-        "FeatherPluginSDK: " .. api_meta .. " has no \"directxmath_root\""
-        .. "\n  Re-export it from an engine build of the same version as this SDK.")
-    return meta, api_meta
+-- Substitutes real directories back in for the published file's path tokens, since mrbind_gen_c matches --map-path against the filenames
+-- in the JSON literally. The directories only have to exist and be canonical -- nothing is ever read from them.
+local function resolve_api_json(api_json, out)
+    local content = io.readfile(api_json)
+    assert(content:find(FEATHER_TOKEN, 1, true),
+        "FeatherPluginSDK: " .. api_json .. " has no " .. FEATHER_TOKEN .. " paths.\n"
+        .. "  Re-export it with `xmake export-api` from an engine matching this SDK.")
+
+    content = content:replace(DIRECTXMATH_TOKEN, out.roots.directxmath, {plain = true})
+    content = content:replace(FEATHER_TOKEN, out.roots.feather, {plain = true})
+
+    -- Created, not just named: the generator canonicalizes both flag and filename, and a path under a symlinked build directory would
+    -- otherwise resolve to something the JSON's own spelling no longer prefixes.
+    os.mkdir(out.roots.feather)
+    os.mkdir(out.roots.directxmath)
+
+    -- Write-if-changed: this file feeds the staleness stamp below.
+    if not os.isfile(out.resolved_json) or io.readfile(out.resolved_json) ~= content then
+        io.writefile(out.resolved_json, content)
+    end
+    return out.resolved_json
 end
 
 -- The C++ types emitted as real C structs (cross the ABI by value) rather than opaque pointers.
@@ -125,30 +146,10 @@ local function shape_flags()
     return shape
 end
 
--- Identifies the ABI-shaping flags, so drift against the engine is caught at build time rather than as a link error or silent UB.
--- Hashes shape only, never feather_root's absolute path (host-separator-dependent, produced false drift). KEEP IN SYNC with the engine's gen_c_flags_id().
+-- Identifies the ABI-shaping flags, so editing them regenerates the headers even when the API file itself is unchanged.
+-- Hashes shape only, never an absolute path (host-separator-dependent, produced false drift). KEEP IN SYNC with the engine's gen_c_flags_id().
 function gen_c_flags_id()
     return hash.strhash128(table.concat(shape_flags(), "\0"))
-end
-
--- Paths in api.json and the metadata are spelled with forward slashes; every flag derived from them must be too.
--- Windows would otherwise translate them to backslashes and the prefix stops matching what the parse recorded.
-local function to_forward_slashes(p)
-    return (tostring(p):gsub("\\", "/"))
-end
-
-local function check_flags_id(meta, api_meta_name)
-    if not meta.gen_c_flags_id then
-        -- Older export, or one written by hand. Nothing to compare against.
-        return
-    end
-    local ours = gen_c_flags_id()
-    assert(ours == meta.gen_c_flags_id, string.format(
-        "FeatherPluginSDK: binding flags disagree with the engine that produced this API file.\n"
-        .. "  engine (%s): %s\n  this SDK:     %s\n"
-        .. "  The generated headers would not match the engine's own bindings.\n"
-        .. "  Update the vendored SDK to the one from that engine build.",
-        api_meta_name, meta.gen_c_flags_id, ours))
 end
 
 -- Every shaping flag here must match the engine's run_gen_c() exactly: the
@@ -241,15 +242,14 @@ function generate(target, opts, langs)
         .. "\n  Copy it from the engine's build/bindings/dist/ (see `xmake export-api`).")
 
     local out = output_layout()
-    local meta, meta_path = read_api_meta(api_json, opts.api_meta)
-    check_flags_id(meta, meta_path)
+    local resolved_json = resolve_api_json(api_json, out)
 
     local c_generator = generator_bin(target, "mrbind_gen_c")
-    -- Keyed on api_json alone, this stamp would miss a shape_flags()/gen_c_argv() edit or a rebuilt generator binary that leaves
-    -- api_json's bytes unchanged, leaving a stale header tree the .def scrape below reads as complete when it isn't.
+    -- Keyed on the API file alone, this stamp would miss a shape_flags()/gen_c_argv() edit or a rebuilt generator binary that leaves
+    -- its bytes unchanged, leaving a stale header tree the .def scrape below reads as complete when it isn't.
     local c_extra = gen_c_flags_id() .. ":" .. hash.sha256(c_generator)
     local c_stamp = path.join(bindings_dir(), ".gen_c_stamp")
-    if gen_stale(c_stamp, api_json,
+    if gen_stale(c_stamp, resolved_json,
             os.isfile(out.desc_json) and os.isdir(out.header_dir), c_extra) then
         -- The generators rewrite every file on every run, so stage the output and copy across only what differs (see sync_tree).
         -- Keeps an unchanged regeneration from rebuilding the plugin.
@@ -265,7 +265,7 @@ function generate(target, opts, langs)
         cprint("${cyan}[feather]${reset} mrbind_gen_c -> %s",
             path.relative(out.header_dir, os.projectdir()))
         os.vrunv(c_generator,
-            gen_c_argv(api_json, meta.feather_root, meta.directxmath_root, staged))
+            gen_c_argv(resolved_json, out.roots.feather, out.roots.directxmath, staged))
 
         os.mkdir(out.header_dir)
         os.mkdir(out.source_dir)
@@ -273,7 +273,7 @@ function generate(target, opts, langs)
         sync_tree(staged.source_dir, out.source_dir)
         sync_file(staged.desc_json, out.desc_json)
         os.tryrm(stage)
-        write_gen_stamp(c_stamp, api_json, c_extra)
+        write_gen_stamp(c_stamp, resolved_json, c_extra)
     end
 
     if langs.csharp then

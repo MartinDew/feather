@@ -65,7 +65,8 @@ includes("xmake/engine.lua")
 
 -- ---- API export -----------------------------------------------------------
 -- Publishes the API description a plugin project designates in its own build -- the handoff point of the whole multi-language plugin
--- story: the engine parses its headers once (xmake/bindings.lua), and this task copies out everything a plugin needs plus a sidecar describing how it was made. See tools/SDK/FeatherPluginSDK.lua.
+-- story: the engine parses its headers once (xmake/bindings.lua), and this task rewrites the two machine-specific path prefixes out of
+-- it so the result describes the API and nothing about this checkout. See tools/SDK/FeatherPluginSDK.lua.
 task("export-api")
     set_menu {
         usage = "xmake export-api",
@@ -73,46 +74,43 @@ task("export-api")
     }
 
     on_run(function ()
-        import("core.base.json")
-        import("core.project.project")
         import("feather_bindings")
 
         local api_json = feather_bindings.api_json_path()
         assert(os.isfile(api_json), "export-api: " .. api_json .. " does not exist.\n"
             .. "  Configure with the C bindings enabled first: xmake f -m debug -y")
 
-        -- Normalized to forward slashes: handed back verbatim to the generators by every consumer, on whatever platform, and must
-        -- match the filenames the parse recorded inside api.json.
+        -- Forward slashes: this is how the parse spelled them inside api.json,
+        -- on whatever platform produced it.
         local feather_root = feather_bindings.to_forward_slashes(os.scriptdir())
-        local dist = feather_bindings.dist_dir()
-        os.mkdir(dist)
-        os.vcp(api_json, feather_bindings.dist_api_json_path())
 
-        local commit = try { function ()
-            return os.iorunv("git", {"describe", "--always", "--dirty"}, {curdir = feather_root}):trim()
-        end } or "unknown"
+        -- Every filename in the parse is absolute, and a consumer's generator must be told which prefix to strip. Replaced by tokens the
+        -- SDK substitutes back to directories of its own (feather_plugin_bindings.resolve_api_json), so the published file names no machine.
+        local content = io.readfile(api_json)
 
-        json.savefile(feather_bindings.dist_api_meta_path(), {
-            api_version = 1,
-            -- The engine checkout path baked into every filename inside api.json. A consumer passes it back to the generators verbatim
-            -- so their path mappings line up; nothing ever opens it, so it needs not exist on the consumer's machine.
-            feather_root = feather_root,
-            -- Likewise for DirectXMath's headers, reached through SimpleMath's bases and living outside the engine tree, so they
-            -- need a path mapping of their own.
-            directxmath_root = feather_bindings.to_forward_slashes(
-                feather_bindings.directxmath_includedir_global()),
-            engine_commit = commit,
-            gen_c_flags_id = feather_bindings.gen_c_flags_id(),
-            -- Which mrbind produced this file. The schema is undocumented, so
-            -- a consumer whose generators disagree can at least be told why.
-            mrbind_ref = feather_bindings.mrbind_pinned_commit(),
-            generated = os.date("%Y-%m-%dT%H:%M:%S"),
-        })
+        -- Read out of the parse rather than asked of the current configuration: a package's install directory carries a hash of the config
+        -- that built it, so the two disagree whenever api.json predates a reconfigure.
+        local directxmath_root = feather_bindings.directxmath_root_in(content)
+        -- DirectXMath first: its package directory lives under the engine root, so replacing the root first would bury the longer prefix.
+        if directxmath_root then
+            content = content:replace(directxmath_root, feather_bindings.directxmath_token(), {plain = true})
+        end
+        content = content:replace(feather_root, feather_bindings.feather_token(), {plain = true})
 
+        assert(content:find(feather_bindings.feather_token(), 1, true),
+            "export-api: no filename in " .. api_json .. " starts with " .. feather_root
+            .. " -- the parse was produced from a different checkout")
+        -- Any absolute path left is one the substitutions above don't know about, and would send a consumer's generator looking for a
+        -- directory only this machine has.
+        local leftover = content:match('"(/[^/*][^"]*)"') or content:match('"(%a:/[^"]*)"')
+        assert(not leftover, "export-api: an absolute path survived the rewrite: "
+            .. tostring(leftover) .. "\n  It needs a token of its own, like the two above.")
+
+        os.mkdir(feather_bindings.dist_dir())
+        io.writefile(feather_bindings.dist_api_json_path(), content)
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_json_path())
-        cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_meta_path())
 
-        -- Two files, on every platform, nothing binary -- in particular no import library: a Windows plugin needs one, but the SDK
-        -- builds it locally from the descriptor these files produce (apply_windows_link), rather than shipping a per-build binary.
+        -- One file, on every platform, nothing binary -- in particular no import library: a Windows plugin needs one, but the SDK
+        -- builds it locally from the descriptor this file produces (apply_windows_link), rather than shipping a per-build binary.
     end)
 task_end()
