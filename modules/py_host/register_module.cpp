@@ -7,9 +7,8 @@
 namespace feather {
 
 void register_py_host(InitLevel level) {
-	// Core: the runner has to be in place before ResourceLoader::index_project()
-	// reaches a .fext manifest of type "python", which happens right after the
-	// Servers level is entered.
+	// Core: the runner has to be in place before ResourceLoader::index_project() reaches a .fext manifest of type "python",
+	// which happens right after the Servers level is entered.
 	if (level != InitLevel::Core) {
 		return;
 	}

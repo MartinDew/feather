@@ -16,13 +16,8 @@
 #define FEATHER_PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif
 
-// Defines the exported entry point `name`, forwarding to `func`, which takes a
-// feather::InitLevel. Plugins are built with hidden visibility, so the
-// attribute above is what makes the symbol findable at all.
-//
-// Installs the exception handler before the first call: without it an engine
-// exception reaches the plugin as a default-constructed return value instead of
-// a feather::Error.
+// Defines the exported entry point `name`, forwarding to `func`, which takes a feather::InitLevel. Plugins are built with hidden
+// visibility, so the attribute above is what makes the symbol findable. Installs the exception handler before the first call, or an engine exception reaches the plugin as a default-constructed return value instead of a feather::Error.
 #define FEATHER_PLUGIN_ENTRY(name, func)                                      \
     extern "C" FEATHER_PLUGIN_EXPORT void name(::std::uint8_t _level)         \
     {                                                                         \

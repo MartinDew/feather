@@ -6,8 +6,7 @@
 -- before_build sandboxes can't see description-scope globals (feather_codegen.lua's
 -- header comment documents the same constraint).
 
--- Everything a consumer project needs lands here, one subdirectory per
--- language, alongside the api.json every generator reads.
+-- Everything a consumer project needs lands here, one subdirectory per language, alongside the api.json every generator reads.
 function output_dir(subdir)
     local root = path.join(os.projectdir(), "build", "bindings")
     return subdir and path.join(root, subdir) or root
@@ -17,8 +16,7 @@ function api_json_path()
     return path.join(output_dir(), "api.json")
 end
 
--- The Python backend consumes macros rather than JSON (mrbind has no Python
--- generator binary; see modules/py_bindings/xmake.lua).
+-- The Python backend consumes macros rather than JSON (mrbind has no Python generator binary; see modules/py_bindings/xmake.lua).
 function api_macros_path()
     return path.join(output_dir(), "api_macros.cpp")
 end
@@ -27,14 +25,11 @@ local function _is_generated(filepath)
     return filepath:endswith(".gen.h") or filepath:endswith(".gen.hpp")
 end
 
--- Every *.h/*.hpp under `dirs`, recursively, excluding reflection-codegen
--- output (*.gen.h -- already #include-d by its originating header; including
--- it raw in a single-TU umbrella risks duplicate-symbol issues).
+-- Every *.h/*.hpp under `dirs`, excluding reflection-codegen output (*.gen.h, already #include-d by its originating header; raw in one TU risks duplicates).
 function list_headers(dirs)
     local headers = {}
     for _, dir in ipairs(dirs) do
-        -- xmake's recursive-glob syntax is "**.h" (no separating slash
-        -- before **), not "**/*.h" -- the latter silently matches nothing.
+        -- xmake's recursive-glob syntax is "**.h" (no separating slash before **), not "**/*.h" -- the latter silently matches nothing.
         for _, pattern in ipairs({"**.h", "**.hpp"}) do
             for _, f in ipairs(os.files(path.join(dir, pattern))) do
                 if not _is_generated(f) then
@@ -47,11 +42,8 @@ function list_headers(dirs)
     return headers
 end
 
--- Writes "#pragma once" + one #include<...> per header in `dirs`, paths
--- relative to feather_root (matching how modules already include core headers,
--- e.g. <core/framework/reflected.h>). Write-if-changed so an unaffected
--- rebuild doesn't touch the file's mtime and force a redundant re-parse,
--- mirroring generate_reflection.py's pattern.
+-- Writes "#pragma once" + one #include per header in `dirs`, relative to feather_root.
+-- Write-if-changed so an unaffected rebuild doesn't force a redundant re-parse.
 function generate_combined_header(output_path, feather_root, dirs)
     local headers = list_headers(dirs)
 
@@ -69,17 +61,8 @@ function generate_combined_header(output_path, feather_root, dirs)
     return output_path, changed
 end
 
--- True when any of `outputs` is missing or older than the newest header under
--- `dirs`. Generated headers count here even though they're kept out of the
--- combined header: the parse reads them through their originating header, so a
--- reflection-codegen refresh has to invalidate the parse too.
--- Identifies the flags the parse was last run with.
---
--- The mtime comparison below only notices changed headers, so editing the
--- ignore lists or any other parser flag would otherwise leave a stale api.json
--- in place and the change would appear to do nothing -- a genuinely confusing
--- failure, since the bindings then disagree with the flags that are right
--- there in the source.
+-- Hash of the parser flags, so a flags-only edit (invisible to the header-mtime
+-- check below) still invalidates a stale api.json instead of leaving it in place.
 function parser_flags_id()
     local parts = {}
     for _, f in ipairs(api_parser_flags()) do
@@ -98,8 +81,7 @@ function parser_flags_stamp_path()
     return path.join(output_dir(), ".parser_flags")
 end
 
--- True when the parse's flags differ from the ones its outputs were produced
--- with (or were never recorded).
+-- True when the parse's flags differ from the ones its outputs were produced with (or were never recorded).
 function parser_flags_changed()
     local stamp = parser_flags_stamp_path()
     if not os.isfile(stamp) then
@@ -133,36 +115,21 @@ function outputs_are_stale(outputs, dirs)
     return false
 end
 
--- The clang (or clang++) MRBind itself was built with, named `binname`
--- ("clang" or "clang++"). Parsing needs plain clang's -resource-dir or it
--- fails with cryptic errors (mrbind's docs/running_parser.md); the Python
--- module has to be *compiled and linked* by the same install
--- (docs/generating_python.md) -- linking needs clang++ specifically, so that
--- the driver auto-links the C++ runtime library even though the link step's
--- only inputs are pre-compiled .o files (see configure_python_target).
--- Mirrors thirdparty/packages/mrbind.lua's own on_load clang resolution,
--- which builds the same "clang"/"clang++" pair from the same llvm_config or
--- libllvm data: primary path reads the data mrbind.lua stashed on the
--- package instance, with an independent fallback since cross-package
--- package:data() readability from a *consuming* target isn't guaranteed.
+-- The clang/clang++ MRBind itself was built with (parsing needs its -resource-dir; Python linking needs clang++ for the runtime auto-link).
+-- Mirrors mrbind.lua's own clang resolution, with an independent PATH fallback since a consuming target's package:data() isn't always readable.
 function _resolve_clang_binary(target, binname)
     import("lib.detect.find_tool")
 
     local mrbind_pkg = target:pkg("mrbind")
     local clang
 
-    -- A consuming target's package handle has no :data() method at all in
-    -- some xmake versions -- data_set() from the package's own on_load isn't
-    -- readable here, so check the method exists before calling it rather than
-    -- assuming it and crashing on_load.
+    -- Some xmake versions give a consuming target's package handle no :data() method at all, so check it exists before calling it.
     local llvm_config = mrbind_pkg and mrbind_pkg.data and mrbind_pkg:data("llvm_config")
     if llvm_config then
         local suffix = mrbind_pkg:data("llvm_suffix") or ""
         clang = path.join(path.directory(llvm_config), binname .. suffix)
     else
-        -- mrbind.lua's on_load skips the system llvm-config search entirely on
-        -- Windows, always using libllvm there -- mirror that exactly rather
-        -- than searching PATH for a tool that path never takes.
+        -- mrbind.lua skips the system llvm-config search on Windows entirely, always using libllvm -- mirrored here exactly.
         local tool
         local suffix = ""
         if not is_plat("windows") then
@@ -183,11 +150,8 @@ function _resolve_clang_binary(target, binname)
         if tool then
             clang = path.join(path.directory(tool.program), binname .. suffix)
         else
-            -- No system llvm-config: mrbind fell back to building libllvm from
-            -- source (always the case on Windows). target:pkg("mrbind"):dep("libllvm")
-            -- isn't readable from a consuming target, so the target must
-            -- add_packages("libllvm") itself (see thirdparty/xmake.lua) to get
-            -- a usable handle here.
+            -- No system llvm-config: mrbind built libllvm from source (always true on Windows), so the target must
+            -- add_packages("libllvm") itself (thirdparty/xmake.lua) to get a usable handle here.
             local libllvm_pkg = target:pkg("libllvm")
             if libllvm_pkg then
                 local bin = path.join(libllvm_pkg:installdir(), "bin", binname)
@@ -213,37 +177,16 @@ function resolve_clang_resource_dir(target)
     return os.iorunv(resolve_clang(target), {"-print-resource-dir"}):trim()
 end
 
--- Fully resolved include/define/std flags for `target` (feather_public_api,
--- its packages, ...) -- the same machinery behind this repo's
--- compile_commands.json rule -- instead of re-deriving -I/-D flags by hand.
--- Raw, NOT safe to hand to mrbind as-is: see sanitize_compflags_for_mrbind().
+-- Fully resolved include/define/std flags for `target`, via the same machinery behind this repo's compile_commands.json rule.
+-- Raw -- NOT safe to hand to mrbind as-is, see sanitize_compflags_for_mrbind().
 function resolve_compile_flags(target)
     import("core.tool.compiler")
     local inst = compiler.load("cxx", {target = target})
     return inst:compflags({target = target})
 end
 
--- mrbind's clang frontend always parses its argv in plain GNU dialect (it's
--- built via a bare "clang"/"clang++", never "clang-cl" -- see
--- thirdparty/packages/mrbind.lua), regardless of the dialect the PROJECT's
--- toolchain uses. On a clang-cl Windows build, resolve_compile_flags() returns
--- MSVC-style flags (-Zi, -std:c++latest, -external:I<dir>, -Od, -MTd, ...)
--- that mrbind rejects as "unknown argument": the malformed -std: flag gets
--- silently dropped, clang falls back to an old default C++ standard, and
--- std::span/std::byte/std::source_location then fail to resolve, cascading
--- into unrelated-looking parse errors.
---
--- None of the debug-info/PDB/runtime-library/optimization flags matter to a
--- parse or to a header-only compile, so rather than translating each MSVC
--- spelling 1:1, keep only -I/-D (identical in both dialects, in both their
--- "-Ipath" and separate "-I" "path" token forms -- xmake emits both, depending
--- on which package's includedirs are being expressed) and any already-GNU-style
--- -std=..., rewrite -external:I<dir> to -I<dir>, and drop everything else.
---
--- -std=c++2c is only appended when no usable -std= survived (i.e. only the
--- MSVC -std:c++latest spelling was present), NOT unconditionally: forcing
--- -std=c++2c on Linux, where the raw flags already carry a perfectly usable
--- -std=c++23, makes mrbind's own AST consumer crash outright.
+-- mrbind's clang frontend always parses in GNU dialect, but a clang-cl build's MSVC-style compflags() are silently rejected (e.g. -std:c++latest), cascading into unrelated parse errors.
+-- Keeps only -I/-D/-isystem and a GNU -std=, translates -external:I, drops the rest; appends -std=c++2c only when no -std= survived (forcing it over Linux's real -std=c++23 crashes mrbind).
 function sanitize_compflags_for_mrbind(flags)
     local out = {}
     local has_std = false
@@ -251,10 +194,7 @@ function sanitize_compflags_for_mrbind(flags)
     while i <= #flags do
         local f = flags[i]
         if f == "-I" or f == "-D" or f == "-isystem" then
-            -- "-isystem <dir>" is how compflags() expresses PUBLIC thirdparty
-            -- package include dirs -- distinct from the plain "-I" <dir> pair
-            -- and from "-I<dir>" concatenated for the project's own dirs. A
-            -- valid GNU-dialect flag, kept as-is rather than translated.
+            -- "-isystem <dir>" is how compflags() expresses PUBLIC thirdparty include dirs; already valid GNU dialect, kept as-is.
             table.insert(out, f)
             if flags[i + 1] then
                 table.insert(out, flags[i + 1])
@@ -289,9 +229,7 @@ function mrbind_includedir(target)
     return path.join(pkg:installdir(), "include")
 end
 
--- Content hash of the C++ generator's sources, matching what
--- thirdparty/packages/mrbind.lua records as the package's gen_cpp_rev config.
--- KEEP IN SYNC with the copy there.
+-- Content hash of the C++ generator's sources, matching thirdparty/packages/mrbind.lua's gen_cpp_rev config. KEEP IN SYNC with the copy there.
 function feather_gen_cpp_rev(dir)
     if not os.isdir(dir) then
         return ""
@@ -305,124 +243,73 @@ function feather_gen_cpp_rev(dir)
     return hash.strhash128(table.concat(parts, "\0"))
 end
 
--- DirectXMath's headers are parsed (SimpleMath's vector types keep their fields
--- in XMFLOAT bases), so their filenames need a --map-path of their own: every
--- parsed filename must match some prefix or mrbind_gen_c refuses to run.
---
--- Published in the API metadata as directxmath_root, because a plugin's
--- generator has to reproduce the same mapping from the same api.json.
+-- DirectXMath is parsed too (SimpleMath's fields live in XMFLOAT bases) so its headers need their own --map-path.
+-- Published as directxmath_root so a plugin's own generator can reproduce the same mapping.
 function directxmath_includedir(target)
     local pkg = assert(target:pkg("directxmath"),
         "feather_bindings: target must have the directxmath package (via feather_public_api)")
     return path.join(pkg:installdir(), "include")
 end
 
--- Entities excluded from the parse, for every language at once (the parser
--- runs once and every generator reads its output). Each exclusion is a type
--- mrbind can't currently express, not a deliberate choice about the API.
---
--- --ignore drops the entity itself; --skip-mentions-of additionally drops
--- every function that so much as names it. Most entries need both: ignoring a
--- class doesn't stop a function returning one from being bound.
+-- Entities excluded from the parse for every language at once -- each exclusion is a type mrbind can't express, not an API choice.
+-- --ignore drops the entity itself; --skip-mentions-of also drops any function naming it.
 function api_parser_flags()
     return {
         -- Only feather:: is bound, plus StaticString's namespace below.
         "--ignore", "::",
         "--allow", "feather",
-        -- StaticString (core/framework/static_string.hpp) is real Feather
-        -- infrastructure used pervasively (ClassInfo, ClassDB, Reflected, ...),
-        -- just namespaced "nassimp" rather than "feather" -- without its own
-        -- --allow, mrbind refuses to bind anything that mentions it.
+        -- StaticString (core/framework/static_string.hpp) is real Feather infrastructure, just namespaced "nassimp" not "feather".
+        -- Needs its own --allow or mrbind refuses to bind anything mentioning it.
         "--allow", "nassimp",
 
-        -- Make the parse platform-neutral.
-        --
-        -- Integer types are recorded with the spelling they have on the machine
-        -- that parsed, and the API description these flags feed is published
-        -- for plugin projects to generate bindings from on *any* platform. Left
-        -- alone, `size_t` is captured as `unsigned long` from a Linux parse,
-        -- and the resulting C header declares `unsigned long *` where Windows
-        -- needs `unsigned long long *` -- a hard compile error in the generated
-        -- glue, and a silent ABI mismatch anywhere it is not.
-        --
-        -- Canonicalizing to the fixed-width typedefs records `uint64_t`
-        -- instead, which resolves to the right underlying type on each
-        -- platform. Caught by cross-compiling to mingw, where feather::RID's
-        -- `size_t id` failed exactly this way.
+        -- Makes the parse platform-neutral: unparsed, size_t is recorded as unsigned long from a Linux parse, mismatching Windows's unsigned long long downstream (caught cross-compiling to mingw, where RID::id broke this way).
+        -- Canonicalizing to uint64_t is correct on every platform that reads the published API description.
         "--canonicalize-to-fixed-size-typedefs",
 
-        -- Internal plumbing that happens to live under core/: the shared body
-        -- of the two extension loaders (core/resources/extension_loading.h).
-        -- It is not part of the API a plugin talks to, and being unexported it
-        -- cannot be linked from outside the engine at all.
+        -- Internal plumbing under core/: the shared body of the two extension loaders.
+        -- Not part of a plugin's API, and unexported -- cannot be linked from outside the engine at all.
         "--ignore", "feather::resolve_and_register_extension_entry",
-        -- Likewise the resolved layout of a scripted component
-        -- (core/world/scripted_component.h). Its fields are std::function
-        -- accessors, which have no C or C# spelling; a language binding
-        -- describes a component and lets the engine lay it out, rather than
-        -- handling the closures the engine built to read it.
+        -- A scripted component's resolved layout (core/world/scripted_component.h) has std::function accessor fields, with no C/C# spelling.
+        -- A binding describes a component and lets the engine lay it out instead.
         "--ignore", "feather::ScriptedFieldLayout",
         "--skip-mentions-of", "feather::ScriptedFieldLayout",
         "--ignore", "feather::ScriptedComponentLayout",
         "--skip-mentions-of", "feather::ScriptedComponentLayout",
-        -- --skip-mentions-of does not reach a function that only names the type
-        -- through a pointer return, so the lookups go by name as well.
+        -- --skip-mentions-of does not reach a function that only names the type through a pointer return, so this also needs its own --ignore.
         "--ignore", "feather::find_scripted_component",
-        -- Same for what a scripted system's callback is handed
-        -- (core/world/scripted_system.h): raw component storage plus the
-        -- ClassInfo describing it, and a std::function to call. The registering
-        -- side of that API is meant for the engine's own language hosts.
+        -- Same for what a scripted system's callback is handed (core/world/scripted_system.h) -- raw storage plus reflection info.
+        -- Meant for the engine's own language hosts, not a plugin surface.
         "--ignore", "feather::ScriptedSystemComponent",
         "--skip-mentions-of", "feather::ScriptedSystemComponent",
         "--ignore", "feather::ScriptedSystemInvocation",
         "--skip-mentions-of", "feather::ScriptedSystemInvocation",
         "--ignore", "feather::register_scripted_system",
-        -- StaticString's implicit conversions and comparisons don't survive
-        -- the trip to C#. std::string_view maps to ReadOnlySpan<char>, a ref
-        -- struct, and the generator's IEquatable implementation for
-        -- operator==(std::string_view) instantiates Nullable<ReadOnlySpan<char>>,
-        -- which C# forbids outright; the two conversion operators
-        -- (std::string_view and std::string) additionally collapse into a
-        -- duplicate conversion and a duplicate ToString(). None of that is
-        -- fixable from this side, so the operators are dropped and the
-        -- equivalent named accessors -- str(), data(), size(), hash() -- carry
-        -- the same information in every language.
+        -- StaticString's operators don't survive the trip to C#: its std::string_view IEquatable instantiates a forbidden Nullable<ReadOnlySpan<char>>, and its two conversion operators collide into a duplicate ToString().
+        -- Dropped in favor of the named accessors (str()/data()/size()/hash()), which every language keeps.
         "--ignore", "/nassimp::StaticString::operator.*/",
 
-        -- Standard containers that can't cross a C ABI. Matching is by
-        -- spelling, and it doesn't cascade: skipping the element type doesn't
-        -- skip a container of it (e.g. Projection::get_frustum_corners()'s
-        -- std::array<Vector3, 8>), so each container needs its own regex, and
-        -- bare "std::initializer_list" (no template args) matches nothing.
+        -- Standard containers with no C ABI. Matching is by spelling and doesn't cascade -- skipping the element type doesn't skip a container of it.
+        -- Each container needs its own regex.
         "--skip-mentions-of", "/std::initializer_list<.*>/",
         "--skip-mentions-of", "/std::span<.*>/",
         "--skip-mentions-of", "/std::array<.*>/",
         "--skip-mentions-of", "/std::tuple<.*>/",
         "--skip-mentions-of", "/std::unordered_map<.*>/",
 
-        -- Third-party types reachable from core's headers. SimpleMath is
-        -- handled separately, per-parse: the C ABI binds it (see
-        -- c_abi_parser_flags), the Python one does not.
+        -- Third-party types reachable from core's headers. SimpleMath is handled per-parse instead (see c_abi_parser_flags/python_parser_flags).
         "--skip-mentions-of", "/flecs::.*/",
         "--skip-mentions-of", "/args::.*/",
 
-        -- EngineSettings is a private-constructor singleton whose private
-        -- `_settings` member is unordered_map<string_view, unique_ptr<...>>,
-        -- making it implicitly non-copyable. mrbind still attempts a
-        -- copy-constructor wrapper for the whole class (skipping the map field
-        -- alone doesn't stop that), which fails to compile. Not constructible
-        -- through bindings anyway.
+        -- EngineSettings is a private-constructor singleton holding an unordered_map<string_view, unique_ptr<...>>.
+        -- mrbind still attempts a copy-constructor wrapper for the class and fails to compile it.
         "--ignore", "feather::EngineSettings",
         "--skip-mentions-of", "feather::EngineSettings",
 
-        -- Variant is a type-erasure wrapper over many alternatives (SimpleMath's
-        -- among them): its per-alternative as<T>()/is<T>() surface needs traits
-        -- for every alternative even when the individual functions are skipped,
-        -- so the whole class needs --ignore.
+        -- Variant type-erases many alternatives (SimpleMath's included): its as<T>()/is<T>() surface needs traits for every alternative.
+        -- That holds even when the individual functions are skipped, so it needs --ignore.
         "--ignore", "feather::Variant",
         "--skip-mentions-of", "feather::Variant",
-        -- VariantArray is built directly on Variant; --ignore doesn't cascade
-        -- into nested types, so its iterators need their own entries.
+        -- --ignore doesn't cascade into nested types, so VariantArray (built on Variant) needs its own entries, iterators included.
         "--ignore", "feather::VariantArray",
         "--skip-mentions-of", "feather::VariantArray",
         "--ignore", "feather::VariantArray::iterator",
@@ -433,149 +320,85 @@ function api_parser_flags()
         "--ignore", "feather::ClassInfo",
         "--skip-mentions-of", "feather::ClassInfo",
 
-        -- Delegate<T>, instantiated exhaustively as bindings do, surfaces a
-        -- genuine pre-existing template bug: class_db.h's
-        -- `using subclass_delegate_t = Delegate<const std::string_view>` fails
-        -- to compile delegate.h's forwarding call when actually instantiated,
-        -- which normal engine code never triggers. Worth fixing separately.
+        -- Delegate<T>, instantiated exhaustively as bindings do, surfaces a pre-existing bug: class_db.h's subclass_delegate_t fails to compile
+        -- delegate.h's forwarding call once actually instantiated.
         "--ignore", "feather::Delegate",
         "--skip-mentions-of", "feather::Delegate",
-        -- Same story: StaticIndexedArray<T>::begin() const compares size_t
-        -- against unsigned long long in std::max (distinct types on Linux,
-        -- std::max needs identical ones) -- broken for any T, but nothing in
-        -- the engine calls begin()/end() on one, so it's never instantiated.
+        -- Same story: StaticIndexedArray<T>::begin() const compares size_t against unsigned long long in std::max (distinct types on Linux).
+        -- Broken for any T, but nothing in the engine ever instantiates it.
         "--ignore", "feather::StaticIndexedArray",
         "--skip-mentions-of", "feather::StaticIndexedArray",
-        -- consteval, so it exists only during compilation: there's no address
-        -- to call at runtime and nothing for a binding to point at. A
-        -- compile-time C++-type-to-VariantType mapping has no meaning in
-        -- another language anyway.
+        -- consteval: exists only during compilation, so there is no address for a binding to call and no meaning in another language anyway.
         "--ignore", "feather::get_variant_type",
         "--skip-mentions-of", "feather::get_variant_type",
 
-        -- Takes a raw function pointer (the extension entry point), which has
-        -- no binding representation. Engine-internal plumbing: only the
-        -- extension loader calls it, from C++ (core/main/init_level.h).
+        -- Takes a raw function pointer (the extension entry point), with no binding representation; only the C++ extension loader calls it.
         "--ignore", "feather::register_extension_entry",
         "--skip-mentions-of", "feather::register_extension_entry",
 
-        -- Declared in math_defs.h, never defined anywhere -- a dead
-        -- declaration that only becomes a link error once a generated wrapper
-        -- (which calls everything declared) is force-linked in.
+        -- Declared in math_defs.h, never defined -- a dead declaration that only becomes a link error once a generated wrapper force-links it.
         "--ignore", "feather::raise_to_next_multiple_of",
         "--skip-mentions-of", "feather::raise_to_next_multiple_of",
-        -- RID::invalid()'s out-of-line constexpr definition (core/resources/rid.cpp)
-        -- is only called from RID::is_valid() in that same file; in release
-        -- builds GCC constant-folds that call away and elides the out-of-line
-        -- definition, so no symbol exists for a binding to call. Debug and
-        -- releasedbg are fine; only release hits this.
+        -- RID::invalid()'s out-of-line definition (core/resources/rid.cpp) is only called from RID::is_valid() in the same TU.
+        -- Release-mode GCC constant-folds that call away, so release builds have no symbol.
         "--ignore", "feather::RID::invalid",
         "--skip-mentions-of", "feather::RID::invalid",
     }
 end
 
--- Flags that apply only to the parse the C ABI is generated from (the JSON
--- one). They exist to let SimpleMath's math types cross the C boundary, which
--- is what gives a C or C++ plugin a Transform with a position.
---
--- Only the six types core actually uses (core/math/math_defs.h) are admitted,
--- not all of SimpleMath.
+-- Flags for the parse the C ABI is generated from, admitting the six SimpleMath types core actually uses (core/math/math_defs.h).
+-- What gives a C/C++ plugin a Transform with a position.
 function c_abi_parser_flags()
     return {
-        -- Exposed structs take their fields from their bases, and the parser
-        -- only copies base members when asked. Also what lets a derived class
-        -- offer its inherited methods in C.
+        -- Exposed structs take their fields from their bases, and the parser only copies base members when asked.
+        -- Also what lets a derived class offer its inherited methods in C.
         "--copy-inherited-members",
 
-        -- --ignore "::" above blacklists everything outside feather/nassimp, so
-        -- the math types need admitting by name.
-        --
-        -- The optional member tail is load-bearing: these patterns are matched
-        -- whole, so a pattern naming only the class admits the class and
-        -- rejects every one of its members -- including the constructors and
-        -- destructor, without which mrbind treats the type as not
-        -- constructible or destructible and refuses to return one at all.
-        --
-        -- Only constructors and destructors are admitted (the tail matches the
-        -- class's own name, optionally with a "~"), never a general "::.*":
-        -- SimpleMath defines most of its methods out of line in SimpleMath.inl,
-        -- and admitting an out-of-line member definition walks into a parser
-        -- assertion -- the enclosing class is not on its stack there. The
-        -- arithmetic is not wanted anyway; a plugin calls its own copy.
+        -- Patterns match whole, so the optional member tail is load-bearing: admitting only the class would reject its own ctors/dtor too.
+        -- Only ctors/dtor are admitted, never "::.*": SimpleMath's out-of-line methods (SimpleMath.inl) trip a parser assertion when admitted.
         "--allow", "/DirectX::SimpleMath::(Vector2|Vector3|Vector4|Quaternion|Color|Matrix)"
             .. "(::~?(Vector2|Vector3|Vector4|Quaternion|Color|Matrix))?/",
-        -- Their fields live in these bases, and a base the parse never saw is
-        -- dropped from the class entirely -- leaving something with no members
-        -- and no destructor, which cannot be bound at all.
-        --
-        -- XMFLOAT4X4 (Matrix's base) holds an anonymous union, which the parser
-        -- refuses to record as a field. That only rules Matrix out of
-        -- --expose-as-struct, not out of the bindings: it stays an opaque class
-        -- and crosses the ABI as a pointer.
+        -- Their fields live in these bases; a base the parse never saw is dropped from the class entirely, leaving it with no members and no destructor.
+        -- XMFLOAT4X4 (Matrix's base) holds an anonymous union the parser won't record as a field -- rules Matrix out of --expose-as-struct only.
         "--allow", "/DirectX::XMFLOAT[234](::.*)?/",
-        -- The class only, without the "(::.*)?" tail the others carry: its
-        -- members live in an anonymous union, and admitting those crashes the
-        -- parser, which never pushes an entity for the anonymous record to
-        -- attach them to. Matrix is opaque, so only its own members matter.
+        -- No "(::.*)?" tail here: its members live in the anonymous union, and admitting those crashes the parser (no entity for it to attach to).
+        -- Matrix is opaque, so only its own members matter.
         "--allow", "DirectX::XMFLOAT4X4",
 
-        -- The SIMD types the math methods take and return. Nothing can pass an
-        -- __m128 through a C ABI, so every method mentioning one drops out --
-        -- which is most of SimpleMath's arithmetic. The wrapper does not need
-        -- them: it aliases these types to the plugin's own SimpleMath copy and
-        -- calls its operators directly, in the plugin.
-        -- The XMFLOAT matrix shapes and the packed formats appear only in
-        -- Matrix's and Color's four out-of-line constructors, which must stay
-        -- rejected for the reason given above.
+        -- The SIMD types the math methods take/return -- no C ABI can pass an __m128, so most of SimpleMath's arithmetic drops out here
+        -- (the wrapper aliases these to the plugin's own SimpleMath copy instead). Also catches the matrix/packed shapes from the rejected out-of-line ctors above.
         "--skip-mentions-of", "/DirectX::(XMVECTOR[A-Z0-9]*|XMMATRIX|[FGHC]XMVECTOR|[FC]XMMATRIX|XMFLOAT[34]X[34]|XM(U?INT)[234])/",
-        -- XMVECTOR is a typedef for a compiler vector type, and matching is by
-        -- canonical spelling, so the name above never catches it off MSVC.
+        -- XMVECTOR is a compiler vector typedef; matching is by canonical spelling, so the pattern above never catches it off MSVC.
         "--skip-mentions-of", "/.*__vector_size__.*/",
         "--skip-mentions-of", "/DirectX::PackedVector::.*/",
 
-        -- The comparison categories a defaulted operator<=> returns. They have
-        -- no C spelling, and DirectXMath's structs default their comparisons.
+        -- The comparison categories a defaulted operator<=> returns -- no C spelling, and DirectXMath's structs default their comparisons.
         "--skip-mentions-of", "/std::(partial|weak|strong)_ordering/",
 
-        -- Members are deliberately NOT ignored: mrbind decides whether a class
-        -- can be default-constructed, copied or assigned by looking at the
-        -- constructors it parsed, and an opaque Matrix needs those to be
-        -- constructible and returnable at all.
+        -- Members are deliberately NOT ignored: mrbind decides constructibility/copyability from the parsed constructors.
+        -- An opaque Matrix needs those to be constructible and returnable.
     }
 end
 
--- Exclusions that apply only to the Python parse. Pybind11 has opinions the C
--- backend doesn't, and since Python is parsed separately anyway (it needs the
--- macro format), these cost nothing to keep out of the shared set -- the C and
--- C# bindings keep everything here.
+-- Exclusions specific to the Python parse (it's parsed separately anyway, for the macro format), never applied to the C/C# languages.
 function python_parser_flags()
     return {
-        -- Pybind11 has no exposed-struct equivalent, and binding SimpleMath
-        -- through it was never part of the Python surface.
+        -- Pybind11 has no exposed-struct equivalent; SimpleMath was never part of the Python surface.
         "--skip-mentions-of", "/DirectX::SimpleMath::.*/",
-        -- StaticString's conversion operators to std::string and
-        -- std::string_view. Pybind11 converts both of those to Python str
-        -- through built-in casters rather than binding them as classes, and
-        -- refuses to register a class for a type it already casts.
+        -- Pybind11 casts std::string/string_view to Python str via built-in casters.
+        -- Refuses to also register StaticString's conversion operators to those types as a class.
         "--ignore", "/nassimp::StaticString::operator .*/",
-        -- LaunchSettings' constructor and init() take a `char **` argv, which
-        -- has no Python representation -- and no purpose there either, since
-        -- the interpreter owns the process's arguments.
+        -- LaunchSettings takes a `char **` argv, with no Python representation and no purpose -- the interpreter owns argv already.
         "--skip-mentions-of", "/char \\*\\*/",
-        -- EntityRender holds its mesh and material in const members, so its
-        -- copy assignment is deleted -- and pybind11's mutable sequence
-        -- protocol, which MRBind binds CowVector<EntityRender> through, needs
-        -- to assign elements. Deliberate immutability on the engine's side
-        -- rather than something to fix, and a renderer's per-entity draw data
-        -- is not a scripting surface.
+        -- EntityRender's mesh/material are const members (deliberately immutable), so copy-assignment is deleted.
+        -- Pybind11's mutable sequence protocol for CowVector<EntityRender> needs to assign elements, though.
         "--ignore", "feather::RenderScene::EntityRender",
         "--skip-mentions-of", "feather::RenderScene::EntityRender",
     }
 end
 
--- Parses the combined header into `opts.output`. `opts.format` is "json" (the
--- API dump every generator but Python reads) or "macros" (what the Python
--- backend compiles). Returns the output path.
+-- Parses the combined header into `opts.output`. `opts.format` is "json" (the API dump every generator but Python reads) or "macros" (Python's).
+-- Returns the output path.
 function run_parse(target, opts)
     opts = opts or {}
     local combined_header = assert(opts.combined_header, "run_parse: opts.combined_header required")
@@ -592,9 +415,8 @@ function run_parse(target, opts)
 
     table.insert(argv, "--")
     table.insert(argv, "-xc++-header")
-    -- Lets a header hide a declaration from the bindings with FEATHER_NO_BIND
-    -- (core/framework/export_defs.h) while the compiler still sees it. --ignore
-    -- does not reach static data members, which is what forced the attribute.
+    -- Lets a header hide a declaration from the bindings via FEATHER_NO_BIND (export_defs.h) while the compiler still sees it.
+    -- --ignore can't reach a static data member, which is what forced the attribute to exist.
     table.insert(argv, "-DFEATHER_MRBIND_PARSE=1")
     table.insert(argv, "-resource-dir=" .. resolve_clang_resource_dir(target))
     for _, f in ipairs(sanitize_compflags_for_mrbind(resolve_compile_flags(target))) do
@@ -608,22 +430,19 @@ function run_parse(target, opts)
 end
 
 -- Where mrbind_gen_c writes its machine-readable description of the C API.
--- The C# backend is built on top of the C one and reads this rather than
--- api.json (see modules/cs_bindings/xmake.lua).
+-- The C# backend is built on top of the C one and reads this rather than api.json (see modules/cs_bindings/xmake.lua).
 function c_desc_json_path()
     return path.join(output_dir("c"), "desc.json")
 end
 
--- The mrbind revision thirdparty/packages/mrbind.lua pins. Duplicated as a
--- plain string because a package's URL spec isn't reachable from here; the
--- assertion in the export task is that these two stay equal.
+-- The mrbind revision thirdparty/packages/mrbind.lua pins, duplicated as a plain string since a package's URL spec isn't reachable from here.
+-- The export task asserts the two stay equal.
 function mrbind_pinned_commit()
     return "232ff33159d5e76e57b11669453d7d25ad22a14d"
 end
 
--- Paths inside api.json and in the exported metadata are always spelled with
--- forward slashes, so every flag derived from them has to be too -- on Windows
--- they would otherwise be translated to backslashes and stop matching.
+-- Paths inside api.json and the exported metadata are always spelled with forward slashes.
+-- Every flag derived from them must be too, or Windows backslashes stop matching.
 function to_forward_slashes(p)
     return (tostring(p):gsub("\\", "/"))
 end
@@ -640,28 +459,8 @@ function dist_api_meta_path()
     return path.join(dist_dir(), "feather_api.meta.json")
 end
 
--- Identifies the ABI-shaping flags run_gen_c() passes, so a plugin project can
--- tell whether its own copy of the generator flags still matches the engine
--- that produced the API file it was given. Published as gen_c_flags_id in the
--- exported metadata; tools/SDK/FeatherPluginSDK.lua computes the same value
--- from its own flag list and refuses to build when the two disagree.
---
--- Only the flags that shape the generated ABI go in. Input and output paths
--- are per-build and mean nothing to a consumer.
---
--- KEEP IN SYNC with run_gen_c() below and with FeatherPluginSDK.lua's
--- gen_c_flags_id().
--- Deliberately hashes only the *shape* of the flags -- the prefixes, the path
--- mappings' targets, the helper directory -- and none of the paths themselves.
---
--- feather_root is data carried in the metadata, identical on both sides by
--- construction, so including it detects nothing. It actively breaks things: it
--- is an absolute path, and hashing it through path.join() made the result
--- depend on the host separator, so a Windows plugin build computed a different
--- id than the Linux engine that exported the file and failed with a drift error
--- describing a disagreement that did not exist.
---
--- KEEP IN SYNC with FeatherPluginSDK's modules/feather_plugin_bindings.lua.
+-- Identifies the ABI-shaping flags run_gen_c() passes, so a plugin can tell its own flags still match (published as gen_c_flags_id; FeatherPluginSDK.lua refuses to build on a mismatch).
+-- Shape only, never paths -- feather_root's absolute path made the hash host-separator-dependent. KEEP IN SYNC with run_gen_c() and FeatherPluginSDK's feather_plugin_bindings.lua.
 function gen_c_flags_id()
     local shape = {
         "helper-name-prefix=Feather_",
@@ -671,8 +470,7 @@ function gen_c_flags_id()
         "assume-include-dir=<root>",
         "force-emit-common-helpers",
         "helper-header-dir=feather_helpers",
-        -- Placeholder, like the <root> entries above: the mapping's shape is
-        -- what must agree between engine and plugin, never the absolute path.
+        -- Placeholder, like the <root> entries above: only the mapping's shape must agree between engine and plugin, never the absolute path.
         "map-path=<directxmath>->feather_c/_ext/directxmath",
         "assume-include-dir=<directxmath>",
     }
@@ -682,14 +480,8 @@ function gen_c_flags_id()
     return hash.strhash128(table.concat(shape, "\0"))
 end
 
--- The math types a C++ plugin defines itself rather than reaching through a
--- wrapper: it compiles the same SimpleMath sources the engine did, so the
--- generator aliases these and asserts the published layout.
---
--- Matrix is here too even though it is not an exposed struct: it still crosses
--- as itself, just through a pointer to a copy.
--- KEEP IN SYNC with native_math_types() in the SDK's
--- tools/SDK/modules/feather_plugin_bindings.lua.
+-- The math types a C++ plugin defines itself (same vendored SimpleMath sources), so the generator aliases these instead of wrapping them.
+-- Matrix is here too though not an exposed struct -- it crosses as a pointer to a copy. KEEP IN SYNC with the SDK's feather_plugin_bindings.lua.
 function native_math_types()
     return {
         "DirectX::SimpleMath::Vector2",
@@ -701,14 +493,8 @@ function native_math_types()
     }
 end
 
--- The C++ types emitted as real C structs rather than opaque pointers, so they
--- cross the ABI by value with a layout a consumer can rely on.
---
--- Only the union-free SimpleMath types qualify: Matrix's XMFLOAT4X4 base holds
--- an anonymous union, which the parser refuses to record as a field, so it
--- stays opaque and is copied through a pointer instead.
--- KEEP IN SYNC with the SDK's shape_flags() and gen_c_argv() in
--- tools/SDK/modules/feather_plugin_bindings.lua.
+-- The C++ types emitted as real C structs (cross the ABI by value) rather than opaque pointers -- only the union-free SimpleMath types qualify.
+-- KEEP IN SYNC with the SDK's shape_flags() and gen_c_argv() in tools/SDK/modules/feather_plugin_bindings.lua.
 function exposed_struct_types()
     return {
         "DirectX::SimpleMath::Vector2",
@@ -719,14 +505,8 @@ function exposed_struct_types()
     }
 end
 
--- mrbind_gen_c's exception-relaying helper (__mrbind_c_details.cpp) calls
--- typeid() but doesn't include <typeinfo> for it -- <exception> happens to
--- drag it in transitively under libstdc++, so this only surfaces under
--- clang-cl on Windows ("member access into incomplete type 'const
--- type_info'"). Patching the generator's own output rather than adding a
--- force-include to the target: the force-include would apply to every
--- generated source, and this bug is specific to the one file mrbind writes it
--- into.
+-- mrbind_gen_c's exception-relaying helper calls typeid() without including <typeinfo> -- only surfaces under clang-cl, where <exception> doesn't drag it in.
+-- Patches the generator's own output rather than force-including into the whole target, since the bug is specific to this one generated file.
 function _fixup_missing_typeinfo_include(source_dir)
     local details_cpp = path.join(source_dir, "__mrbind_c_details.cpp")
     if not os.isfile(details_cpp) then
@@ -736,8 +516,7 @@ function _fixup_missing_typeinfo_include(source_dir)
     if content:find("#include <typeinfo>", 1, true) then
         return
     end
-    -- Prefer anchoring next to <exception>, the header whose absence this is
-    -- actually working around; fall back to right after the file's own
+    -- Prefer anchoring next to <exception>, the header whose absence this is actually working around; fall back to right after the file's own
     -- generated header include, which every version of this file starts with.
     local patched, n = content:gsub("(#include <exception>)", "%1\n#include <typeinfo>", 1)
     if n == 0 then
@@ -751,12 +530,8 @@ function _fixup_missing_typeinfo_include(source_dir)
     end
 end
 
--- Content-compare copy of a generated tree. A file whose bytes are unchanged
--- keeps its mtime, so a regeneration that produced identical output doesn't
--- make xmake rebuild the generated glue and every consumer of the headers.
--- Files that vanished from `src` are removed from `dst` -- the job
--- --clean-output-dirs used to do, now that the generator writes to a staging
--- dir instead of straight into the build.
+-- Content-compare copy of a generated tree: an unchanged file keeps its mtime, so identical output doesn't force a rebuild of every consumer.
+-- Files that vanished from `src` are removed from `dst`.
 local function _sync_tree(src, dst)
     local kept = {}
     for _, f in ipairs(os.files(path.join(src, "**"))) do
@@ -785,17 +560,14 @@ end
 local function _list_gen_c_sources(source_dir)
     local sources = os.files(path.join(source_dir, "**.cpp"))
     if #sources == 0 then
-        -- The generator is documented to emit .cpp implementation files; fall
-        -- back to .c in case a given version differs.
+        -- The generator is documented to emit .cpp implementation files; fall back to .c in case a given version differs.
         sources = os.files(path.join(source_dir, "**.c"))
     end
     return sources
 end
 
--- A generator only needs to re-run when its input file's contents or its flags
--- change. A stamp holding a hash of both, written after a successful run, lets
--- an unchanged rebuild skip the generator outright -- more robust than an mtime
--- comparison, which a `touch` or a byte-identical re-export would defeat.
+-- A generator only needs to re-run when its input or flags change. A stamp holding both, written on success, lets an unchanged rebuild skip it
+-- entirely -- more robust than mtime, which a `touch` would defeat.
 local function _gen_stamp_value(input_file, flags_id)
     return hash.sha256(input_file) .. ":" .. flags_id
 end
@@ -826,10 +598,7 @@ function run_gen_c(target, opts)
         return _list_gen_c_sources(source_dir)
     end
 
-    -- mrbind_gen_c rewrites every output file on every run. Generate into a
-    -- staging tree, then copy across only the files that actually differ (see
-    -- _sync_tree), so an unchanged regeneration leaves mtimes -- and the
-    -- downstream build -- untouched.
+    -- mrbind_gen_c rewrites every output file on every run, so it generates into a staging tree first, and _sync_tree copies across only what changed.
     local stage = path.join(output_dir("c"), ".stage")
     local stage_headers = path.join(stage, "include")
     local stage_sources = path.join(stage, "src")
@@ -843,55 +612,22 @@ function run_gen_c(target, opts)
         "--output-header-dir", stage_headers,
         "--output-source-dir", stage_sources,
         "--helper-name-prefix", opts.helper_prefix or "Feather_",
-        -- NOT "FEATHER_": the generated exports.h would then define
-        -- FEATHER_API, a name core/framework/export_defs.h used to define
-        -- unconditionally. A generated .cpp includes both, so on Windows the
-        -- generated functions would be declared dllimport at their own
-        -- definitions (or the two definitions would just collide). Harmless on
-        -- ELF, where both spellings expand to the same visibility attribute.
+        -- NOT "FEATHER_": that would make the generated exports.h define FEATHER_API, colliding with export_defs.h's own former definition.
         "--helper-macro-name-prefix", opts.helper_macro_prefix or "FEATHER_C_",
-        -- The prefix a C consumer includes through: core/main/init_level.h
-        -- becomes <feather_c/main/init_level.h>. The "core" segment is mapped
-        -- away rather than kept because it names an engine source layout the
-        -- consumer has no reason to know about.
-        --
-        -- This spelling deliberately differs from --assume-include-dir's
-        -- spelling of the ORIGINAL headers below. With both set to
-        -- feather_root, a generated .cpp's two includes -- quoted for its own
-        -- generated header, angled for the real C++ one -- would resolve to
-        -- the identical relative path "core/x/y.h", leaving resolution to
-        -- depend on -I order alone (mrbind's docs/generating_c.md warns about
-        -- exactly this collision). With this prefix the two spellings are
-        -- textually distinct.
-        --
-        -- Longer prefixes win (--map-path's documented rule), so the second
-        -- mapping only catches parsed headers from outside core/. There are
-        -- none today (the parse covers core/ alone, see xmake/bindings.lua),
-        -- but every parsed filename must match some prefix or the generator
-        -- errors out, so it stays as a backstop.
-        -- Built by concatenation, not path.join(): path.join() translates to
-        -- the host separator, which on Windows would spell a prefix that no
-        -- longer matches the filenames recorded inside api.json. The consumer
-        -- SDK derives the same strings the same way.
+        -- core/main/init_level.h becomes <feather_c/main/init_level.h>. Distinct from --assume-include-dir's ORIGINAL-header spelling below,
+        -- or a generated .cpp's quoted/angled includes would resolve identically, leaving resolution to -I order alone.
         "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
-        -- Parsed from outside the engine tree entirely; see
-        -- directxmath_includedir.
+        -- Parsed from outside the engine tree; see directxmath_includedir.
         "--map-path", to_forward_slashes(directxmath_includedir(target)), "feather_c/_ext/directxmath",
         "--assume-include-dir", to_forward_slashes(feather_root),
-        -- The glue includes the real <DirectXMath.h> to call into it. Distinct
-        -- from the mapping above, which spells the generated header instead.
+        -- The glue includes the real <DirectXMath.h> to call into it, distinct from the mapping above (which spells the generated header).
         "--assume-include-dir", to_forward_slashes(directxmath_includedir(target)),
         "--clean-output-dirs",
         "--output-desc-json", stage_desc,
-        -- The C# bindings are generated from the descriptor above and need the
-        -- common helpers header (C++-compatible allocation functions among
-        -- other things) to exist whether or not the C bindings alone would
-        -- have pulled it in. Always emitting it keeps the two generators'
-        -- inputs consistent regardless of which languages are enabled.
+        -- The C# bindings need this header regardless of whether the C bindings alone would have pulled it in, so it's always emitted.
         "--force-emit-common-helpers",
-        -- Keeps the generated helper headers out of the top level of the
-        -- include dir, where they'd sit among the mirrored engine headers.
+        -- Keeps generated helper headers out of the top level of the include dir, where they'd sit among the mirrored engine headers.
         "--helper-header-dir", "feather_helpers",
     }
     -- Math types cross by value as real structs; see exposed_struct_types.
@@ -911,8 +647,7 @@ function run_gen_c(target, opts)
     os.mkdir(source_dir)
     _sync_tree(stage_headers, header_dir)
     _sync_tree(stage_sources, source_dir)
-    -- desc.json feeds the C# generator; only replace it when it changed, so an
-    -- unchanged C parse doesn't cascade into a C# regeneration.
+    -- desc.json feeds the C# generator; replaced only when changed, so an unchanged C parse doesn't cascade into a C# regeneration.
     _sync_file(stage_desc, c_desc_json_path())
     os.tryrm(stage)
 
@@ -920,9 +655,7 @@ function run_gen_c(target, opts)
     return _list_gen_c_sources(source_dir)
 end
 
--- The flags feather_gen_cpp needs beyond its input and output paths. Shared so
--- the engine's own generation and a plugin's cannot disagree about which types
--- the consumer defines itself.
+-- The flags feather_gen_cpp needs beyond its input and output paths, shared so the engine's own generation and a plugin's cannot disagree.
 -- KEEP IN SYNC with the SDK's gen_cpp_argv().
 function gen_cpp_shape_flags()
     local argv = {}
@@ -931,8 +664,7 @@ function gen_cpp_shape_flags()
         table.insert(argv, t)
         table.insert(argv, "SimpleMath.h")
     end
-    -- The engine spells these unqualified in its own headers (core/math/math_defs.h);
-    -- a plugin gets the same spellings.
+    -- The engine spells these unqualified in its own headers (core/math/math_defs.h); a plugin gets the same spellings.
     table.insert(argv, "--native-alias-namespace")
     table.insert(argv, "feather")
     return argv
@@ -950,18 +682,11 @@ function run_gen_cpp(target, opts)
         "feather_bindings: " .. desc_json .. " is missing -- the C bindings must be generated first")
 
     local flags = gen_cpp_shape_flags()
-    -- The generator's own binary is part of the identity of its output: unlike
-    -- mrbind's generators, this one is ours and changes with the engine, so a
-    -- stamp over the input and flags alone would keep stale headers after an
-    -- edit to it.
+    -- Unlike mrbind's generators, this one is ours and changes with the engine, so its own binary hash must feed the stamp too.
     local generator = mrbind_bin(target, "feather_gen_cpp")
 
-    -- The generator ships inside a package, and xmake caches package
-    -- resolution: editing its sources changes the requested config without
-    -- necessarily reinstalling. Silently generating from a stale binary is the
-    -- worst outcome, so compare what the installed package was built from
-    -- against what is on disk. Content, not mtimes -- a fresh checkout writes
-    -- every file with the current time.
+    -- The generator ships inside a cached package: editing its sources changes the requested config without necessarily reinstalling, so
+    -- compare content (not mtime -- a fresh checkout rewrites every mtime) against what the installed package was actually built from.
     if opts.gen_cpp_dir and os.isdir(opts.gen_cpp_dir) then
         local manifest = path.join(path.directory(path.directory(generator)), "manifest.txt")
         local recorded = os.isfile(manifest) and io.readfile(manifest):match('gen_cpp_rev = "([^"]*)"')
@@ -981,8 +706,7 @@ function run_gen_cpp(target, opts)
         return output_dir
     end
 
-    -- Staged and content-synced for the same reason as the other generators: an
-    -- unchanged regeneration must not bump mtimes on the emitted headers.
+    -- Staged and content-synced for the same reason as the other generators: an unchanged regeneration must not bump the emitted headers' mtimes.
     local stage = output_dir .. ".stage"
     os.tryrm(stage)
     os.mkdir(stage)
@@ -995,9 +719,7 @@ function run_gen_cpp(target, opts)
     cprint("${cyan}[cpp_bindings]${reset} feather_gen_cpp -> %s", path.relative(output_dir, os.projectdir()))
     os.vrunv(generator, argv)
 
-    -- The hand-written half of the surface: the plugin entry point macro and
-    -- the ECS registration API, which describe a plugin rather than the engine
-    -- and so are not generated.
+    -- The hand-written half of the surface -- the entry point macro and the ECS registration API -- describes a plugin, so it isn't generated.
     for _, f in ipairs(os.files(path.join(sdk_cpp_dir, "feather_cpp", "*.hpp"))) do
         os.cp(f, path.join(stage, "feather_cpp", path.filename(f)))
     end
@@ -1020,9 +742,8 @@ function run_gen_csharp(target, opts)
     assert(os.isfile(desc_json),
         "feather_bindings: " .. desc_json .. " is missing -- the C bindings must be generated first")
 
-    -- Skip the generator when its input (the C descriptor) is byte-for-byte
-    -- what produced the current output. The lib name is the only caller-varied
-    -- flag that reaches the output.
+    -- Skip the generator when its input (the C descriptor) is byte-for-byte what produced the current output.
+    -- The lib name is the only caller-varied flag that reaches the output.
     local csharp_flags_id = opts.imported_lib_name or "feather_c"
     local stamp = output_dir .. ".stamp"
     if _gen_outputs_fresh(stamp, desc_json, csharp_flags_id,
@@ -1030,9 +751,7 @@ function run_gen_csharp(target, opts)
         return output_dir
     end
 
-    -- Staged and content-synced for the same reason as the C generator: an
-    -- unchanged regeneration must not bump mtimes on the emitted .cs files.
-    -- A sibling of output_dir, not a child, so the sync walk never sees it.
+    -- Staged and content-synced like the C generator; a sibling of output_dir, not a child, so the sync walk never sees it.
     local stage = output_dir .. ".stage"
     os.tryrm(stage)
     os.mkdir(stage)
@@ -1040,19 +759,13 @@ function run_gen_csharp(target, opts)
     local argv = {
         "--input-json", desc_json,
         "--output-dir", stage,
-        -- The name the generated [DllImport]s carry. It names no file on disk:
-        -- the C bindings are compiled into the engine executable
-        -- (modules/c_bindings/xmake.lua), so a plugin's DllImportResolver maps
-        -- this name onto the running process instead of loading anything.
+        -- The name the generated [DllImport]s carry. It names no file on disk: the C bindings are compiled into the engine executable, so a
+        -- plugin's DllImportResolver maps this onto the running process.
         "--imported-lib-name", opts.imported_lib_name or "feather_c",
-        -- C# has no free functions, so the generator puts helpers in a static
-        -- class; the C++-style spelling here becomes Feather.Misc.* in C#.
+        -- C# has no free functions, so the generator puts helpers in a static class; the C++-style spelling here becomes Feather.Misc.* in C#.
         "--helpers-namespace", "Feather::Misc",
-        -- No --force-namespace: the C++ side already lives in namespace
-        -- `feather`, which the generator maps to `Feather` on its own. Forcing
-        -- it as well produced `Feather.Feather.X` -- and worse, the generated
-        -- IEquatable implementations still named the single-level spelling, so
-        -- the output did not compile at all.
+        -- No --force-namespace: the C++ side already lives in `feather`, which the generator maps to `Feather` on its own -- forcing it too
+        -- produced `Feather.Feather.X`, and non-compiling IEquatable output.
         "--clean-output-dir",
     }
     for _, f in ipairs(opts.extra_flags or {}) do
@@ -1070,11 +783,8 @@ function run_gen_csharp(target, opts)
     return output_dir
 end
 
--- Where the Python that will import this module keeps its headers. Asked of
--- the interpreter itself rather than of python3-config, which is a separate
--- binary that can belong to a different installation entirely: a pybind11
--- module built against one minor version won't import into another, so the two
--- must not be allowed to disagree.
+-- Where the Python that will import this module keeps its headers. Asked of the interpreter itself, not python3-config (a separate binary that
+-- can belong to a different install), since a pybind11 module built against one minor version won't import into another.
 local function _python_include_dirs()
     import("lib.detect.find_tool")
 
@@ -1101,9 +811,8 @@ print(p['platinclude'])
     return includes
 end
 
--- Writes one small .cpp per fragment. Each sets its own MB_FRAGMENT and
--- includes the parser's macro output, which is what lets xmake compile and
--- link them as ordinary source files (see modules/py_bindings/xmake.lua).
+-- Writes one small .cpp per fragment. Each sets its own MB_FRAGMENT and includes the parser's macro output, letting xmake compile and link
+-- them as ordinary source files (see modules/py_bindings/xmake.lua).
 function write_python_fragments(target, opts)
     opts = opts or {}
     local fragment_dir = assert(opts.fragment_dir, "write_python_fragments: opts.fragment_dir required")
@@ -1121,11 +830,7 @@ function write_python_fragments(target, opts)
             "#define MB_FRAGMENT " .. i,
         }
         if i == 0 then
-            -- Exactly one fragment carries the shared implementation. The
-            -- value matters: MRBind tests this with #if, and a macro defined
-            -- to nothing makes that an empty expression ("expected value in
-            -- expression"). -DMB_DEFINE_IMPLEMENTATION on a command line would
-            -- have been 1 implicitly; written out, it has to say so.
+            -- Exactly one fragment carries the shared implementation; MRBind tests this with #if, so it must be defined to 1, not empty.
             table.insert(lines, "#define MB_DEFINE_IMPLEMENTATION 1")
         end
         -- Absolute, so the fragment doesn't depend on the include path.
@@ -1133,29 +838,21 @@ function write_python_fragments(target, opts)
 
         local content = table.concat(lines, "\n") .. "\n"
         local fragment = path.join(fragment_dir, "fragment_" .. i .. ".cpp")
-        -- Write-if-changed: rewriting would touch the mtime and force a
-        -- recompile of a translation unit that takes minutes.
+        -- Write-if-changed: rewriting would force a recompile of a translation unit that takes minutes.
         if not os.isfile(fragment) or io.readfile(fragment) ~= content then
             io.writefile(fragment, content)
         end
     end
 end
 
--- Points `target` at the Clang MRBind was built with and adds the flags the
--- generated pybind11 code needs. Called from the Python module's on_config,
--- which is the earliest point a toolset can be resolved.
+-- Points `target` at the Clang MRBind was built with and adds the flags the generated pybind11 code needs.
+-- Called from the Python module's on_config, the earliest point a toolset can be resolved.
 function configure_python_target(target, opts)
     opts = opts or {}
     local module_name = opts.module_name or "feather"
 
-    -- The generated code only compiles with the Clang that built MRBind,
-    -- whatever the project's own toolchain is. Linking has to go through the
-    -- clang++ driver specifically, not clang: the link step's only inputs are
-    -- pre-compiled .o files, and plain clang has no source file in the
-    -- command line to infer a C++ link from, so it silently skips linking the
-    -- C++ runtime library -- the module then fails to import with an
-    -- undefined libstdc++ RTTI symbol (__si_class_type_info's vtable).
-    -- clang++ always links it, regardless of input file types.
+    -- The generated code only compiles with the Clang that built MRBind. Linking must go through clang++ specifically: its inputs are all
+    -- pre-compiled .o files, so plain clang can't infer a C++ link and silently skips libstdc++, failing the import with an undefined RTTI symbol.
     local clang = resolve_clang(target)
     local clangxx = resolve_clangxx(target)
     target:set("toolset", "cc", clang)
@@ -1166,11 +863,8 @@ function configure_python_target(target, opts)
     for _, dir in ipairs(_python_include_dirs()) do
         target:add("includedirs", dir)
     end
-    -- Python itself is deliberately not linked: a module's Python symbols
-    -- resolve against the interpreter that loads it, which is what lets one
-    -- module work with both a static and a shared libpython. (Windows, which
-    -- would have to link the import library instead, doesn't build this module
-    -- at all -- see modules/py_bindings/xmake.lua.)
+    -- Python itself is deliberately not linked: a module's Python symbols resolve against whatever interpreter loads it.
+    -- That's what lets one module work with both a static and a shared libpython.
     if is_plat("macosx") then
         -- Mach-O rejects undefined symbols in a dylib by default.
         target:add("shflags", "-Wl,-undefined,dynamic_lookup", {force = true})
@@ -1179,13 +873,10 @@ function configure_python_target(target, opts)
     target:add("includedirs", mrbind_includedir(target))
     target:add("defines", "MRBIND_HEADER=<mrbind/targets/pybind11.h>")
     target:add("defines", "MB_PB11_MODULE_NAME=" .. module_name)
-    -- Pybind11 shares internal state between modules built by the same
-    -- compiler and ABI. Naming ours keeps that sharing to our own modules,
-    -- which is what upstream recommends.
+    -- Pybind11 shares internal state between modules built by the same compiler and ABI; naming ours keeps that sharing to our own modules.
     target:add("defines", "PYBIND11_COMPILER_TYPE=\"_feather\"")
     target:add("defines", "PYBIND11_BUILD_ABI=\"_feather\"")
 
-    -- Higher optimization makes this translation unit take considerably longer
-    -- to compile for no meaningful gain: it's registration calls, not hot code.
+    -- Higher optimization makes this translation unit take considerably longer to compile for no gain: it's registration calls, not hot code.
     target:add("cxflags", "-O1", {force = true})
 end

@@ -8,9 +8,8 @@ namespace feather {
 
 namespace {
 
-// What the trampoline needs to turn an ecs_iter_t back into a sequence of
-// per-entity calls. Owned by flecs: handed over as the system's
-// callback_ctx, freed through callback_ctx_free when the system goes away.
+// What the trampoline needs to turn an ecs_iter_t back into a sequence of per-entity calls. Owned by flecs: handed over as the
+// system's callback_ctx, freed through callback_ctx_free when the system goes away.
 struct ScriptedSystemContext {
 	std::string name;
 	ScriptedSystemCallback callback;
@@ -23,12 +22,8 @@ void destroy_context(void* ptr) {
 	delete static_cast<ScriptedSystemContext*>(ptr);
 }
 
-// The one C callback flecs sees, for every scripted system.
-//
-// Per matched table it walks the rows, points each component at that row's
-// storage, and calls the script once per entity. Field access stays lazy: the
-// callback gets pointers and accessors, not marshalled values, so a script that
-// touches one field of one component does not pay for the rest.
+// The one C callback flecs sees, for every scripted system. Per matched table it walks the rows, points each component at that
+// row's storage, and calls the script once per entity. Field access stays lazy: pointers and accessors, not marshalled values.
 void run_scripted_system(ecs_iter_t* it) {
 	auto* context = static_cast<ScriptedSystemContext*>(it->callback_ctx);
 	if (!context) {
@@ -129,9 +124,8 @@ Ecs::entity_t register_scripted_system(
 			));
 		}
 
-		// The size flecs actually stores, rather than anything recomputed here:
-		// for a C++ component this is the only place it is known, and for a
-		// scripted one it double-checks the layout that was registered.
+		// The size flecs actually stores, rather than anything recomputed here: for a C++ component this is the only place it
+		// is known, and for a scripted one it double-checks the layout that was registered.
 		const ecs_type_info_t* type_info = ecs_get_type_info(world.c_ptr(), component);
 		if (!type_info || type_info->size <= 0) {
 			return fail(std::format(

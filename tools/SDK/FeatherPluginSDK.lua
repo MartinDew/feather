@@ -37,14 +37,12 @@
 -- sandbox as its environment even when called from on_config(), and that
 -- sandbox has no assert(), import() or io.
 
--- This file's own directory, captured while it is being included. Inside a
--- function called from the consumer's xmake.lua, os.scriptdir() would be the
--- CONSUMER's directory instead.
+-- This file's own directory, captured while it is being included -- inside a function called from the consumer's xmake.lua, os.scriptdir()
+-- would resolve to the CONSUMER's directory instead.
 local SDK_DIR = os.scriptdir()
 
--- The C++ half of the SDK -- the wrapper generator, its headers and the math
--- sources -- is optional. A C or C# plugin vendors none of it and must not be
--- made to build a generator it never runs, nor fetch DirectXMath.
+-- The C++ half of the SDK (wrapper generator, headers, math sources) is optional.
+-- A C or C# plugin vendors none of it and must not be made to build a generator it never runs, nor fetch DirectXMath.
 local HAVE_CPP_SDK = os.isdir(path.join(SDK_DIR, "gen_cpp"))
 
 -- Call once, before any feather_*_plugin().
@@ -63,17 +61,8 @@ function feather_plugin_sdk_init()
         configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(SDK_DIR, "gen_cpp"))}})
 end
 
--- Shared link setup: a plugin links nothing of the engine's.
---
--- On ELF its feather_* imports stay undefined and bind when the engine dlopens
--- it, against the engine executable itself -- which exports the generated C
--- bindings along with the rest of its API (it links -rdynamic, and the bindings
--- are compiled into it). That is what keeps a built plugin independent of where
--- the engine lives.
--- Windows linking is handled in on_config instead (see the module's
--- apply_windows_link): PE has no load-time binding, so the plugin needs an
--- import library -- which is generated there from the API descriptor, not
--- shipped, and the description scope can neither run a tool nor fail cleanly.
+-- Shared link setup: a plugin links nothing of the engine's. On ELF its feather_* imports stay undefined and bind against the running engine
+-- executable (-rdynamic, bindings compiled in) when it dlopens the plugin. Windows instead gets an import library in on_config (apply_windows_link), since PE has no load-time binding and the description scope can't run a tool.
 local function apply_plugin_link_setup()
     if is_plat("macosx") then
         -- Mach-O rejects undefined symbols in a dylib by default.
@@ -103,15 +92,13 @@ function feather_c_plugin(name, opts)
     target(name)
         set_kind("shared")
         set_basename(name)
-        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll. The
-        -- .fext manifest has to name one file, so pin the spelling that does
-        -- not depend on which toolchain built it.
+        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll -- the .fext manifest has to name one file, so pin the spelling
+        -- that does not depend on which toolchain built it.
         if is_plat("windows", "mingw") then
             set_prefixname("")
         end
-        -- Flat, not bin/$(mode): the engine finds extensions by walking the
-        -- project directory, and a per-mode subdirectory would leave stale
-        -- copies of other configurations for it to load too.
+        -- Flat, not bin/$(mode): the engine finds extensions by walking the project directory, and a per-mode subdirectory would leave
+        -- stale copies of other configurations for it to load too.
         set_targetdir(path.join(os.projectdir(), "bin"))
         add_files(opts.files)
         -- Generated before the compiler runs; see on_config below.
@@ -120,12 +107,8 @@ function feather_c_plugin(name, opts)
 
         apply_plugin_link_setup()
 
-        -- on_config, not before_build: the include directory above has to hold
-        -- real headers before the compiler is invoked, and on_config is the
-        -- phase that runs serially, in dependency order.
-        -- opts is captured as an upvalue. Only the sandbox's *globals* differ
-        -- between description and script scope; upvalues cross that boundary
-        -- fine, and set_values() cannot carry a table.
+        -- on_config, not before_build: the include directory above needs real headers before the compiler runs, and on_config runs
+        -- serially in dependency order. opts is captured as an upvalue -- only *globals* differ between scopes, and set_values() can't carry a table.
         on_config(function (target)
             import("feather_plugin_bindings")
             local out = feather_plugin_bindings.generate(target, opts, {})
@@ -134,9 +117,7 @@ function feather_c_plugin(name, opts)
     target_end()
 end
 
--- Declares a C++ extension. Unlike the old C++ path, this needs no engine
--- checkout: it compiles the generated wrappers, which resolve to the same flat
--- feather_* symbols a C plugin uses.
+-- Declares a C++ extension: compiles the generated wrappers, which resolve to the same flat feather_* symbols a C plugin uses.
 --
 --   opts.files             sources (string or list), required
 --   opts.api_json          the designated API file, required
@@ -164,21 +145,17 @@ function feather_cpp_plugin(name, opts)
         set_kind("shared")
         set_basename(name)
         set_languages("cxx23")
-        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll. The
-        -- .fext manifest has to name one file, so pin the spelling that does
-        -- not depend on which toolchain built it.
+        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll -- the .fext manifest has to name one file, so pin the spelling
+        -- that does not depend on which toolchain built it.
         if is_plat("windows", "mingw") then
             set_prefixname("")
         end
-        -- Flat, not bin/$(mode): the engine finds extensions by walking the
-        -- project directory, and a per-mode subdirectory would leave stale
-        -- copies of other configurations for it to load too.
+        -- Flat, not bin/$(mode): the engine finds extensions by walking the project directory, and a per-mode subdirectory would leave
+        -- stale copies of other configurations for it to load too.
         set_targetdir(path.join(os.projectdir(), "bin"))
         add_files(opts.files)
-        -- The same SimpleMath the engine compiled. Building it here rather than
-        -- linking the engine's is what makes the math types cross as themselves:
-        -- the layouts agree because the sources do, and the generated headers
-        -- assert it.
+        -- The same SimpleMath the engine compiled, built here rather than linking the engine's -- what makes the math types cross as
+        -- themselves: the layouts agree because the sources do, and the generated headers assert it.
         add_files(path.join(SDK_DIR, "thirdparty", "SimpleMath", "SimpleMath.cpp"))
         add_includedirs(path.join(SDK_DIR, "thirdparty", "SimpleMath"))
         add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
@@ -188,9 +165,8 @@ function feather_cpp_plugin(name, opts)
             path.join(os.projectdir(), "build", "feather_bindings", "cpp"))
         add_packages("mrbind_generators", "directxmath")
 
-        -- Only the entry point is meant to be findable; everything else,
-        -- including this plugin's own copy of SimpleMath's statics, stays
-        -- private to the library.
+        -- Only the entry point is meant to be findable; everything else, including this plugin's own copy of SimpleMath's statics,
+        -- stays private to the library.
         if not is_plat("windows") then
             add_cxflags("-fvisibility=hidden")
         end
@@ -205,9 +181,7 @@ function feather_cpp_plugin(name, opts)
     target_end()
 end
 
--- Declares a C# extension, published with NativeAOT so the result is an
--- ordinary native shared library -- the engine loads it exactly like a C one
--- and hosts no .NET runtime of its own.
+-- Declares a C# extension, published with NativeAOT into an ordinary native shared library the engine loads like a C one (no .NET runtime hosted).
 --
 --   opts.csproj          the project file, required
 --   opts.api_json        the designated API file, required

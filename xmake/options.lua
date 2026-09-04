@@ -33,11 +33,8 @@ option("editor_build")
     set_description("Compile with editor support (EDITOR_BUILD=1); off builds a shipping-only binary (EDITOR_BUILD=0)")
 option_end()
 
--- Bindings options live here rather than next to their modules
--- (modules/*_bindings/xmake.lua) because thirdparty/xmake.lua is included
--- first and gates the mrbind package on them -- building that package can
--- mean building LLVM from source, so a build with no bindings enabled must
--- not pull it in at all.
+-- Bindings options live here rather than next to their modules (modules/*_bindings/xmake.lua) because thirdparty/xmake.lua is
+-- included first and gates the mrbind package on them -- building it can mean building LLVM from source, so a build with none enabled must not pull it in.
 
 option("enable_c_bindings")
     set_default(true)
@@ -54,12 +51,8 @@ option("enable_cpp_bindings")
     set_description("Generate C++ wrappers from the C bindings' descriptor (build/bindings/cpp)")
 option_end()
 
--- Ignored on windows/mingw, where it's treated as off: the module must be
--- built by a Clang in MSVC-compatible mode against the official Python's ABI,
--- which this repo's Windows toolchain setup doesn't cover yet (see
--- modules/py_bindings/xmake.lua). The platform check can't live in
--- set_default() -- is_plat() reads as false inside an option scope, whatever
--- the real platform is, which silently turns the option off everywhere.
+-- Ignored on windows/mingw, treated as off: the module must be built by a Clang in MSVC-compatible mode against the official
+-- Python's ABI, which this repo's Windows toolchain setup doesn't cover yet (modules/py_bindings/xmake.lua). The check can't live in set_default() -- is_plat() reads as false inside an option scope regardless of platform.
 option("enable_py_bindings")
     set_default(true)
     set_description("Build the pybind11 Python extension module (build/bindings/python); ignored on Windows")

@@ -81,15 +81,13 @@ function run_core_codegen(module_dirs, opts)
     local argv = common_argv(extra, opts.feather_root)
 
     cprint("${cyan}[codegen]${reset} generate_reflection.py")
-    -- opts.feather_root, not a bare os.projectdir(): this may run from a
-    -- before_build includes()'d cross-repo, where os.projectdir() resolves
-    -- to the CONSUMER, not the engine.
+    -- opts.feather_root, not a bare os.projectdir(): this may run from a before_build includes()'d cross-repo, where
+    -- os.projectdir() resolves to the CONSUMER, not the engine.
     os.vrunv("python3", argv, {curdir = opts.feather_root or os.projectdir()})
 end
 
--- Runs generate_reflection.py for core/ AND a single module dir, for a
--- module's own before_build (which runs before run_core_codegen would
--- otherwise generate core's .gen.h first).
+-- Runs generate_reflection.py for core/ AND a single module dir, for a module's own before_build (which runs before
+-- run_core_codegen would otherwise generate core's .gen.h first).
 function run_module_codegen(module_dir, opts)
     opts = opts or {}
     local extensions = _resolve_extensions(opts.extensions)

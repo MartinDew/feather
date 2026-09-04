@@ -24,13 +24,8 @@ enum class ScriptedSystemPhase : uint8_t {
 	OnStore,
 };
 
-// One component matched by a scripted system, as seen from the callback.
-//
-// The pointer is into the ECS's own storage, so writing through the accessors
-// writes the entity's actual component -- there is no copy to send back. The
-// accessors come from the component's ClassInfo, which is why this works for a
-// component defined by a script and one defined in C++ alike: both register a
-// value class whose property accessors take the raw component pointer.
+// One component matched by a scripted system, as seen from the callback. The pointer is into the ECS's own storage, so writing
+// through the accessors writes the entity's actual component -- works alike for a component defined by a script or in C++, since both register a value class whose accessors take the raw pointer.
 struct ScriptedSystemComponent {
 	const ClassInfo* info = nullptr;
 	void* data = nullptr;
@@ -47,14 +42,8 @@ struct ScriptedSystemInvocation {
 // Called once per matched entity.
 using ScriptedSystemCallback = std::function<void(const ScriptedSystemInvocation&)>;
 
-// Registers a system defined at runtime, over components named at runtime.
-//
-// The components may be scripted (see scripted_component.h) or ordinary C++
-// value-type components: both are looked up by the name they registered under,
-// and both expose their fields through the same ClassInfo accessors.
-//
-// Returns the flecs system id, or 0 on failure, writing the reason to *error
-// when given one.
+// Registers a system defined at runtime, over components named at runtime -- scripted (scripted_component.h) or ordinary C++
+// value-type, both looked up by name and exposed through the same ClassInfo accessors. Returns the flecs system id, or 0 with *error set.
 Ecs::entity_t register_scripted_system(
 		World& world,
 		const std::string& name,

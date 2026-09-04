@@ -14,12 +14,8 @@ namespace {
 
 bool _initialized = false;
 
-// Puts the shipped `feather` module on the import path.
-//
-// The module is built to bind against the engine process rather than link the
-// engine (see modules/py_bindings/xmake.lua), so it only works inside this
-// interpreter -- which is why it ships next to the engine binary rather than
-// being installed for the system Python.
+// Puts the shipped `feather` module on the import path. It's built to bind against the engine process rather than link the
+// engine (modules/py_bindings/xmake.lua), so it only works inside this interpreter -- shipped next to the binary, not installed for the system Python.
 void _add_module_path() {
 	const char* base_path = SDL_GetBasePath();
 	if (!base_path) {

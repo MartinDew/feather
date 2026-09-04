@@ -12,9 +12,8 @@ if not has_config("enable_cpp_bindings") then
     return
 end
 
--- Nothing to generate from: the C generator's descriptor is the input.
--- A note rather than an error, since both options default on and turning one
--- off is a deliberate act.
+-- Nothing to generate from: the C generator's descriptor is the input. A note rather than an error, since both options default
+-- on and turning one off is a deliberate act.
 if not has_config("enable_c_bindings") then
     -- print(), not cprint(): only script scope has the colour-printing interface.
     print("[cpp_bindings] skipped: C++ wrappers are generated from the C ones, and enable_c_bindings is off")
@@ -31,9 +30,8 @@ target("cpp_bindings")
     set_kind("phony")
     set_group("bindings")
 
-    -- The C generation writes the descriptor this reads, and it runs as a rule
-    -- on the engine target; on_config follows dependency order, so depending on
-    -- the engine orders the two.
+    -- The C generation writes the descriptor this reads, and it runs as a rule on the engine target; on_config follows
+    -- dependency order, so depending on the engine orders the two.
     add_deps("feather")
     add_packages("mrbind")
 
@@ -47,10 +45,8 @@ target("cpp_bindings")
     end)
 target_end()
 
--- Compiles every generated header with only the C bindings, the vendored
--- SimpleMath and DirectXMath on the include path. Deliberately does NOT depend
--- on feather_public_api: reaching an engine header from here would defeat the
--- point of the check.
+-- Compiles every generated header with only the C bindings, the vendored SimpleMath and DirectXMath on the include path.
+-- Deliberately does NOT depend on feather_public_api: reaching an engine header from here would defeat the point of the check.
 target("cpp_bindings_check")
     set_kind("object")
     set_group("bindings")
@@ -66,9 +62,8 @@ target("cpp_bindings_check")
     add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
 
     on_config(function (target)
-        -- Written rather than committed: the set of headers follows whatever
-        -- the generator emitted. Write-if-changed, so an unchanged build does
-        -- not recompile it.
+        -- Written rather than committed: the set of headers follows whatever the generator emitted. Write-if-changed, so an
+        -- unchanged build does not recompile it.
         local dir = path.join(target:autogendir(), "cpp_bindings_check")
         os.mkdir(dir)
 

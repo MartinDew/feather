@@ -33,13 +33,8 @@ jobs:
           - name: Windows LLVM
             os: windows-latest
             toolchain_flag: "--toolchain=clang-cl"
-            # --toolchain=clang-cl alone leaves the platform to autodetection,
-            # which on this runner picks mingw over windows unless -m is also
-            # given -- found when the consumer-smoke steps below configured
-            # with the same toolchain flag but no -m and got mingw, building
-            # mrbind_generators against a toolchain nothing else in the job
-            # matches. Pinned explicitly so it can't happen again from any
-            # config that omits -m.
+            # --toolchain=clang-cl alone leaves the platform to autodetection, which picks mingw over windows on this runner unless -m is also given --
+            # found when a consumer-smoke step used the same toolchain flag without -m and built mrbind_generators against a mismatched toolchain.
             plat_flag: "--plat=windows"
 
     steps:
@@ -62,13 +57,8 @@ jobs:
           dotnet-version: "10.0.x"
 
       # ── Install xmake ─────────────────────────────────────────────────────
-      # Package cache on Linux only. The bindings modules add the mrbind
-      # package, which is built from source, and the Python module compiles
-      # four large translation units on top -- without a cache a Linux leg
-      # doesn't finish in a sensible time. It stays off on Windows, where
-      # enabling it coincided with thirdparty package installs going red and
-      # master is green without it; the minutes there are worth less than
-      # those builds working.
+      # Package cache: Linux only. Bindings pull in mrbind (built from source) plus a 4-TU Python compile -- too slow uncached on Linux.
+      # Off on Windows: enabling it once coincided with thirdparty installs going red there, and master is green without it.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
@@ -141,12 +131,8 @@ jobs:
           libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev  \
           libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
 
-      # MRBind is a Clang tool: it needs a Clang install plus LLVM's and
-      # Clang's CMake config packages (find_package(Clang) in turn does its own
-      # find_package(LLVM)). With them, the package builds against this Clang;
-      # without them it falls back to building LLVM from source, which takes
-      # over twenty minutes. The runtime llvm-20 package below carries neither
-      # config, so both -dev packages are required here.
+      # MRBind is a Clang tool needing Clang plus LLVM/Clang's CMake config packages (find_package(Clang) does its own find_package(LLVM)).
+      # Without them it builds LLVM from source instead, 20+ minutes; the runtime llvm-20 package carries neither config, so both -dev packages are needed.
       - name: Install Clang/LLVM development packages for MRBind (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y clang-20 llvm-20-dev libclang-20-dev
@@ -180,13 +166,8 @@ jobs:
           echo "PATH=$env:PATH" >> $env:GITHUB_ENV
         shell: pwsh
 
-      # Filtering PATH above isn't enough: assimp's CMakeLists finds ccache
-      # with find_program, which searches beyond this job's PATH, and then sets
-      # it as a compiler launcher. Strawberry Perl bundles a ccache that
-      # mangles the cmcldeps.exe + rc.exe command line assimp's resource build
-      # uses ("clang-cl: error: no such file or directory: '/fo'"), taking
-      # sdl3 and vex down with it. Deleting the file sidesteps the search
-      # entirely -- nothing finds what isn't there.
+      # Filtering PATH isn't enough: assimp's CMakeLists finds ccache via find_program (searches beyond this job's PATH) and sets it as a
+      # compiler launcher, and Strawberry Perl's ccache mangles clang-cl's command line, taking sdl3/vex down with it. Deleting it sidesteps the search.
       - name: Remove stray Strawberry Perl ccache.exe (Windows)
         if: runner.os == 'Windows'
         run: Remove-Item -Path "C:\Strawberry\c\bin\ccache.exe" -ErrorAction SilentlyContinue
@@ -205,10 +186,8 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          # Windows keeps xmake's cache under AppData rather than ~/.xmake, so
-          # one of these two never exists. `|| true`: the step runs under
-          # `set -e -o pipefail`, where find's non-zero exit for a missing
-          # directory would abort it before printing anything.
+          # Windows keeps xmake's cache under AppData rather than ~/.xmake, so one of these two never exists.
+          # `|| true`: the step runs under `set -e -o pipefail`, where find's non-zero exit for a missing directory would abort it.
           for root in ~/.xmake/cache/packages ~/AppData/Local/.xmake/cache/packages; do
             [ -d "$root" ] || continue
             find "$root" -name "install.txt" -path "*/installdir.failed/*" 2>/dev/null | while read f; do
@@ -222,8 +201,7 @@ jobs:
         run: xmake build -v
 
       # ── Bindings ───────────────────────────────────────────────────────────
-      # Everything a consumer project needs is supposed to land under
-      # build/bindings; a silently empty directory would be easy to miss, since
+      # Everything a consumer needs is supposed to land under build/bindings; a silently empty directory would be easy to miss, since
       # generation failing doesn't necessarily fail the engine's own build.
       - name: Check bindings output
         shell: bash
@@ -248,15 +226,8 @@ jobs:
             check build/bindings/python/feather.so
           fi
 
-      # The C bindings are compiled into the engine and exported from it, which
-      # is what a C or C# plugin resolves its imports against. A build that
-      # generated the sources but dropped them from the link would still pass
-      # every check above, so assert the symbols are actually in the binary.
-      #
-      # Also checks the scripted-registration ABI (core/world/scripted_abi.h):
-      # the flat C entry points a NativeAOT C# assembly calls to define
-      # components and systems, since it cannot call the std::function/
-      # std::vector-based C++ API directly. Nine functions, fixed names.
+      # The C bindings are compiled into the engine and exported from it, what a C/C# plugin resolves imports against -- a build that generated
+      # the sources but dropped them from the link would still pass every check above. Also checks scripted_abi.h's 9 flat entry points (a NativeAOT C# assembly's route around the std::function/std::vector C++ API).
       - name: Check the engine exports the C bindings
         if: runner.os != 'Windows'
         run: |
@@ -275,12 +246,8 @@ jobs:
           fi
           echo "ok: engine exports the scripted-registration ABI"
 
-      # The Python module is deliberately NOT importable from a standalone
-      # interpreter: it leaves engine symbols undefined and binds them to a
-      # running engine process (see modules/py_bindings/xmake.lua). Checking
-      # that it is built and has those undefined symbols is the honest test;
-      # actually running it needs an engine, which the example project's
-      # run_examples_test.sh covers.
+      # The Python module is deliberately NOT importable standalone: it leaves engine symbols undefined and binds to a running engine process
+      # (modules/py_bindings/xmake.lua). Checking it's built with those undefined symbols is the honest test; running it needs an engine, covered by run_examples_test.sh.
       - name: Check the Python module targets the engine process
         if: runner.os != 'Windows'
         run: |
@@ -293,21 +260,13 @@ jobs:
           fi
 
       # ── The plugin-facing contract ─────────────────────────────────────────
-      # A plugin project builds from the exported API file alone, with no engine
-      # checkout, no LLVM, and (on Windows) no library the engine had to
-      # publish. The steps below run that path the way a consumer actually
-      # would: through the SDK and its plugin templates, not a hand-rolled
-      # equivalent -- so a regression in the SDK itself, not just in the
-      # generators' output, fails here too.
+      # A plugin builds from the exported API alone -- no engine checkout, no LLVM, no Windows library the engine had to publish -- through
+      # the SDK and its templates, not a hand-rolled equivalent, so a regression in the SDK itself fails here too.
       - name: Export the API description
         run: xmake export-api
 
-      # Guards the shape of the publish itself: two JSON files, nothing binary,
-      # on every platform. A Windows import library crept back in here once
-      # already (a plugin needed a .lib built from a single engine build,
-      # exactly the kind of artifact the API file is supposed to make
-      # unnecessary) -- see tools/SDK/modules/feather_plugin_bindings.lua's
-      # apply_windows_link, which builds one locally instead.
+      # Guards the shape of the publish itself: two JSON files, nothing binary, on every platform.
+      # A Windows import library (the kind of per-build artifact the API file exists to avoid) crept back in here once -- see apply_windows_link.
       - name: Check export-api publishes no binary
         shell: bash
         run: |
@@ -320,21 +279,8 @@ jobs:
           fi
           echo "ok: build/bindings/dist has only feather_api.json and feather_api.meta.json"
 
-      # Builds tools/templates/plugin_c_template as a real, separate xmake
-      # project -- SDK and the exported API only, no engine tree in its
-      # include path or link line. This is the regression test for the
-      # generated Windows import library specifically: on ELF it merely
-      # repeats what "Check bindings output" already proved, but on Windows it
-      # is the only place in CI that actually invokes lib.exe/dlltool the way
-      # a plugin author's build does.
-      #
-      # Built under runner.temp, not build/: xmake nests build/ inside the
-      # engine's own build tree, and a project placed there gets folded into
-      # the *engine's* configuration instead of standing on its own -- found
-      # by this failing silently green, building the engine a second time
-      # under a different name rather than the tiny plugin.
-      # debug only: this exercises toolchain selection, which doesn't vary by
-      # build type -- releasedbg/release would just repeat the same check.
+      # Builds plugin_c_template as a real, separate xmake project (SDK + exported API only) under runner.temp, not build/ (nested there it
+      # folds into the *engine's* own config instead -- found by this once rebuilding the engine under another name). On Windows the only CI step that actually invokes lib.exe/dlltool the way a plugin author's build does.
       - name: Build the C plugin template (consumer smoke test)
         if: matrix.mode == 'debug'
         shell: bash
@@ -348,11 +294,8 @@ jobs:
           cp -r tools/SDK/modules tools/SDK/packages "$smoke/sdk/"
           cp build/bindings/dist/*.json "$smoke/api/"
           cd "$smoke"
-          # A failed package build (mrbind_generators, on a fresh runner with no
-          # engine-repo cache to fall back on) reports only "expected build
-          # output missing" by default; the actual compiler error is in the
-          # package's own install log, dumped here rather than left for another
-          # blind round trip.
+          # A failed package build (mrbind_generators, no engine-repo cache to fall back on) reports only "expected build output missing" by default.
+          # The actual compiler error is in the package's own install log, dumped here instead.
           if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then
             echo "---- xmake f failed; dumping failed package install logs ----"
             for root in ~/.xmake/cache/packages ~/AppData/Local/.xmake/cache/packages; do
@@ -361,12 +304,8 @@ jobs:
                 echo "========== $f =========="
                 tail -300 "$f"
               done
-              # Reaching the assert without cmake.build() throwing means the
-              # underlying build reported success -- so if there is still
-              # nothing above, the binary was built somewhere other than where
-              # mrbind_generators.lua expected it (a multi-config generator
-              # nesting output under Debug/RelWithDebInfo/ would do exactly
-              # this). Listing what actually got built settles it either way.
+              # Reaching this without cmake.build() throwing means the build reported success, so the binary landed somewhere other than where
+              # mrbind_generators.lua expected (a multi-config generator nesting output under Debug/RelWithDebInfo/ would do this).
               find "$root" -path "*mrbind_generators*.cmake_build*" \( -name "mrbind_gen_c*" -o -name "*.exe" \) 2>/dev/null | while read -r f; do
                 echo "found binary: $f"
               done
@@ -375,9 +314,8 @@ jobs:
           fi
           xmake build
 
-      # Same, for plugin_cpp_template. This is the one that proves a C++ plugin
-      # needs no engine checkout: it compiles the generated wrappers and the
-      # SDK's vendored SimpleMath, and links nothing.
+      # Same, for plugin_cpp_template -- proves a C++ plugin needs no engine checkout: it compiles the generated wrappers plus the SDK's
+      # vendored SimpleMath, and links nothing.
       - name: Build the C++ plugin template (consumer smoke test)
         if: matrix.mode == 'debug'
         shell: bash
@@ -404,10 +342,8 @@ jobs:
           fi
           xmake build
 
-      # The property the whole plugin design rests on: a built plugin needs
-      # nothing from the engine but flat C symbols. A mangled feather symbol
-      # here would mean a C++ ABI crept back in, which links fine on ELF and
-      # only fails once the engine is built with a different compiler.
+      # The property the whole plugin design rests on: a built plugin needs nothing from the engine but flat C symbols.
+      # A mangled feather symbol here means a C++ ABI crept back in, which links fine on ELF and only fails with a different compiler.
       - name: Check plugins need only the C ABI
         if: matrix.mode == 'debug' && runner.os != 'Windows'
         shell: bash
@@ -428,9 +364,8 @@ jobs:
             echo "ok: $(basename "$lib") needs only the flat C ABI"
           done
 
-      # Same, for plugin_cs_template. Needs the .NET SDK (installed below);
-      # NativeAOT itself needs no separate workload, just the platform's own
-      # native toolchain, which this job already has.
+      # Same, for plugin_cs_template. Needs the .NET SDK (installed below); NativeAOT itself needs no separate workload, just the
+      # platform's own native toolchain, which this job already has.
       - name: Build the C# plugin template (consumer smoke test)
         if: matrix.mode == 'debug'
         shell: bash
@@ -452,12 +387,8 @@ jobs:
                 echo "========== $f =========="
                 tail -300 "$f"
               done
-              # Reaching the assert without cmake.build() throwing means the
-              # underlying build reported success -- so if there is still
-              # nothing above, the binary was built somewhere other than where
-              # mrbind_generators.lua expected it (a multi-config generator
-              # nesting output under Debug/RelWithDebInfo/ would do exactly
-              # this). Listing what actually got built settles it either way.
+              # Reaching this without cmake.build() throwing means the build reported success, so the binary landed somewhere other than where
+              # mrbind_generators.lua expected (a multi-config generator nesting output under Debug/RelWithDebInfo/ would do this).
               find "$root" -path "*mrbind_generators*.cmake_build*" \( -name "mrbind_gen_c*" -o -name "*.exe" \) 2>/dev/null | while read -r f; do
                 echo "found binary: $f"
               done

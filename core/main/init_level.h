@@ -7,13 +7,8 @@ namespace feather {
 
 class Extension;
 
-// Registration levels. The engine enters each one in ascending order during
-// startup and leaves them in reverse order during shutdown; everything that
-// registers something -- a built-in module, a project extension -- is called
-// once per level and picks the one whose prerequisites it needs.
-//
-// A level's guarantee is what already exists when it is entered, so pick the
-// earliest level that has what the registration needs:
+// Registration levels, entered in ascending order at startup and left in reverse order at shutdown; everything that registers
+// something picks the earliest level whose guarantee (what already exists when it is entered) covers what it needs:
 enum class InitLevel : uint8_t {
 	// ClassDB exists and nothing else does. Reflected type registration.
 	Core = 0,
@@ -39,9 +34,8 @@ using ExtensionEntryFn = void (*)(InitLevel);
 // The deepest level entered so far, or nothing before the first enter_init_level().
 bool has_entered_init_level(InitLevel level);
 
-// Enters `level`: registers every built-in module and every loaded extension
-// at that level. Levels must be entered in ascending order, each exactly once
-// (Editor may be skipped -- see above).
+// Enters `level`: registers every built-in module and every loaded extension at that level. Levels must be entered in ascending
+// order, each exactly once (Editor may be skipped -- see above).
 void enter_init_level(InitLevel level);
 
 // Leaves `level`, unregistering the built-in modules registered at it.
@@ -50,10 +44,8 @@ void exit_init_level(InitLevel level);
 // Leaves every entered level, deepest first.
 void exit_all_init_levels();
 
-// Called by FextFormatLoader once an extension's entry point resolves.
-// The extension is caught up immediately: its entry point is called once for
-// every level already entered, so an extension loaded mid-startup sees the
-// same level sequence as one that was there from the beginning.
+// Called by FextFormatLoader once an extension's entry point resolves. The extension is caught up immediately: its entry point
+// is called once for every level already entered, so one loaded mid-startup sees the same sequence as one there from the beginning.
 void register_extension_entry(const std::shared_ptr<Extension>& extension, ExtensionEntryFn entry);
 
 } //namespace feather

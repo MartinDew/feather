@@ -13,19 +13,16 @@ using FeatherPlugin;
 
 internal static class MyPlugin {
 
-	// An ECS component: a type with public fields, describing a layout. It is
-	// never instantiated -- systems get a view onto the entity's real storage.
-	// Supported field types: bool, int, float, double, Vector2, Vector3, Vector4
-	// (a colour).
+	// An ECS component: a type with public fields, describing a layout. Never instantiated -- systems get a view onto the
+	// entity's real storage. Supported field types: bool, int, float, double, Vector2, Vector3, Vector4 (a colour).
 	[FeatherComponent]
 	private struct Wobble {
 		public float Speed;
 		public int Ticks;
 	}
 
-	// A system over it, run every frame at the named phase. Components are
-	// named as strings, so a system can query the engine's own components --
-	// "Transform" -- as readily as one declared here.
+	// A system over it, run every frame at the named phase. Components are named as strings, so a system can query the
+	// engine's own components -- "Transform" -- as readily as one declared here.
 	[FeatherSystem("Wobble", Phase = "on_update")]
 	private static void Advance(ulong entity, ComponentView[] components, double deltaTime) {
 		ComponentView wobble = components[0];
@@ -42,9 +39,8 @@ internal static class MyPlugin {
 
 		Console.WriteLine("[my_plugin] hello from a C# extension");
 
-		// Spawn an entity carrying the component above, so Advance has
-		// something to match. Remove this and the component/system if your
-		// plugin only needs to call the engine, the way the C example does.
+		// Spawn an entity carrying the component above, so Advance has something to match. Remove this and the component/system
+		// if your plugin only needs to call the engine, the way the C example does.
 		World.Spawn("WobbleDemo", "Wobble");
 	}
 }

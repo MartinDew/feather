@@ -23,9 +23,8 @@ class ResourceLoader : public Reflected {
 	std::unordered_map<RID, std::shared_ptr<Resource>> _cache;
 	std::unordered_map<std::string, std::shared_ptr<Resource>> _path_cache;
 	std::vector<std::shared_ptr<ResourceFormatLoader>> _format_loaders;
-	// Bumped whenever a format loader is added, so index_project() can tell
-	// that a pass registered new loaders and the files nothing claimed are
-	// worth another look.
+	// Bumped whenever a format loader is added, so index_project() can tell that a pass registered new loaders and the
+	// files nothing claimed are worth another look.
 	size_t _loader_generation { 0 };
 
 public:

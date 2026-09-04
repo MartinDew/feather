@@ -18,9 +18,8 @@ namespace feather {
 
 namespace {
 
-// The key a manifest's "libraries" table must use for this build. Kept
-// deliberately coarse -- os.arch -- since that is what decides which binary
-// can be loaded at all.
+// The key a manifest's "libraries" table must use for this build. Kept deliberately coarse -- os.arch -- since that is what
+// decides which binary can be loaded at all.
 constexpr const char* PLATFORM_KEY =
 #if defined(_WIN32)
 		"windows."
@@ -65,9 +64,8 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 		return nullptr;
 	}
 
-	// Only the field that decides how to read everything else is checked
-	// against a hard-coded value; unknown *newer* minor additions stay
-	// forward-compatible by being ignored.
+	// Only the field that decides how to read everything else is checked against a hard-coded value; unknown *newer* minor
+	// additions stay forward-compatible by being ignored.
 	const auto version = manifest.value("fext_version", 0);
 	if (version != 1) {
 		std::cerr << "FextFormatLoader: Unsupported fext_version " << version << " in " << path
@@ -84,9 +82,8 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 	const auto type = manifest.value("type", std::string { "native" });
 
 	if (type != "native") {
-		// A scripted extension: no library to load, no entry point to resolve.
-		// Whichever module can run this type registered a runner at
-		// InitLevel::Core; core itself knows nothing about interpreters.
+		// A scripted extension: no library to load, no entry point to resolve. Whichever module can run this type registered a
+		// runner at InitLevel::Core; core itself knows nothing about interpreters.
 		const auto* runner = find_script_extension_runner(type);
 		if (!runner) {
 			std::cerr << "FextFormatLoader: Extension '" << name << "' is type \"" << type
@@ -117,9 +114,8 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 			return nullptr;
 		}
 
-		// Recorded as a resource so the manifest counts as indexed and isn't
-		// picked up again. It carries no library and no entry point: a script
-		// runs once, here, rather than being called back per init level.
+		// Recorded as a resource so the manifest counts as indexed and isn't picked up again. It carries no library and no entry
+		// point: a script runs once, here, rather than being called back per init level.
 		auto script_ext = std::make_shared<Extension>(name, std::string_view {});
 		script_ext->set_path(path);
 		std::println(std::cout, "FextFormatLoader: Ran {} extension '{}' from {}", type, name, script_path.string());

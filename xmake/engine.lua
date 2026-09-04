@@ -7,8 +7,7 @@
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
 -- ---- Core source files ----------------------------------------------------
--- add_files() resolves relative paths against this file's own directory, not
--- the engine root, so every entry is joined with FEATHER_ROOT explicitly.
+-- add_files() resolves relative paths against this file's own directory, not the engine root, so every entry joins FEATHER_ROOT explicitly.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
 -- feather_main.cpp is core's entry point (main()), so it's the one file a
@@ -111,18 +110,8 @@ local function apply_compile_flags(target)
 end
 
 -- ---- Engine core, as a library --------------------------------------------
--- Everything the executable is made of except its entry point, so something
--- other than feather's own main() can host the engine. The Python extension
--- module is the one consumer today (modules/py_bindings): a .so can't link
--- against an executable, and its bindings call engine code directly.
---
--- The executable deliberately keeps compiling its own sources rather than
--- linking this: its link line is delicate on mingw/Windows (see below), and
--- routing it through a static library is a change worth making on its own
--- rather than as a side effect of adding bindings. The cost is compiling core
--- twice when this target is enabled.
--- not is_plat(...): the option itself can't carry the platform check, since
--- is_plat() reads as false inside an option scope (see xmake/options.lua).
+-- Everything the executable is made of except its entry point, so something other than feather's own main() can host the engine --
+-- the Python extension module today (modules/py_bindings), since a .so can't link against an executable. The executable keeps compiling its own sources rather than linking this (mingw/Windows link line is delicate; compiling core twice is the accepted cost).
 if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
     target("feather_core")
         set_kind("static")
@@ -172,18 +161,15 @@ target("feather")
     end
 
     add_deps("feather_public_api")
-    -- Direct, not just via feather_public_api: see public_api.lua. directxmath
-    -- additionally because the C bindings rule needs its include dir by name
-    -- (feather_bindings.directxmath_includedir), and a package reached only
-    -- through a dep isn't in target:pkg().
+    -- Direct, not just via feather_public_api (see public_api.lua): the C bindings rule needs directxmath's include dir by name
+    -- (feather_bindings.directxmath_includedir), and a package reached only through a dep isn't in target:pkg().
     add_deps("simplemath")
     add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json", "directxmath")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
-        -- Exports the engine's own symbols to what it dlopens: the generated C
-        -- bindings a plugin calls, and the engine symbols py_bindings leaves
-        -- undefined.
+        -- Exports the engine's own symbols to what it dlopens: the generated C bindings a plugin calls, and the engine
+        -- symbols py_bindings leaves undefined.
         add_ldflags("-rdynamic", {force = true})
     end
 

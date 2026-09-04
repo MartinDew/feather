@@ -18,9 +18,8 @@ namespace feather {
 
 namespace {
 
-// Headless has no window which in turn can't deliver quit events.
-// this is the only exit condition. sig_atomic_t is the only type a signal
-// handler may portably touch.
+// Headless has no window, and so no quit events to deliver -- this is the only exit condition. sig_atomic_t is the only type
+// a signal handler may portably touch.
 volatile std::sig_atomic_t quit_requested = 0;
 
 void _on_terminate_signal(int) {
@@ -133,9 +132,8 @@ bool Engine::run() {
 	}
 #endif
 
-	// Before init(), not after: the flecs world already exists (WorldSim owns
-	// it from construction), and init() imports every EcsModule subclass
-	// registered by this point -- including the ones registered right here.
+	// Before init(), not after: the flecs world already exists (WorldSim owns it from construction), and init() imports every
+	// EcsModule subclass registered by this point -- including the ones registered right here.
 	enter_init_level(InitLevel::World);
 
 	_world_sim.init();
@@ -180,9 +178,8 @@ bool Engine::run() {
 		// Tell the renderer to render here
 		_rendering_server.update(frame_time);
 
-		// --run-frames: a headless test hook, see launch_settings.h. Checked
-		// after the frame that reaches the target count has fully run, so its
-		// systems' output is never cut off mid-frame.
+		// --run-frames: a headless test hook, see launch_settings.h. Checked after the frame that reaches the target count has
+		// fully run, so its systems' output is never cut off mid-frame.
 		if (run_frames > 0 && ++frames_run >= run_frames) {
 			keep_running = false;
 		}

@@ -12,9 +12,8 @@ namespace feather {
 namespace {
 
 struct LoadedExtension {
-	// Weak: an extension's entry point lives in its shared library, which the
-	// Extension resource keeps mapped. Holding it weakly means an unloaded
-	// extension drops out of the walk instead of leaving a dangling pointer.
+	// Weak: an extension's entry point lives in its shared library, which the Extension resource keeps mapped. Holding it
+	// weakly means an unloaded extension drops out of the walk instead of leaving a dangling pointer.
 	std::weak_ptr<Extension> extension;
 	ExtensionEntryFn entry;
 };
@@ -70,9 +69,8 @@ void exit_init_level(InitLevel level) {
 	fassert(_entered_mask >> static_cast<uint8_t>(level) == 1,
 			std::format("exit_init_level: {} left before a level entered after it", to_string(level)));
 
-	// Extensions get no teardown call: unlike built-in modules they are loaded
-	// through a resource whose lifetime the loader owns, and there is no
-	// extension teardown ABI yet.
+	// Extensions get no teardown call: unlike built-in modules they are loaded through a resource whose lifetime the loader
+	// owns, and there is no extension teardown ABI yet.
 	unregister_modules(level);
 
 	_entered_mask &= static_cast<uint8_t>(~_bit(level));
@@ -93,9 +91,8 @@ void register_extension_entry(const std::shared_ptr<Extension>& extension, Exten
 
 	_loaded_extensions().push_back({ extension, entry });
 
-	// Catch up: an extension discovered partway through startup still sees
-	// every level, in order, so it can register at the same one it would have
-	// had it been loaded before the engine started.
+	// Catch up: an extension discovered partway through startup still sees every level, in order, so it can register at the
+	// same one it would have had it been loaded before the engine started.
 	for (uint8_t i = 0; i < INIT_LEVEL_COUNT; ++i) {
 		const auto level = static_cast<InitLevel>(i);
 		if (has_entered_init_level(level)) {

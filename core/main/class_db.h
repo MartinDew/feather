@@ -70,30 +70,8 @@ public:
 		requires(!std::is_base_of_v<Reflected, T>)
 	static void register_value_class();
 
-	// The same registration, for a type that has no C++ type at all: a value
-	// class described at runtime by something outside the engine -- a script,
-	// or a plugin assembly discovered by reflection.
-	//
-	// Every register_*_class<T>() above needs T only for four things: the class
-	// name, the parent name, a factory, and a _bind_members() that populates
-	// _current_info. A value type has no factory, so a caller that supplies the
-	// other three needs no type. Properties carry their own type-erased
-	// accessors already (ClassInfo::Property), so nothing here is weaker than
-	// what a generated _bind_members() produces -- the accessors just close over
-	// a field offset instead of a member pointer.
-	//
-	// Returns false if the name is taken, rather than quietly redefining a
-	// class other code may already hold a ClassInfo* to.
-	//
-	// The name and every property name must outlive the registration:
-	// StaticString is a view over characters it does not own. A dangling one
-	// still compares and looks up correctly, because that goes through the
-	// hash -- it only shows up as garbage when the name is printed.
-	//
-	// FEATHER_NO_BIND: ClassInfo::Property is std::function-valued, which has no
-	// C or C# spelling. A language binding registers through the flatter,
-	// C-ABI-shaped entry points built on this (see core/world/scripted_component.h),
-	// not by handing over a vector of closures.
+	// The same registration for a type with no C++ type at all -- a value class described at runtime by a script or plugin.
+	// Needs no T: a value type has no factory, and ClassInfo::Property is already type-erased. Returns false if the name is taken; the name and every property name must outlive the registration (StaticString is a non-owning view). FEATHER_NO_BIND: languages register through core/world/scripted_component.h instead, since std::function-valued Property has no C/C# spelling.
 	FEATHER_NO_BIND static bool register_scripted_value_class(
 			StaticString name,
 			std::vector<ClassInfo::Property> properties
@@ -103,9 +81,8 @@ public:
 	template <class T, class U>
 	static void bind_property(U T::* member, std::string_view name, AccessLevel access = AccessLevel::Public);
 
-	// Property backed by explicit getter/setter member functions, with
-	// independent accessibility per accessor. Read-only/write-only overloads
-	// exist because a null member pointer can't be deduced.
+	// Property backed by explicit getter/setter member functions, with independent accessibility per accessor. Read-only/write-only
+	// overloads exist because a null member pointer can't be deduced.
 	template <class T, class TGet, class TSet>
 	static void bind_property_accessors(
 			TGet (T::*getter)() const,
@@ -176,15 +153,8 @@ public:
 			AccessLevel access = AccessLevel::Public
 	);
 
-	// The registered description of a class, or nullptr.
-	//
-	// Exposed for code that has to read a type's members without knowing the
-	// type: a scripted system reaching the fields of a component it queried,
-	// for instance. For a value type the accessors' void* is the object itself,
-	// so the caller needs nothing but the raw storage.
-	//
-	// FEATHER_NO_BIND: ClassInfo holds std::function accessors, which have no C
-	// or C# spelling.
+	// The registered description of a class, or nullptr. Exposed for code that has to read a type's members without knowing
+	// the type, e.g. a scripted system reaching a queried component's fields. FEATHER_NO_BIND: ClassInfo's std::function accessors have no C/C# spelling.
 	FEATHER_NO_BIND static const ClassInfo* get_class_info(std::string_view class_name);
 
 	// Returns an unmanaged raw pointer to a reflected object

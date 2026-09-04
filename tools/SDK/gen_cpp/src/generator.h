@@ -11,9 +11,8 @@ namespace feather_gen
 {
     namespace CI = mrbind::CInterop;
 
-    // A C++ type the consumer already defines identically, aliased instead of
-    // wrapped. The engine's math types, whose SimpleMath source a plugin
-    // vendors verbatim.
+    // A C++ type the consumer already defines identically, aliased instead of wrapped -- the engine's math types, whose
+    // SimpleMath source a plugin vendors verbatim.
     struct NativeType
     {
         std::string header;
@@ -34,9 +33,8 @@ namespace feather_gen
         bool verbose = false;
     };
 
-    // A C++ type spelling split into the parts that decide how it crosses the
-    // C boundary. The spellings come from cppdecl's printer, so they are
-    // normalized: qualifiers lead, one space before `&`/`*`.
+    // A C++ type spelling split into the parts that decide how it crosses the C boundary. The spellings come from cppdecl's
+    // printer, so they are normalized: qualifiers lead, one space before `&`/`*`.
     struct ParsedType
     {
         enum class Form { value, lref, rref, ptr };
@@ -115,9 +113,8 @@ namespace feather_gen
         // class is complete so a by-value return of another wrapper works.
         std::map<std::string, std::string> pending_bodies;
 
-        // Signatures already emitted into the class being written, so an
-        // inherited member copied into a derived class cannot collide with the
-        // one the class declares itself. Cleared per class.
+        // Signatures already emitted into the class being written, so an inherited member copied into a derived class cannot
+        // collide with the one the class declares itself. Cleared per class.
         mutable std::set<std::string> emitted_signatures;
 
         // Types that made a function unbindable, counted for --verbose so the

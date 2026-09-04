@@ -2,10 +2,8 @@
 #include "ecs_defs.h"
 #include "ecs_module.h"
 
-// WorldSim must be a complete type here (not just the forward decl from
-// ecs_module.h): the generated register_world_types.gen.cpp binds
-// _load_module via ClassDB::bind_static_method, which needs
-// VariantCompatible<WorldSim*> to resolve std::is_base_of_v<Reflected, WorldSim>.
+// WorldSim must be a complete type here (not just the forward decl from ecs_module.h): the generated register_world_types.gen.cpp
+// binds _load_module via ClassDB::bind_static_method, which needs VariantCompatible<WorldSim*> to resolve std::is_base_of_v<Reflected, WorldSim>.
 #include <main/world_sim.h>
 
 #ifndef FEATHER_REFLECTION_PARSER

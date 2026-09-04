@@ -48,9 +48,8 @@ ScriptedSystemPhase phase_from_name(const std::string& name) {
 	throw py::value_error("unknown phase '" + name + "'");
 }
 
-// Vectors and colors cross as tuples rather than as the `feather` module's
-// bound types: that module is built separately and dlopened, so its registered
-// types are not visible from this one, and a tuple needs no shared registry.
+// Vectors and colors cross as tuples rather than as the `feather` module's bound types: that module is built separately and dlopened,
+// so its registered types are not visible from this one, and a tuple needs no shared registry.
 py::object variant_to_py(const Variant& value) {
 	switch (value.get_type()) {
 		case VariantType::BOOL:
@@ -107,10 +106,8 @@ Variant py_to_variant(const py::handle& value, VariantType type) {
 	}
 }
 
-// A view onto one component of one entity, valid only for the duration of the
-// system callback it was handed to. Attribute access goes through the
-// component's registered properties, so this works the same for a component
-// defined by a script and one defined in C++.
+// A view onto one component of one entity, valid only for the duration of the system callback it was handed to. Attribute access goes
+// through the component's registered properties, so this works the same for a component defined by a script and one defined in C++.
 struct ComponentView {
 	const ClassInfo* info = nullptr;
 	void* data = nullptr;
@@ -164,16 +161,8 @@ World& script_world() {
 	return *sim->get_world();
 }
 
-// Callbacks outlive the process, deliberately.
-//
-// A Python object may only be released while the interpreter is alive, and
-// nothing here runs before Py_Finalize: flecs frees a system's context when the
-// world is torn down, and a static container would be destroyed at exit -- both
-// after the interpreter is gone. Either one is a segfault in _Py_Dealloc.
-//
-// So this is allocated once and never freed. The cost is one function object
-// per system for the life of the process; the alternative is ordering teardown
-// against an interpreter that is already unavailable.
+// Callbacks outlive the process, deliberately: a Python object may only be released while the interpreter is alive, but flecs frees a
+// system's context at world teardown and a static container would free at exit -- both after the interpreter is gone, a segfault in _Py_Dealloc. Allocated once and never freed instead.
 std::deque<py::function>& retained_callbacks() {
 	static auto* callbacks = new std::deque<py::function>();
 	return *callbacks;
@@ -244,12 +233,8 @@ PYBIND11_EMBEDDED_MODULE(_feather_ecs, m) {
 			py::arg("entity"), py::arg("component")
 	);
 
-	// Field access outside a system callback.
-	//
-	// The pointer is good until the entity's archetype changes -- adding or
-	// removing a component moves its storage -- so this is meant to be used and
-	// dropped, not kept. Inside a system, the views handed to the callback are
-	// the ones to use.
+	// Field access outside a system callback. The pointer is good until the entity's archetype changes (adding/removing a component
+	// moves its storage), so this is meant to be used and dropped, not kept -- inside a system, use the views the callback is handed instead.
 	m.def(
 			"component_view",
 			[](uint64_t entity, const std::string& component_name) {
@@ -293,8 +278,7 @@ PYBIND11_EMBEDDED_MODULE(_feather_ecs, m) {
 				const auto system = register_scripted_system(
 						script_world(), name, components, phase_from_name(phase),
 						[retained](const ScriptedSystemInvocation& invocation) {
-							// The pipeline runs on the thread that initialized
-							// the interpreter, but the callback may raise, and a
+							// The pipeline runs on the thread that initialized the interpreter, but the callback may raise, and a
 							// Python exception must not cross back into flecs.
 							py::gil_scoped_acquire gil;
 
@@ -316,9 +300,8 @@ PYBIND11_EMBEDDED_MODULE(_feather_ecs, m) {
 								py::print("feather: error in system callback:", e.what());
 							}
 
-							// The storage these point at is only this frame's;
-							// a script that kept one gets a clear error rather
-							// than a dangling write.
+							// The storage these point at is only this frame's; a script that kept one gets a clear error
+							// rather than a dangling write.
 							for (auto view : views) {
 								view.cast<ComponentView&>().data = nullptr;
 							}

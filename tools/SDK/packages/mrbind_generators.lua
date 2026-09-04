@@ -19,22 +19,12 @@
 -- tree and installed as a third tool, feather_gen_cpp. See
 -- _graft_feather_gen_cpp below for why it is built here rather than separately.
 
--- Where the grafted generator's sources live. Captured as a value while this
--- file is being loaded, not computed inside a callback: os.scriptdir() resolves
--- against whichever script the sandbox is currently running, which during
--- on_install is not this file. Same capture-at-include pattern as
--- FeatherPluginSDK.lua's SDK_DIR.
---
--- One level up from <sdk>/packages is the SDK root -- not os.projectdir(),
--- which is the plugin project's own directory when this is vendored into one.
+-- Where the grafted generator's sources live. Captured as a value while this file loads, not computed inside a callback: os.scriptdir()
+-- during on_install resolves against a different script (same pattern as FeatherPluginSDK.lua's SDK_DIR). One level up is the SDK root, not os.projectdir() (the vendoring plugin project's own directory).
 local FEATHER_GEN_CPP_DIR = path.join(path.directory(os.scriptdir()), "gen_cpp")
 
--- Content hash of the grafted generator's sources, for the requiring side to
--- pass as a package config. A package's install hash comes from the configs it
--- was asked for, so one the package set itself would never invalidate it and an
--- edit here would silently keep the old binary.
--- Global, so an includes()'ing description file can call it.
--- KEEP IN SYNC with thirdparty/packages/mrbind.lua.
+-- Content hash of the grafted generator's sources, passed by the requiring side as a package config -- a package's install hash only follows
+-- configs it's asked for, so setting this from inside the package itself would never invalidate it. KEEP IN SYNC with thirdparty/packages/mrbind.lua.
 function feather_gen_cpp_rev(dir)
     dir = dir or FEATHER_GEN_CPP_DIR
     if not os.isdir(dir) then
@@ -79,52 +69,15 @@ package("mrbind_generators")
             "-DMRBIND_BUILD_GENERATOR_CSHARP=ON",
         }
 
-        -- Which compiler actually builds this on Windows is not something we
-        -- get to assume -- it depends on what a left-to-its-own-devices CMake
-        -- configure finds first, which varies by machine, and even a
-        -- deliberately forced choice can turn out wrong in a way no flag
-        -- fixes: real cl.exe rejects mrbind's own use of C++23's auto(x)
-        -- decay-copy (src/common/strings.h) with a hard parser error on
-        -- every MSVC toolset through the whole VS 2022 generation -- it's
-        -- simply missing until MSVC 19.50 / VS 2026, not a matter of flags.
-        --
-        -- clang-cl sidesteps that: same MSVC-style flag syntax as cl.exe (so
-        -- the fixes below still apply to it), but Clang's frontend has
-        -- supported auto(x) for a long time, independent of whichever VS
-        -- ships on a given machine. Preferred over cl.exe for exactly that
-        -- reason -- it is also the toolchain this project's own Windows CI
-        -- leg is configured for (--toolchain=clang-cl), which real cl.exe was
-        -- never actually part of the intent for, just what a bare
-        -- find_tool("cl") happened to prefer once it existed.
-        --
-        -- When neither is found, nothing here is added and CMake configures
-        -- however it already does successfully: plain clang++, which needs
-        -- none of this -- confirmed by a run where this whole block was
-        -- accidentally skipped and clang++ still built and linked both
-        -- generators cleanly on its own. It would, however, reject the
-        -- MSVC-syntax flag this block passes outright ("clang++: error: no
-        -- such file or directory: '/Zc:preprocessor'", a bare '/whatever'
-        -- reading as a path to a GNU-style driver), which is why the choice
-        -- has to be pinned explicitly rather than left for CMake to mix.
+        -- Real cl.exe rejects mrbind's C++23 auto(x) decay-copy (src/common/strings.h) on every MSVC toolset through VS 2022 -- missing
+        -- until VS 2026, not a flags problem. clang-cl takes the same MSVC-style flags but supports auto(x), so it's preferred when found; with neither, CMake falls back to plain clang++, which needs none of this (and would reject these MSVC-syntax flags outright).
         local compiler = os.host() == "windows" and (find_tool("clang-cl") or find_tool("cl")) or nil
         if compiler then
             table.insert(configs, "-DCMAKE_C_COMPILER=" .. compiler.program)
             table.insert(configs, "-DCMAKE_CXX_COMPILER=" .. compiler.program)
 
-            -- mrbind's own CMakeLists.txt only requests a C++ standard on
-            -- `if(NOT MSVC)` -- and CMake's MSVC variable is true for
-            -- clang-cl too (its whole point is presenting an MSVC-compatible
-            -- frontend), so this is skipped for both. Left unset, either one
-            -- silently compiles in a pre-C++17 mode and <filesystem> in
-            -- src/common/filesystem.h fails to find std::filesystem at all.
-            --
-            -- CMAKE_CXX_STANDARD, not a raw /std: flag: CMakeLists.txt never
-            -- sets it itself (the assignment is commented out, "old CMake
-            -- doesn't understand it"), so a target's CXX_STANDARD property
-            -- defaults to whatever the command line supplied -- this is the
-            -- one case where setting the CMake variable from outside actually
-            -- takes effect, rather than being shadowed by the project's own
-            -- assignment the way CMAKE_CXX_FLAGS is below.
+            -- mrbind's CMakeLists only requests a C++ standard `if(NOT MSVC)`, true for clang-cl too, so left unset it silently compiles
+            -- pre-C++17 and <filesystem> fails to find std::filesystem. CMAKE_CXX_STANDARD, not /std: -- CMakeLists never sets it itself (commented out), so the external variable takes effect unshadowed, unlike CMAKE_CXX_FLAGS below.
             table.insert(configs, "-DCMAKE_CXX_STANDARD=23")
             table.insert(configs, "-DCMAKE_CXX_STANDARD_REQUIRED=ON")
 
@@ -138,39 +91,13 @@ package("mrbind_generators")
                 table.insert(configs, "-D" .. key .. "=")
             end
 
-            -- MSVC's traditional preprocessor does not implement __VA_OPT__,
-            -- and /std:c++latest does not switch preprocessors -- for C++ that
-            -- needs /Zc:preprocessor explicitly (unlike C, where /std:c11 and
-            -- later imply it).
-            --
-            -- src/common/reflection.h leans on __VA_OPT__ heavily: MBREFL_STRUCT
-            -- pastes DETAIL_MBREFL_STRUCT_INIT_ onto the result of a macro whose
-            -- whole body is `__VA_OPT__(1)`. Without the conforming preprocessor
-            -- that token survives literally and the paste yields the identifier
-            -- DETAIL_MBREFL_STRUCT_INIT___VA_OPT__, which is the error actually
-            -- reported; every "undefined type mrbind::Entity" after it is
-            -- fallout from the struct never being declared.
-            --
-            -- Set as CMAKE_CXX_FLAGS rather than added to the cleared list
-            -- above, since the project appends its own -D_ITERATOR_DEBUG_LEVEL=0
-            -- to this same variable and both have to survive.
-            --
-            -- /EHsc alongside it: cl.exe and clang-cl both default to
-            -- exceptions off unless told otherwise (unlike plain clang++,
-            -- which defaults them on -- part of why that one needed nothing
-            -- here). mrbind's source throws/catches throughout, and without
-            -- this every one of those sites fails with "cannot use 'throw'
-            -- with exceptions disabled" -- the whole build, not one file.
+            -- /Zc:preprocessor: MSVC's traditional preprocessor doesn't implement __VA_OPT__, which src/common/reflection.h's MBREFL_STRUCT
+            -- leans on heavily -- without it, a macro paste yields a bogus identifier and "undefined type mrbind::Entity" cascades everywhere. /EHsc alongside it: cl.exe/clang-cl default exceptions off, and mrbind throws/catches throughout.
             table.insert(configs, "-DCMAKE_CXX_FLAGS=/Zc:preprocessor /EHsc")
         end
 
-        -- Lets --expose-as-struct accept standard-layout classes that have base
-        -- classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
-        -- with their fields inherited from XMFLOAT2/3/4. The size/alignment/
-        -- offset validation mrbind does when emitting the struct is untouched,
-        -- so an unsuitable type still fails loudly. Rationale in full:
-        -- ../gen_cpp/patches/expose-as-struct-standard-layout-bases.md.
-        -- KEEP IN SYNC with thirdparty/packages/mrbind.lua.
+        -- Lets --expose-as-struct accept standard-layout classes with base classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
+        -- fields inherited from XMFLOAT2/3/4. Size/alignment/offset validation is untouched. Rationale: ../gen_cpp/patches/expose-as-struct-standard-layout-bases.md. KEEP IN SYNC with thirdparty/packages/mrbind.lua.
         local function _allow_exposed_structs_with_bases()
             local f = path.join("src", "generators", "c", "generator.cpp")
             local needle = '                // Must have no bases. I ain\'t dealing with those.\n'
@@ -190,14 +117,8 @@ package("mrbind_generators")
                 .. " -- upstream source moved; see the SDK's gen_cpp/patches/")
         end
 
-        -- Copies Feather's C++ wrapper generator into the fetched source tree
-        -- and hooks it into mrbind's own CMakeLists. Grafted rather than built
-        -- standalone because mrbind sets -std=c++23, _ITERATOR_DEBUG_LEVEL=0 and
-        -- CMAKE_MSVC_RUNTIME_LIBRARY at directory scope, and a target missing any
-        -- of them fails to link against mrbind_c_interop (LNK2038 on Windows).
-        -- KEEP IN SYNC with thirdparty/packages/mrbind.lua.
-        -- Returns false when the C++ half of the SDK is not vendored: a C or C#
-        -- plugin needs no wrapper generator, and must not be made to build one.
+        -- Copies Feather's C++ wrapper generator into the fetched source tree and hooks it into mrbind's own CMakeLists. Grafted rather than
+        -- built standalone: mrbind sets -std=c++23/_ITERATOR_DEBUG_LEVEL=0/CMAKE_MSVC_RUNTIME_LIBRARY at directory scope; missing any fails to link (LNK2038). Returns false when the C++ SDK half isn't vendored, so a C/C# plugin never builds a generator it doesn't need.
         local function _graft_feather_gen_cpp()
             local src = FEATHER_GEN_CPP_DIR
             if not os.isdir(src) then
@@ -222,15 +143,8 @@ package("mrbind_generators")
         local builddir = path.join(package:builddir(), ".cmake_build")
         cmake.build(package, configs, {builddir = builddir, cmake_generator = "Ninja"})
 
-        -- No install() rules upstream; copy the generators out by hand.
-        --
-        -- Tried without an .exe suffix first when os.host() isn't "windows"
-        -- and with one otherwise, but a mismatch between the two isn't fatal
-        -- on its own: whichever spelling the build actually produced is
-        -- accepted, since a Windows PE binary carries .exe regardless of
-        -- which compiler built it, and the point of the os.host() switch
-        -- above is precisely that this package's own view of "is this
-        -- Windows" cannot always be trusted for that decision either.
+        -- No install() rules upstream; copy the generators out by hand. Tries the os.host()-matched .exe spelling first but accepts
+        -- either: a Windows PE binary carries .exe regardless of which compiler built it, and this package's own "is this Windows" can't always be trusted either.
         local bindir = package:installdir("bin")
         local tools = {"mrbind_gen_c", "mrbind_gen_csharp"}
         if have_gen_cpp then

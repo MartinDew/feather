@@ -27,9 +27,8 @@ end
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 local OUTPUT_DIR = path.join(FEATHER_ROOT, "build", "bindings", "c")
 
--- A rule, not an on_config on the engine target: on_config is a setter, so a
--- second one here would silently replace the engine's own (which applies its
--- compile flags). Rules compose.
+-- A rule, not an on_config on the engine target: on_config is a setter, so a second one here would silently replace the engine's
+-- own (which applies its compile flags). Rules compose.
 rule("feather.c_bindings")
     on_config(function (target)
         import("feather_bindings")
@@ -40,9 +39,8 @@ rule("feather.c_bindings")
             feather_root = FEATHER_ROOT,
         })
 
-        -- Generated code, and a lot of it -- the engine's warning settings have
-        -- nothing to act on there. Per-file rather than per-target: these share
-        -- a target with the engine's own sources now, which stay warned about.
+        -- Generated code, and a lot of it -- the engine's warning settings have nothing to act on there. Per-file rather than
+        -- per-target: these share a target with the engine's own sources now, which stay warned about.
         local no_warnings = target:has_tool("cxx", "cl", "clang_cl") and "/w" or "-w"
         for _, src in ipairs(sources) do
             -- always_added: none of these exist on disk when the target is first
@@ -55,19 +53,14 @@ rule_end()
 target("feather")
     add_rules("feather.c_bindings")
 
-    -- bindings_api's on_config runs the parse the rule above generates from,
-    -- and on_config follows dependency order (unlike before_build, which does
-    -- not -- both confirmed empirically).
+    -- bindings_api's on_config runs the parse the rule above generates from, and on_config follows dependency order
+    -- (unlike before_build, which does not -- both confirmed empirically).
     add_deps("bindings_api")
     -- run_gen_c resolves the generator binary through this package handle.
     add_packages("mrbind")
 
-    -- Marks this as the build of the generated bindings themselves, so
-    -- FEATHER_C_API resolves to dllexport rather than dllimport (see the
-    -- generated feather_helpers/exports.h). Distinct from the engine's
-    -- FEATHER_C_API, not a name of the engine's own -- see run_gen_c()'s
-    -- macro-prefix comment -- but
-    -- both now resolve to "export" here, because both are built here.
+    -- Marks this as the build of the generated bindings themselves, so FEATHER_C_API resolves to dllexport rather than dllimport
+    -- (feather_helpers/exports.h) -- a separate macro from the engine's own FEATHER_C_API (run_gen_c()'s prefix comment), though both resolve to "export" here since both are built here.
     add_defines("FEATHER_C_BUILD_LIBRARY")
 
     -- The generated .cpp files include their sibling generated header by quoted

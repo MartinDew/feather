@@ -17,9 +17,8 @@ class NullRenderer final : public Renderer {
 	FCLASS();
 
 public:
-	// Public to match Renderer, which declares it public and reflected;
-	// narrowing it here only blocked calls made through a NullRenderer
-	// directly, since going through a Renderer& was always allowed.
+	// Public to match Renderer, which declares it public and reflected; narrowing it here only blocked calls made
+	// through a NullRenderer directly, since going through a Renderer& was always allowed.
 	void _render_scene(RenderScene capture) override {}
 
 protected:

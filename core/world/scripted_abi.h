@@ -53,10 +53,8 @@ typedef enum FeatherScriptPhase {
 	FEATHER_SCRIPT_PHASE_ON_STORE = 7,
 } FeatherScriptPhase;
 
-// Called once per matching entity. `components` has one entry per component the
-// system queried, in the order they were named; each is the opaque handle the
-// field accessors below take. Both it and the handles are valid only for the
-// duration of the call.
+// Called once per matching entity. `components` has one entry per component the system queried, in the order they were named;
+// each is the opaque handle the field accessors below take. Both it and the handles are valid only for the duration of the call.
 typedef void (*FeatherScriptSystemFn)(
 		void* user_data,
 		uint64_t entity,
@@ -76,9 +74,8 @@ FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_component(
 		int32_t error_size
 );
 
-// Returns the system id, or 0 on failure. `user_data` is handed back to the
-// callback untouched; it is never freed, since the engine cannot know what it
-// is. The callback outlives the call and must remain valid for the process.
+// Returns the system id, or 0 on failure. `user_data` is handed back to the callback untouched and never freed (the engine cannot
+// know what it is). The callback outlives the call and must remain valid for the process.
 FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_system(
 		const char* name,
 		int32_t component_count,
@@ -97,9 +94,8 @@ FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_create_entity(const char* 
 // Non-zero on success.
 FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_add_component(uint64_t entity, const char* component_name);
 
-// A handle to one component of one entity, for use outside a system callback.
-// Valid until the entity's archetype changes -- adding or removing a component
-// moves its storage -- so it is meant to be used and dropped.
+// A handle to one component of one entity, for use outside a system callback. Valid until the entity's archetype changes (adding or
+// removing a component moves its storage), so it is meant to be used and dropped.
 FEATHER_NO_BIND FEATHER_C_ABI void* feather_script_component_handle(uint64_t entity, const char* component_name);
 
 // How many fields a component has, or -1 if it names no registered component.

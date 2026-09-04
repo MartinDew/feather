@@ -25,9 +25,6 @@ feather_plugin_sdk_init()
 feather_cs_plugin("my_plugin", { -- TODO: rename
     csproj = "src/MyPlugin.csproj",
     api_json = "api/feather_api.json",
-    -- published_name/output_name are left at the SDK's defaults, which are
-    -- already host-aware (MyPlugin.{dll,so,dylib} staged as my_plugin.dll on
-    -- Windows or libmy_plugin.{so,dylib} elsewhere) and already match
-    -- my_plugin.fext's "libraries" table above -- only override them if you
-    -- rename the csproj's <AssemblyName> away from the project name.
+    -- published_name/output_name are left at the SDK's defaults, already host-aware and matching my_plugin.fext's "libraries"
+    -- table above -- only override them if you rename the csproj's <AssemblyName> away from the project name.
 })

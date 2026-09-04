@@ -22,9 +22,8 @@
 
 extern "C"
 {
-    // Mirrors core/world/scripted_abi.h. Values cross as doubles, however many
-    // a field needs: one for bool/int/float, two for a vec2, three for a vec3,
-    // four for a color.
+    // Mirrors core/world/scripted_abi.h. Values cross as doubles, however many a field needs: one for bool/int/float,
+    // two for a vec2, three for a vec3, four for a color.
     typedef void (*FeatherScriptSystemFn)(
         void *user_data, std::uint64_t entity, void *const *components,
         std::int32_t component_count, double delta_time);
@@ -73,9 +72,8 @@ namespace feather::ecs
         FieldType type = FieldType::Float;
     };
 
-    // One component of one entity. Inside a system callback it is valid only
-    // for that call; obtained from view() it is valid until the entity's
-    // archetype changes, so it is meant to be used and dropped.
+    // One component of one entity. Inside a system callback it is valid only for that call; obtained from view() it is valid
+    // until the entity's archetype changes, so it is meant to be used and dropped.
     class ComponentView
     {
         void *_handle = nullptr;
@@ -153,9 +151,8 @@ namespace feather::ecs
 
     namespace detail
     {
-        // The engine keeps the callback's address for the life of the process
-        // and never frees it, so it is deliberately leaked rather than owned by
-        // something whose destruction order we cannot see.
+        // The engine keeps the callback's address for the life of the process and never frees it, so it is deliberately
+        // leaked rather than owned by something whose destruction order we cannot see.
         struct SystemState
         {
             SystemCallback callback;

@@ -16,12 +16,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-// Namespace, deliberately not under "Feather": the generated bindings put
-// everything in a static partial *class* called Feather at global scope, so a
-// namespace of that name would shadow it and every qualified reference inside
-// the generated files (Feather.Const_Projection, and so on) would resolve to
-// the namespace instead. The result is a wall of errors in generated code that
-// has nothing wrong with it.
+// Namespace, deliberately not under "Feather": the generated bindings put everything in a static partial *class* Feather at global scope,
+// so a namespace of that name would shadow it -- every qualified reference in generated code (Feather.Const_Projection, etc.) would break.
 namespace FeatherPlugin {
 
 /// <summary>Marks a class or struct as an ECS component type.</summary>
@@ -159,9 +155,8 @@ public static class World {
 }
 
 internal static class Native {
-	// The same logical name the generated bindings use. It names no file: the C
-	// bindings are compiled into the engine executable, and the resolver below
-	// maps the name onto the running process.
+	// The same logical name the generated bindings use. Names no file -- the C bindings are compiled into the engine executable, and the
+	// resolver below maps the name onto the running process.
 	private const string Library = "feather_c";
 
 	[DllImport(Library, EntryPoint = "feather_script_define_component", ExactSpelling = true)]
@@ -214,9 +209,8 @@ public static class Bootstrap {
 		"on_validate", "post_update", "pre_store", "on_store",
 	};
 
-	// Handlers are kept for the life of the process: the engine holds a raw
-	// pointer to the callback and calls it every frame, so nothing here may be
-	// collected or moved.
+	// Handlers are kept for the life of the process: the engine holds a raw pointer to the callback and calls it every frame,
+	// so nothing here may be collected or moved.
 	private static readonly List<MethodInfo> Systems = new();
 	private static readonly List<string[]> SystemComponents = new();
 	private static readonly List<MethodInfo> InitHooks = new();
@@ -246,10 +240,8 @@ public static class Bootstrap {
 	private static void RegisterAll() {
 		Type[] types = typeof(Bootstrap).Assembly.GetTypes();
 
-		// Components first, all of them, before any system. A system names its
-		// components as strings and they must already exist in the world to be
-		// queried -- and GetTypes() is in no useful order, so a component
-		// nested inside the class that declares a system over it comes second.
+		// Components first, all of them, before any system: a system names its components as strings and they must already exist to be queried.
+		// GetTypes() is in no useful order, so a component nested inside the class declaring a system over it would otherwise come second.
 		foreach (Type type in types) {
 			var component = type.GetCustomAttribute<FeatherComponentAttribute>();
 			if (component != null) {
@@ -271,9 +263,8 @@ public static class Bootstrap {
 		}
 	}
 
-	// Reported per item rather than per plugin: one component the engine cannot
-	// store should not take the rest of the plugin -- including its init hooks --
-	// down with it.
+	// Reported per item rather than per plugin: one component the engine cannot store should not take the rest of the plugin
+	// (including its init hooks) down with it.
 	private static void Guarded(string what, Action action) {
 		try {
 			action();
@@ -396,14 +387,8 @@ public static class Bootstrap {
 }
 
 internal static class Resolver {
-	// The generated [DllImport]s, and this file's own, name "feather_c" with no
-	// path. .NET would turn that into a search for a file of that name; there is
-	// none, because the bindings are compiled into the engine executable. The
-	// main program's handle is the answer -- it is the module that exports them.
-	//
-	// Resolving explicitly also turns a lookup failure into a readable message
-	// rather than an abort: an exception escaping an UnmanagedCallersOnly entry
-	// point cannot cross back into C.
+	// [DllImport]s here name "feather_c" with no path; .NET would search for a file of that name, but the bindings are compiled into the
+	// engine executable instead, so the main program's handle is the answer. Also turns a lookup failure into a message rather than an abort.
 	[ModuleInitializer]
 	internal static void Install() {
 		NativeLibrary.SetDllImportResolver(typeof(Resolver).Assembly, static (name, assembly, searchPath) => {

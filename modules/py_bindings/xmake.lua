@@ -71,9 +71,8 @@ target("py_bindings")
     -- Generated code: there is nothing to act on in its warnings.
     set_warnings("none")
 
-    -- Declared here rather than from on_config: xmake resolves a target's
-    -- source files before on_config runs, and a file added later is rejected
-    -- outright. always_added covers their not existing until the first build.
+    -- Declared here rather than from on_config: xmake resolves a target's source files before on_config runs, and a file added
+    -- later is rejected outright. always_added covers their not existing until the first build.
     for i = 0, NUM_FRAGMENTS - 1 do
         add_files(path.join(FRAGMENT_DIR, "fragment_" .. i .. ".cpp"), {always_added = true})
     end
@@ -83,10 +82,8 @@ target("py_bindings")
     add_deps("bindings_api")
     add_packages("mrbind", "pybind11")
 
-    -- Headers only for the static packages: the engine's headers need them to
-    -- compile, but linking their archives would give this module a second copy
-    -- of state the engine process already owns. flecs is a real shared library
-    -- (see thirdparty/xmake.lua) so it links normally, one copy for everyone.
+    -- Headers only for the static packages: the engine's headers need them to compile, but linking their archives would give
+    -- this module a second copy of state the engine process already owns. flecs is a real shared library, so it links normally.
     add_deps("feather_public_api")
     add_deps("simplemath")
     add_packages("flecs")
@@ -103,9 +100,8 @@ target("py_bindings")
         add_defines("PRODUCTION")
     end
 
-    -- Shipped next to the engine binary, where modules/py_host adds it to
-    -- sys.path. Same arrangement as libfeather_c: the engine carries what its
-    -- extensions and scripts bind against.
+    -- Shipped next to the engine binary, where modules/py_host adds it to sys.path -- the same arrangement as libfeather_c:
+    -- the engine carries what its extensions and scripts bind against.
     after_build(function (target)
         local outdir = path.join(FEATHER_ROOT, "build", "bin", "python")
         os.mkdir(outdir)

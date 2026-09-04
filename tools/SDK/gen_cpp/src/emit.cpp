@@ -9,9 +9,8 @@ namespace feather_gen
 {
     namespace
     {
-        // Operators worth spelling as real C++ operators. Subscript, call and
-        // the increment pair are left out: their C forms need more care than
-        // the rest, and nothing in the engine's API depends on them.
+        // Operators worth spelling as real C++ operators. Subscript, call and the increment pair are left out: their C forms
+        // need more care than the rest, and nothing in the engine's API depends on them.
         [[nodiscard]] bool IsSupportedOperator(std::string_view token)
         {
             static const std::set<std::string_view> ok = {
@@ -119,9 +118,8 @@ namespace feather_gen
         }
         out += "\n  public:\n";
 
-        // A default-constructed wrapper is an empty view, not an object:
-        // allocating here would hide the C++ default constructor, which is
-        // exposed as create() alongside the other constructors.
+        // A default-constructed wrapper is an empty view, not an object: allocating here would hide the C++ default
+        // constructor, which is exposed as create() alongside the other constructors.
         out += "    " + name + "() noexcept = default;\n";
 
         out += "    " + name + "(::feather::detail::AdoptTag, CType *_p, bool _own) noexcept\n";

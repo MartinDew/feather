@@ -138,9 +138,8 @@ __CRT_UUID_DECL(IDxcCompiler3, 0x228B4687,0x5A6A,0x4730,0x90,0x0C,0x97,0x02,0xB2
             return dirs[1]
         end
 
-        -- Vex's FetchContent-declared slang dir name has changed upstream
-        -- before (plain "slang" -> "slang_${SLANG_VERSION}"); glob instead of
-        -- hardcoding, so a future rename doesn't silently skip this block.
+        -- Vex's FetchContent-declared slang dir name has changed upstream before (plain "slang" -> "slang_${SLANG_VERSION}");
+        -- glob instead of hardcoding, so a future rename doesn't silently skip this block.
         local slang_src = pick_latest_dir("slang*-src")
         if slang_src and os.isdir(slang_src) then
             for _, dll in ipairs(os.files(path.join(slang_src, "**.dll"))) do

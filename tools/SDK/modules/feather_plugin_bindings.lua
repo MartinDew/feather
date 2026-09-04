@@ -46,12 +46,8 @@ function generator_bin(target, name)
     return path.join(pkg:installdir(), "bin", name .. suffix)
 end
 
--- Reads the sidecar written next to feather_api.json by the engine's
--- `export-api` task. It carries the few things the generators need that the API
--- file doesn't state -- above all feather_root, the engine checkout path baked
--- into every filename inside api.json, which --map-path and --assume-include-dir
--- must be given verbatim to match. That path does not have to exist on this
--- machine; nothing ever opens it.
+-- Reads the sidecar the engine's `export-api` task writes next to feather_api.json -- above all feather_root, the checkout path baked into
+-- every filename inside api.json, which --map-path/--assume-include-dir must match verbatim. Need not exist on this machine; nothing opens it.
 function read_api_meta(api_json, api_meta)
     api_meta = api_meta or path.join(path.directory(api_json),
         path.basename(api_json) .. ".meta.json")
@@ -69,24 +65,8 @@ function read_api_meta(api_json, api_meta)
     return meta, api_meta
 end
 
--- The ABI-shaping flags, identified so drift against the engine is caught at
--- build time rather than as a link error or, worse, silent UB.
---
--- KEEP IN SYNC with the engine's run_gen_c() and gen_c_flags_id() in
--- xmake/modules/feather_bindings.lua.
--- Hashes only the *shape* of the flags, never the paths.
---
--- feather_root is data from the metadata and identical on both sides, so
--- hashing it detects nothing -- and hashing it through path.join() made the
--- result depend on the host separator, so a Windows plugin build disagreed with
--- a Linux-exported file and reported drift that did not exist.
---
--- KEEP IN SYNC with the engine's gen_c_flags_id() in
--- xmake/modules/feather_bindings.lua.
--- The C++ types the engine emits as real C structs rather than opaque
--- pointers, so they cross the ABI by value with a layout a plugin can rely on.
--- KEEP IN SYNC with exposed_struct_types() in the engine's
--- xmake/modules/feather_bindings.lua.
+-- The C++ types emitted as real C structs (cross the ABI by value) rather than opaque pointers.
+-- KEEP IN SYNC with exposed_struct_types() in the engine's xmake/modules/feather_bindings.lua.
 function exposed_struct_types()
     return {
         "DirectX::SimpleMath::Vector2",
@@ -97,14 +77,8 @@ function exposed_struct_types()
     }
 end
 
--- The math types a C++ plugin defines itself rather than reaching through a
--- wrapper: it compiles the same SimpleMath sources the engine did, so the
--- generator aliases these and asserts the published layout.
---
--- Matrix is here too even though it is not an exposed struct: it still crosses
--- as itself, just through a pointer to a copy.
--- KEEP IN SYNC with native_math_types() in the engine's
--- xmake/modules/feather_bindings.lua.
+-- The math types a C++ plugin defines itself, compiling the same vendored SimpleMath sources rather than reaching through a wrapper.
+-- Matrix is here too though not an exposed struct -- it crosses as a pointer to a copy. KEEP IN SYNC with the engine's native_math_types().
 function native_math_types()
     return {
         "DirectX::SimpleMath::Vector2",
@@ -151,13 +125,14 @@ local function shape_flags()
     return shape
 end
 
+-- Identifies the ABI-shaping flags, so drift against the engine is caught at build time rather than as a link error or silent UB.
+-- Hashes shape only, never feather_root's absolute path (host-separator-dependent, produced false drift). KEEP IN SYNC with the engine's gen_c_flags_id().
 function gen_c_flags_id()
     return hash.strhash128(table.concat(shape_flags(), "\0"))
 end
 
--- Paths in api.json and the metadata are spelled with forward slashes; keep
--- every flag derived from them that way, or Windows translates them to
--- backslashes and the prefix stops matching what the parse recorded.
+-- Paths in api.json and the metadata are spelled with forward slashes; every flag derived from them must be too.
+-- Windows would otherwise translate them to backslashes and the prefix stops matching what the parse recorded.
 local function to_forward_slashes(p)
     return (tostring(p):gsub("\\", "/"))
 end
@@ -185,14 +160,12 @@ local function gen_c_argv(api_json, feather_root, directxmath_root, out)
         "--output-source-dir", out.source_dir,
         "--helper-name-prefix", "Feather_",
         "--helper-macro-name-prefix", "FEATHER_C_",
-        -- Consumers include through this prefix: <feather_c/math/projection.h>.
-        -- Concatenated, not path.join()'d: see to_forward_slashes above. The
-        -- engine's run_gen_c() derives these exactly the same way.
+        -- Consumers include through this prefix: <feather_c/math/projection.h>. Concatenated, not path.join()'d -- see to_forward_slashes above.
+        -- The engine's run_gen_c() derives these exactly the same way.
         "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
-        -- DirectXMath's headers were parsed from outside the engine tree
-        -- (SimpleMath's vector types keep their fields in XMFLOAT bases), and
-        -- every parsed filename must match some prefix or the generator stops.
+        -- DirectXMath's headers were parsed from outside the engine tree (SimpleMath's fields live in XMFLOAT bases).
+        -- Every parsed filename must match some prefix or the generator stops.
         "--map-path", to_forward_slashes(directxmath_root), "feather_c/_ext/directxmath",
         "--assume-include-dir", to_forward_slashes(feather_root),
         -- The glue includes the real <DirectXMath.h> to call into it. Distinct
@@ -211,14 +184,8 @@ local function gen_c_argv(api_json, feather_root, directxmath_root, out)
     return argv
 end
 
--- A generator only needs to re-run when its input file's contents change.
--- A stamp holding a hash of the input, written after a successful run, lets an
--- unchanged rebuild skip the generator (a few seconds over a multi-megabyte
--- JSON) -- and, unlike an mtime check, isn't fooled by a `touch` or a
--- byte-identical re-export.
--- `extra` identifies anything besides the input that changes the output --
--- for the C++ wrappers, the generator binary itself, which ships in a package
--- whose install xmake caches.
+-- A stamp holding a hash of the input (`extra` adds anything else that changes the output, e.g. the C++ generator's own cached-package binary)
+-- lets an unchanged rebuild skip the generator entirely -- unlike an mtime check, not fooled by a `touch` or byte-identical re-export.
 local function gen_stamp_value(input_file, extra)
     return hash.sha256(input_file) .. (extra and (":" .. extra) or "")
 end
@@ -237,11 +204,8 @@ local function write_gen_stamp(stamp_path, input_file, extra)
     io.writefile(stamp_path, gen_stamp_value(input_file, extra))
 end
 
--- Content-compare copy of a generated tree. A file whose bytes are unchanged
--- keeps its mtime, so a regeneration that produced identical output doesn't
--- rebuild the plugin -- or, for C#, re-run a slow NativeAOT publish. Files gone
--- from `src` are dropped from `dst`, the job --clean-output-dir(s) did before
--- the generators started writing to a staging dir.
+-- Content-compare copy of a generated tree: an unchanged file keeps its mtime, so identical output doesn't rebuild the plugin (or, for C#,
+-- re-run a slow NativeAOT publish). Files gone from `src` are dropped from `dst`.
 local function sync_tree(src, dst)
     local kept = {}
     for _, f in ipairs(os.files(path.join(src, "**"))) do
@@ -267,8 +231,7 @@ local function sync_file(src, dst)
     end
 end
 
--- Generates the C headers a plugin compiles against, plus the C# sources or C++
--- wrappers when `langs` asks for them (`{csharp = true}` / `{cpp = true}`).
+-- Generates the C headers a plugin compiles against, plus C# sources or C++ wrappers when `langs` asks (`{csharp=true}`/`{cpp=true}`).
 -- Returns the output layout.
 function generate(target, opts, langs)
     langs = langs or {}
@@ -284,9 +247,8 @@ function generate(target, opts, langs)
     local c_stamp = path.join(bindings_dir(), ".gen_c_stamp")
     if gen_stale(c_stamp, api_json,
             os.isfile(out.desc_json) and os.isdir(out.header_dir)) then
-        -- The generators rewrite every file on every run. Stage the output, then
-        -- copy across only what actually differs (see sync_tree), so an
-        -- unchanged regeneration doesn't rebuild the plugin.
+        -- The generators rewrite every file on every run, so stage the output and copy across only what differs (see sync_tree).
+        -- Keeps an unchanged regeneration from rebuilding the plugin.
         local stage = bindings_dir() .. "/.c-stage"
         local staged = {
             header_dir = path.join(stage, "include"),
@@ -326,20 +288,16 @@ function generate(target, opts, langs)
             os.vrunv(generator_bin(target, "mrbind_gen_csharp"), {
                 "--input-json", out.desc_json,
                 "--output-dir", stage,
-                -- A logical name, not a file on disk: the bindings live in the
-                -- engine executable. The plugin's DllImportResolver maps it to
-                -- the running process (see the generated bootstrap).
+                -- A logical name, not a file on disk -- the bindings live in the engine executable.
+                -- The plugin's DllImportResolver maps it to the running process (see the generated bootstrap).
                 "--imported-lib-name", "feather_c",
                 "--helpers-namespace", "Feather::Misc",
-                -- No --force-namespace: the C++ `feather` namespace already maps
-                -- to `Feather`. Forcing it too yields `Feather.Feather.X` and
-                -- does not compile. KEEP IN SYNC with the engine's
-                -- run_gen_csharp().
+                -- No --force-namespace: the C++ `feather` namespace already maps to `Feather`; forcing it too yields non-compiling `Feather.Feather.X`.
+                -- KEEP IN SYNC with the engine's run_gen_csharp().
                 "--clean-output-dir",
             })
-            -- Staged alongside the generated sources so sync_tree treats it as
-            -- part of the set: this is what turns an assembly into a plugin
-            -- (manifest entry point, DllImport resolver, reflection pass).
+            -- Staged alongside the generated sources so sync_tree treats it as part of the set.
+            -- This is what turns an assembly into a plugin (entry point, DllImport resolver, reflection pass).
             os.cp(bootstrap, path.join(stage, path.filename(bootstrap)))
 
             os.mkdir(out.csharp_dir)
@@ -376,9 +334,8 @@ function generate(target, opts, langs)
             end
             os.vrunv(generator, argv)
 
-            -- Staged alongside the generated headers so sync_tree treats them as
-            -- one set: these describe a plugin rather than the engine, so they
-            -- are hand-written and shipped rather than generated.
+            -- Staged alongside the generated headers so sync_tree treats them as one set.
+            -- These describe a plugin rather than the engine, so they are hand-written and shipped rather than generated.
             for _, f in ipairs(os.files(path.join(sdk_cpp, "*.hpp"))) do
                 os.cp(f, path.join(stage, "feather_cpp", path.filename(f)))
             end
@@ -399,37 +356,8 @@ function generate(target, opts, langs)
     return out
 end
 
--- Wires up linking for a Windows plugin.
---
--- ELF and Mach-O let a plugin leave its feather_* imports undefined and bind
--- them when the engine loads it. Windows has no equivalent: a PE image resolves
--- imports through an import table, which the linker only writes if it was given
--- an import library.
---
--- That library is synthesized here rather than shipped. Everything it needs is
--- the list of exported names, and the API descriptor already carries it -- so a
--- plugin project still needs nothing but feather_api.json, on every platform.
--- Shipping a prebuilt .lib would put a per-platform binary, matched to one
--- engine build, back into the plugin's inputs.
---
--- Imports resolve against the running engine executable, which is the module
--- that exports these symbols (the C bindings are compiled into it). The name
--- below is what the loader looks for; opts.engine_binary overrides it for a
--- host that is not called feather.exe.
--- The exported names, read out of the headers the generator just wrote.
---
--- Not from the API descriptor: that names types, and leaves each type's
--- functions -- constructors, destructors, accessors -- to be synthesized by the
--- generator from the type's traits. Deriving those names here would mean
--- reimplementing the generator's naming rules and keeping them in step forever.
--- The headers are the generator's own answer to the same question, so they
--- cannot disagree with what the engine exports.
---
--- The ECS entry points are the exception: they are FEATHER_NO_BIND, so no
--- generated header mentions them, yet the engine exports them and a plugin in
--- any native language may call them. Listed by hand for the same reason the C#
--- bootstrap and feather_cpp/scripted_abi.hpp declare them by hand.
--- KEEP IN SYNC with core/world/scripted_abi.h.
+-- Windows has no ELF/Mach-O-style lazy symbol resolution: a plugin needs a synthesized import library, built here (not shipped) from names
+-- scraped out of the generated headers. The ECS entry points are FEATHER_NO_BIND and so listed by hand. KEEP IN SYNC with core/world/scripted_abi.h.
 local SCRIPTED_ABI_EXPORTS = {
     "feather_script_add_component",
     "feather_script_component_handle",
@@ -453,9 +381,8 @@ local function import_lib_names(header_dir)
 
     for _, header in ipairs(os.files(path.join(header_dir, "**.h"))) do
         local content = io.readfile(header)
-        -- Every declaration is "FEATHER_C_API <return type> <name>(". The
-        -- non-greedy match stops at the first parenthesis, and the name is the
-        -- last identifier before it.
+        -- Every declaration is "FEATHER_C_API <return type> <name>(" -- the non-greedy match stops at the first parenthesis.
+        -- The name is the last identifier before it.
         for declaration in content:gmatch("FEATHER_C_API(.-)%(") do
             local name = declaration:match("([%a_][%w_]*)%s*$")
             -- Prefix-checked so the macro's own definition in exports.h
@@ -491,16 +418,8 @@ local function build_import_lib(target, out, engine_binary)
 
     local libdir = bindings_dir()
     if target:has_tool("cxx", "cl", "clang_cl") then
-        -- MSVC: a .def plus /DEF, /NAME and /OUT is the librarian's documented
-        -- way to produce an import library with no object files at all.
-        --
-        -- The librarian may arrive as either lib.exe or link.exe -- LIB is
-        -- documented as a wrapper for LINK /LIB, and xmake hands back whichever
-        -- the toolchain configured. link.exe needs /lib to act as the
-        -- librarian; without it, it tries to link an executable named
-        -- feather_imports.lib, warns that /name is unrecognized and that no
-        -- object files were given, and then dies unable to open the file it
-        -- just wrote as an import-library side effect.
+        -- MSVC: a .def plus /DEF, /NAME and /OUT is the librarian's documented way to produce an import library with no object files.
+        -- The librarian may be lib.exe or link.exe; link.exe needs /lib to act as one, or it tries (and fails) to link an executable instead.
         local librarian = assert(target:tool("ar"),
             "FeatherPluginSDK: no MSVC librarian (lib.exe) found")
 
@@ -511,11 +430,8 @@ local function build_import_lib(target, out, engine_binary)
 
         local lib_path = path.join(libdir, libname .. ".lib")
 
-        -- Removed first, because the librarian opens an existing output library
-        -- to update it rather than replacing it outright: a truncated one left
-        -- by an interrupted or failed run is read back, rejected as corrupt
-        -- (LNK1136), and fails every subsequent build until it is deleted by
-        -- hand. The .exp is written beside it and goes the same way.
+        -- Removed first: the librarian updates an existing output library rather than replacing it, so a truncated one from an interrupted
+        -- run is read back and rejected as corrupt (LNK1136), failing every subsequent build until deleted by hand. The .exp goes the same way.
         os.tryrm(lib_path)
         os.tryrm(path.join(libdir, libname .. ".exp"))
 
@@ -557,19 +473,8 @@ function apply_windows_link(target, opts, out)
     target:add("links", libname)
 end
 
--- The .NET Runtime Identifier for the machine actually running dotnet.
---
--- NativeAOT cannot cross the OS boundary at all -- "Cross-OS native
--- compilation is not supported" is ILCompiler's own message for it -- so the
--- one RID that can always be published here is the host's own, regardless of
--- what platform xmake itself is configured for. A hardcoded "linux-x64"
--- default broke every non-Linux machine outright: dotnet ran, picked up the
--- forced RID, and refused before compiling anything.
---
--- os.host()/os.arch() name the machine dotnet is actually running on; xmake's
--- is_plat()/is_arch() name the *target* xmake was configured for, which is the
--- wrong question for a tool that cannot cross-compile regardless of what the
--- rest of the build is doing.
+-- The .NET Runtime Identifier for the machine actually running dotnet: NativeAOT cannot cross the OS boundary, so a hardcoded default like
+-- "linux-x64" broke every other host. os.host()/os.arch() name that machine; xmake's is_plat()/is_arch() name the *target*, the wrong question here.
 local function host_dotnet_rid()
     local os_part = ({windows = "win", linux = "linux", macosx = "osx"})[os.host()]
     local arch_part = ({x86_64 = "x64", x64 = "x64", i386 = "x86", arm64 = "arm64", ["arm64-v8a"] = "arm64"})[os.arch()]
@@ -580,20 +485,15 @@ local function host_dotnet_rid()
     return os_part .. "-" .. arch_part
 end
 
--- The filename dotnet's NativeAOT publish actually produces: the assembly
--- name (the csproj's own filename, absent an explicit <AssemblyName>) plus
--- whatever shared-library extension is native to the host -- .dll here,
--- .so/.dylib elsewhere, never .so unconditionally the way a hardcoded default
--- would assume.
+-- The filename dotnet's NativeAOT publish produces: the csproj's own filename (absent an explicit <AssemblyName>) plus the host's native
+-- shared-library extension, never .so unconditionally as a hardcoded default would assume.
 local function default_published_name(csproj)
     local ext = ({windows = ".dll", linux = ".so", macosx = ".dylib"})[os.host()] or ".so"
     return path.basename(csproj) .. ext
 end
 
--- The filename staged into bin/ -- and so the one a .fext manifest's
--- "libraries" table names. Mirrors feather_c_plugin's own convention (no "lib"
--- prefix on Windows, via set_prefixname(""); the platform default elsewhere),
--- so a C and a C# extension of the same logical name are found the same way.
+-- The filename staged into bin/, and so the one a .fext manifest's "libraries" table names.
+-- Mirrors feather_c_plugin's own convention (no "lib" prefix on Windows) so a C and C# extension of the same name are found the same way.
 local function default_output_name(name)
     if os.host() == "windows" then
         return name .. ".dll"

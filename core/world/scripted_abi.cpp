@@ -242,9 +242,8 @@ uint64_t feather_script_define_system(
 	const auto system = register_scripted_system(
 			*world, name, components, static_cast<ScriptedSystemPhase>(phase),
 			[callback, user_data](const ScriptedSystemInvocation& invocation) {
-				// The handles are the raw component pointers; the accessors the
-				// caller will use to read them are looked up by name on the
-				// other side of the ABI.
+				// The handles are the raw component pointers; the accessors the caller will use to read them are looked up
+				// by name on the other side of the ABI.
 				std::vector<void*> handles;
 				handles.reserve(invocation.components.size());
 				for (const ScriptedSystemComponent& component : invocation.components) {

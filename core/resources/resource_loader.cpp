@@ -38,10 +38,8 @@ static std::string strip_extension(const Path& path) {
 	return ext;
 }
 
-// The single spelling a resource is cached under. Both entry points into the
-// cache -- load() and index_project() -- have to agree on it, or the same file
-// reached two ways (a res:// path, the project walk, a manifest naming its own
-// library) is loaded more than once.
+// The single spelling a resource is cached under. Both entry points into the cache -- load() and index_project() -- have to agree on it,
+// or the same file reached two ways (a res:// path, the project walk, a manifest naming its own library) is loaded more than once.
 static std::string cache_key(const Path& path) {
 	std::error_code ec;
 	auto canonical = std::filesystem::weakly_canonical(path, ec);
@@ -59,9 +57,8 @@ std::shared_ptr<Resource> ResourceLoader::load(const Path& path) {
 	if (it != get()->_path_cache.end()) {
 		auto res = it->second;
 		if (!res->is_loaded()) {
-			// Snapshot: a loader's load() can register another format loader
-			// (ClassDB::on_subclass_registered, above), which appends to the
-			// very vector being walked here and invalidates the iterators.
+			// Snapshot: a loader's load() can register another format loader (ClassDB::on_subclass_registered, above), which
+			// appends to the very vector being walked here and invalidates the iterators.
 			auto loaders = get()->_format_loaders;
 			for (const auto& loader : loaders) {
 				if (loader->recognize_extension(extension)) {
@@ -128,15 +125,13 @@ void ResourceLoader::index_project() {
 		pending.push_back(entry.path());
 	}
 
-	// .fext manifests before anything else: a manifest is the authoritative
-	// declaration of an extension, and claiming it first stops the shared
-	// library it names from being opened again by the generic probe below.
+	// .fext manifests before anything else: a manifest is the authoritative declaration of an extension, and claiming it first
+	// stops the shared library it names from being opened again by the generic probe below.
 	std::stable_partition(pending.begin(), pending.end(),
 			[](const Path& p) { return strip_extension(p) == "fext"; });
 
-	// An extension can register format loaders of its own, and those have to
-	// get a look at files the walk has already passed -- so keep re-running
-	// over what nothing claimed until a full pass registers no new loader.
+	// An extension can register format loaders of its own, and those have to get a look at files the walk has already passed --
+	// so keep re-running over what nothing claimed until a full pass registers no new loader.
 	while (!pending.empty()) {
 		auto generation_at_start = self._loader_generation;
 		std::vector<Path> unclaimed;
@@ -158,9 +153,8 @@ void ResourceLoader::index_project() {
 
 				auto res = loader->instantiate(path);
 				if (!res) {
-					// Loader explicitly declined (e.g. a DLL that is not an
-					// extension). Another loader might still want it, but no
-					// two loaders claim the same extension today.
+					// Loader explicitly declined (e.g. a DLL that is not an extension). Another loader might still want it,
+					// but no two loaders claim the same extension today.
 					claimed = true;
 					break;
 				}

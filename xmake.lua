@@ -48,33 +48,24 @@ end
 includes("thirdparty/xmake.lua")
 
 -- ---- feather_public_api -------------------------------------------------
--- Headeronly umbrella target: engine include dirs + PUBLIC thirdparty
--- headers, without a module -> executable circular dep. Also the source of
--- truth for downstream consumers via tools/SDK/FeatherSDK.lua.
+-- Headeronly umbrella target: engine include dirs + PUBLIC thirdparty headers, without a module -> executable circular dep.
 includes("xmake/public_api.lua")
 
 -- ---- Bindings API ---------------------------------------------------------
--- The shared MRBind parse (build/bindings/api.json) that modules/*_bindings
--- generate from. Before the engine targets: they depend on it, and a target's
--- dependencies must already be defined.
+-- The shared MRBind parse (build/bindings/api.json) that modules/*_bindings generate from -- before the engine targets, whose
+-- dependencies on it must already be defined.
 if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
     includes("xmake/bindings.lua")
 end
 
 -- ---- Engine targets -------------------------------------------------------
--- The feather executable, its core sources, codegen wiring, and modules.
--- Split out so it can be includes()'d cross-repo without dragging along
--- set_project()/set_version()/etc, which only make sense at this top level.
+-- The feather executable, its core sources, codegen wiring, and modules. Split out so it can be includes()'d cross-repo without
+-- dragging along set_project()/set_version()/etc, which only make sense at this top level.
 includes("xmake/engine.lua")
 
 -- ---- API export -----------------------------------------------------------
--- Publishes the API description a plugin project designates in its own build.
---
--- This is the handoff point of the whole multi-language plugin story: the
--- engine parses its headers once (xmake/bindings.lua) and everything a C or C#
--- plugin needs to generate bindings is in the file this task copies out, plus
--- the small sidecar that says how it was made. A plugin project commits both
--- and never sees the engine's source. See tools/SDK/FeatherPluginSDK.lua.
+-- Publishes the API description a plugin project designates in its own build -- the handoff point of the whole multi-language plugin
+-- story: the engine parses its headers once (xmake/bindings.lua), and this task copies out everything a plugin needs plus a sidecar describing how it was made. See tools/SDK/FeatherPluginSDK.lua.
 task("export-api")
     set_menu {
         usage = "xmake export-api",
@@ -90,9 +81,8 @@ task("export-api")
         assert(os.isfile(api_json), "export-api: " .. api_json .. " does not exist.\n"
             .. "  Configure with the C bindings enabled first: xmake f -m debug -y")
 
-        -- Normalized to forward slashes: this string is handed back verbatim
-        -- to the generators by every consumer, on whatever platform, and it has
-        -- to match the filenames the parse recorded inside api.json.
+        -- Normalized to forward slashes: handed back verbatim to the generators by every consumer, on whatever platform, and must
+        -- match the filenames the parse recorded inside api.json.
         local feather_root = feather_bindings.to_forward_slashes(os.scriptdir())
         local dist = feather_bindings.dist_dir()
         os.mkdir(dist)
@@ -104,14 +94,11 @@ task("export-api")
 
         json.savefile(feather_bindings.dist_api_meta_path(), {
             api_version = 1,
-            -- The engine checkout path baked into every filename inside
-            -- api.json. A consumer passes it back to the generators verbatim
-            -- so their path mappings line up; nothing ever opens it, so it
-            -- needs not exist on the consumer's machine.
+            -- The engine checkout path baked into every filename inside api.json. A consumer passes it back to the generators verbatim
+            -- so their path mappings line up; nothing ever opens it, so it needs not exist on the consumer's machine.
             feather_root = feather_root,
-            -- Likewise for DirectXMath's headers, which the parse reaches
-            -- through SimpleMath's bases and which live outside the engine
-            -- tree, so they need a path mapping of their own.
+            -- Likewise for DirectXMath's headers, reached through SimpleMath's bases and living outside the engine tree, so they
+            -- need a path mapping of their own.
             directxmath_root = feather_bindings.to_forward_slashes(
                 feather_bindings.directxmath_includedir(project.target("feather"))),
             engine_commit = commit,
@@ -125,11 +112,7 @@ task("export-api")
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_json_path())
         cprint("${green}export-api:${reset} %s", feather_bindings.dist_api_meta_path())
 
-        -- Two files, on every platform. Nothing binary is published, and in
-        -- particular no import library: a Windows plugin does need one, but the
-        -- SDK builds it from the descriptor these files produce (see
-        -- apply_windows_link in tools/SDK/modules/feather_plugin_bindings.lua).
-        -- Shipping a prebuilt one would put a per-platform binary, matched to a
-        -- single engine build, back among a plugin's inputs.
+        -- Two files, on every platform, nothing binary -- in particular no import library: a Windows plugin needs one, but the SDK
+        -- builds it locally from the descriptor these files produce (apply_windows_link), rather than shipping a per-build binary.
     end)
 task_end()

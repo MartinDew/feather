@@ -11,13 +11,8 @@ bool py_host_run_script(const Path& script);
 // Shuts the interpreter down if one was started.
 void py_host_finalize();
 
-// Anchors py_ecs.cpp into the link.
-//
-// Everything in that file is reached through a static initializer -- pybind11's
-// embedded-module registration, which has to run before Py_Initialize -- so no
-// symbol in it is referenced by name. This module is a static library, and a
-// library member nothing references is not linked at all, which would leave the
-// interpreter with no _feather_ecs to import. Calling this is what keeps it.
+// Anchors py_ecs.cpp into the link: everything there is reached through a static initializer (pybind11's embedded-module
+// registration), so no symbol in it is referenced by name, and this static library's linker would otherwise drop it, leaving the interpreter with no _feather_ecs to import.
 void py_ecs_link_anchor();
 
 } // namespace feather

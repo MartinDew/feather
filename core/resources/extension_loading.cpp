@@ -12,9 +12,8 @@ namespace feather {
 
 void resolve_and_register_extension_entry(const std::shared_ptr<Extension>& ext,
 		const std::shared_ptr<SharedLibrary>& lib, const Path& path, std::string_view loader_name) {
-	// Resolved as a typed pointer rather than through Callable: the entry
-	// point takes an InitLevel, and Callable only carries the signature it was
-	// built from -- SharedLibrary::get_symbol() builds one for `void()`.
+	// Resolved as a typed pointer rather than through Callable: the entry point takes an InitLevel, and Callable only carries
+	// the signature it was built from -- SharedLibrary::get_symbol() builds one for `void()`.
 	auto entry_fn = lib->get_typed_symbol<ExtensionEntryFn>(ext->get_entry_point());
 	if (!entry_fn) {
 		std::cerr << loader_name << ": Entry point '" << ext->get_entry_point()

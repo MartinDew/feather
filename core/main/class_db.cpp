@@ -46,9 +46,8 @@ bool ClassDB::register_scripted_value_class(StaticString name, std::vector<Class
 
 	ClassInfo& info = instance._class_infos[name];
 	info.name = name;
-	// Deliberately parentless: a scripted value type derives from nothing, so
-	// there is no base whose ClassInfo* would have to outlive it, and
-	// _fire_subclass_delegates has no chain to walk.
+	// Deliberately parentless: a scripted value type derives from nothing, so there is no base whose ClassInfo* would have
+	// to outlive it, and _fire_subclass_delegates has no chain to walk.
 	info.parent = ""_ss;
 	info.is_abstract = false;
 	info.is_singleton = false;

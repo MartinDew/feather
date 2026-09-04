@@ -161,9 +161,8 @@ namespace feather_gen
             if (info.exposed)
                 continue; // Mirror structs are not implemented; only natives are exposed today.
 
-            // Without a destructor the C bindings emit no _Destroy, so a
-            // wrapper could neither own nor release one. Happens for a class
-            // admitted only as somebody's base.
+            // Without a destructor the C bindings emit no _Destroy, so a wrapper could neither own nor release one.
+            // Happens for a class admitted only as somebody's base.
             if (!info.traits || !bool(info.traits->destructible))
                 continue;
 
@@ -176,9 +175,8 @@ namespace feather_gen
             }
             else
             {
-                // Template instantiations and the std:: helpers have no name
-                // that is both unique and spellable as a class; the C name
-                // already is one, so it stands in for them.
+                // Template instantiations and the std:: helpers have no name that is both unique and spellable as a class;
+                // the C name already is one, so it stands in for them.
                 info.wrapper = "feather::c::" + info.c_name;
             }
             info.wrapped = true;

@@ -10,9 +10,8 @@
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
-// The entry point named by my_plugin.fext. Called once per initialization
-// level the engine enters, ascending; pick the earliest level that has what
-// your registration needs. There is no matching call on the way out.
+// The entry point named by my_plugin.fext. Called once per initialization level the engine enters, ascending; pick the
+// earliest level that has what your registration needs. There is no matching call on the way out.
 EXPORT void register_my_plugin(feather_InitLevel level) {
 	if (level != feather_InitLevel_Core) {
 		return;

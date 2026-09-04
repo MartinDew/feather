@@ -8,24 +8,13 @@
 -- source tree and installed as a fourth tool, feather_gen_cpp. See
 -- _graft_feather_gen_cpp below for why it is built here rather than separately.
 
--- Where the grafted generator's sources live. Captured as a value while this
--- file is being loaded, not computed inside a callback: os.scriptdir() resolves
--- against whichever script the sandbox is currently running, which during
--- on_install is not this file. Same capture-at-include pattern as
--- tools/SDK/FeatherPluginSDK.lua's SDK_DIR.
---
--- Two levels up from thirdparty/packages/ is the engine root -- not
--- os.projectdir(), which is a consumer's project when this is included
--- cross-repo (same reasoning as thirdparty/packages/directxmath.lua).
+-- Where the grafted generator's sources live. Captured as a value while this file loads, not computed inside a callback: os.scriptdir()
+-- during on_install resolves against a different script (same pattern as FeatherPluginSDK.lua's SDK_DIR). Two levels up is the engine root, not os.projectdir() (a consumer's project cross-repo).
 local FEATHER_GEN_CPP_DIR = path.join(path.directory(path.directory(os.scriptdir())),
     "tools", "SDK", "gen_cpp")
 
--- Content hash of the grafted generator's sources, for the requiring side to
--- pass as a package config. A package's install hash comes from the configs it
--- was asked for, so one the package set itself would never invalidate it and an
--- edit here would silently keep the old binary.
--- Global, so an includes()'ing description file can call it.
--- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+-- Content hash of the grafted generator's sources, passed by the requiring side as a package config -- a package's install hash only follows
+-- configs it's asked for, so setting this from inside the package itself would never invalidate it. KEEP IN SYNC with mrbind_generators.lua.
 function feather_gen_cpp_rev(dir)
     dir = dir or FEATHER_GEN_CPP_DIR
     if not os.isdir(dir) then
@@ -50,11 +39,8 @@ package("mrbind")
     -- grafted generator's sources (see feather_gen_cpp_rev).
     add_configs("gen_cpp_rev", {description = "Content hash of the vendored feather_gen_cpp sources.", default = "", type = "string"})
 
-    -- Pinned, not tracking master. The parse output (build/bindings/api.json)
-    -- is published for plugin projects to generate from, and its schema is
-    -- undocumented and unversioned upstream -- a generator from a different
-    -- revision may simply fail to read it. tools/SDK/packages/mrbind_generators.lua
-    -- pins the same commit; move both together.
+    -- Pinned, not tracking master: the published parse output (api.json) has an undocumented, unversioned schema upstream, so a generator
+    -- from a different revision may fail to read it. tools/SDK/packages/mrbind_generators.lua pins the same commit; move both together.
     add_urls("https://github.com/MeshInspector/mrbind.git", {commit = "232ff33159d5e76e57b11669453d7d25ad22a14d"})
     set_policy("platform.longpaths", true)
 
@@ -94,31 +80,8 @@ package("mrbind")
     on_install(function (package)
         import("package.tools.cmake")
 
-        -- The prebuilt LLVM for Windows names a DIA SDK library that does not exist.
-        --
-        -- xrepo's libllvm downloads LLVM's official Windows release build, whose
-        -- lib/cmake/llvm/LLVMExports.cmake carries, on LLVMDebugInfoPDB:
-        --
-        --   INTERFACE_LINK_LIBRARIES "C:/Program Files (x86)/Microsoft Visual Studio/
-        --     2019/Professional/DIA SDK/lib/amd64/diaguids.lib;LLVMBinaryFormat;..."
-        --
-        -- That absolute path is baked in from whatever machine built the release, and
-        -- every consumer inherits it. mrbind links LLVMDebugInfoPDB transitively, so
-        -- the build dies with "ninja: error: '<...>/diaguids.lib', needed by
-        -- 'mrbind.exe', missing and no known rule to make it". libllvm's Windows
-        -- install is a bare copy with no patching, so nothing upstream fixes this.
-        --
-        -- Verified by inspecting the published archive directly (clang+llvm-21.1.0-
-        -- win64.zip): exactly one line matches, and clangTooling.lib is present, which
-        -- rules out MRBIND_STATIC_BUILD picking a target the archive lacks.
-        --
-        -- Repointing at the real DIA SDK is preferred over deleting the entry, because
-        -- LLVMDebugInfoPDB.lib genuinely contains objects referencing DIA's GUIDs; if
-        -- the linker pulls one in, dropping the library turns a missing-file error into
-        -- an unresolved-symbol error. find_dia_sdk locates the copy that ships with the
-        -- installed Visual Studio. Only when there is none do we strip the entry, on the
-        -- grounds that mrbind never reads PDBs and the alternative is a guaranteed
-        -- failure.
+        -- The prebuilt Windows LLVM bakes an absolute, nonexistent DIA SDK path into LLVMDebugInfoPDB, which mrbind links transitively, so
+        -- the build dies missing diaguids.lib. Repointed via find_dia_sdk when Visual Studio has one; only dropped (mrbind never reads PDBs) otherwise.
         local function _fix_baked_dia_path(installdir)
             local llvm_exports = path.join(installdir, "lib", "cmake", "llvm", "LLVMExports.cmake")
             if not os.isfile(llvm_exports) then
@@ -176,14 +139,8 @@ package("mrbind")
             cc  = path.join(bindir, "clang" .. suffix)
             cxx = path.join(bindir, "clang++" .. suffix)
 
-            -- mrbind's find_package(Clang) needs Clang's CMake config, and
-            -- ClangConfig.cmake in turn does its own find_package(LLVM) -- both
-            -- have to be pointed at explicitly, since a versioned install (the
-            -- usual case on Linux) puts neither on CMake's default search path.
-            -- Asking llvm-config where they are beats guessing a distro's
-            -- layout from the tool's version suffix: the suffix is empty
-            -- whenever an unversioned llvm-config exists, even when the CMake
-            -- configs themselves live in a versioned directory.
+            -- mrbind's find_package(Clang) needs Clang's CMake config (which does its own find_package(LLVM)); both need pointing at
+            -- explicitly since a versioned install puts neither on CMake's default search path. Asking llvm-config beats guessing the layout from the version suffix.
             llvm_dir = try { function () return os.iorunv(llvm_config, {"--cmakedir"}):trim() end }
             if llvm_dir and os.isdir(llvm_dir) then
                 -- Clang installs alongside LLVM, as a sibling of its cmake dir.
@@ -240,13 +197,8 @@ package("mrbind")
             end
         end
 
-        -- Lets --expose-as-struct accept standard-layout classes that have base
-        -- classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
-        -- with their fields inherited from XMFLOAT2/3/4. The size/alignment/
-        -- offset validation mrbind does when emitting the struct is untouched,
-        -- so an unsuitable type still fails loudly. Rationale in full:
-        -- tools/SDK/gen_cpp/patches/expose-as-struct-standard-layout-bases.md.
-        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+        -- Lets --expose-as-struct accept standard-layout classes with base classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
+        -- fields inherited from XMFLOAT2/3/4. Size/alignment/offset validation is untouched. Rationale: tools/SDK/gen_cpp/patches/expose-as-struct-standard-layout-bases.md. KEEP IN SYNC with mrbind_generators.lua.
         local function _allow_exposed_structs_with_bases()
             local f = path.join("src", "generators", "c", "generator.cpp")
             local needle = '                // Must have no bases. I ain\'t dealing with those.\n'
@@ -266,12 +218,8 @@ package("mrbind")
                 .. " -- upstream source moved; see tools/SDK/gen_cpp/patches/")
         end
 
-        -- Copies Feather's C++ wrapper generator into the fetched source tree
-        -- and hooks it into mrbind's own CMakeLists. Grafted rather than built
-        -- standalone because mrbind sets -std=c++23, _ITERATOR_DEBUG_LEVEL=0 and
-        -- CMAKE_MSVC_RUNTIME_LIBRARY at directory scope, and a target missing any
-        -- of them fails to link against mrbind_c_interop (LNK2038 on Windows).
-        -- KEEP IN SYNC with tools/SDK/packages/mrbind_generators.lua.
+        -- Copies Feather's C++ wrapper generator into the fetched source tree and hooks it into mrbind's own CMakeLists. Grafted rather than
+        -- built standalone: mrbind sets -std=c++23/_ITERATOR_DEBUG_LEVEL=0/CMAKE_MSVC_RUNTIME_LIBRARY at directory scope; missing any fails to link (LNK2038). KEEP IN SYNC with mrbind_generators.lua.
         local function _graft_feather_gen_cpp()
             local src = FEATHER_GEN_CPP_DIR
             assert(os.isdir(src), "mrbind: feather_gen_cpp sources not found at " .. src)
@@ -293,19 +241,8 @@ package("mrbind")
         local builddir = path.join(package:builddir(), ".cmake_build")
         cmake.build(package, configs, {builddir = builddir, cmake_generator = "Ninja"})
 
-        -- No install() rules upstream: copy the tool binaries out of the build
-        -- tree by hand.
-        --
-        -- Checks both spellings rather than trusting is_plat("windows")
-        -- alone: this is a host = true package (thirdparty/xmake.lua), always
-        -- built for the machine actually running the build, and package:
-        -- is_plat() was observed disagreeing with that on Windows CI for the
-        -- otherwise-identical assert in tools/SDK/packages/mrbind_generators.lua
-        -- -- xmake itself logged "checking for platform ... windows (x64)" in
-        -- the same run where is_plat("windows") read false inside that
-        -- package's on_install. A Windows PE binary carries .exe regardless
-        -- of which compiler produced it, so accepting either spelling is
-        -- correct in every case, not just the one this was found in.
+        -- No install() rules upstream: copy the tool binaries out of the build tree by hand. Checks both .exe spellings rather than trusting
+        -- is_plat("windows") alone -- it was observed disagreeing with os.host() on Windows CI for this host=true package's on_install.
         local bindir = package:installdir("bin")
         for _, name in ipairs({"mrbind", "mrbind_gen_c", "mrbind_gen_csharp", "feather_gen_cpp"}) do
             local preferred = os.host() == "windows" and (name .. ".exe") or name
@@ -319,10 +256,8 @@ package("mrbind")
             os.cp(built, bindir)
         end
 
-        -- The Python backend has no generator binary: the parser emits macros
-        -- (--format=macros) that get compiled against mrbind's own target
-        -- header, so the source tree's include/ has to ship too (see
-        -- modules/py_bindings, and mrbind's docs/generating_python.md).
+        -- The Python backend has no generator binary: the parser emits macros (--format=macros) compiled against mrbind's own target
+        -- header, so the source tree's include/ has to ship too (modules/py_bindings, mrbind's docs/generating_python.md).
         assert(os.isdir("include"), "mrbind: source tree has no include/ -- upstream layout changed")
         os.cp("include", package:installdir())
     end)

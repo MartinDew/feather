@@ -2,9 +2,8 @@
 -- CONSUMER's repo if this file were ever includes()'d cross-repo.
 local FEATHER_ROOT = path.directory(os.scriptdir())
 
--- Copies raw_resources/shaders next to the built executable. Modules needing
--- their own post-build deploy steps should define their own rule (see
--- vex_renderer.deploy_runtime) -- rules stack across a target, closures don't.
+-- Copies raw_resources/shaders next to the built executable. Modules needing their own post-build deploy steps should define
+-- their own rule (see vex_renderer.deploy_runtime) -- rules stack across a target, closures don't.
 rule("feather.deploy_shaders")
     after_build(function(target)
         os.cp(
@@ -30,10 +29,8 @@ rule("feather.deploy_shared_deps")
                     end
                 end
             else
-                -- ELF/Mach-O: into lib/ next to the binary, which is already on
-                -- the rpath ($ORIGIN/lib, see xmake/engine.lua). Without this a
-                -- shared dep is only findable through the absolute rpath xmake
-                -- bakes into a dev build, which no deployed copy would have.
+                -- ELF/Mach-O: into lib/ next to the binary, already on the rpath ($ORIGIN/lib, xmake/engine.lua). Without this
+                -- a shared dep is only findable through the absolute rpath xmake bakes into a dev build, which no deployed copy would have.
                 local libdir = path.join(pkg:installdir(), "lib")
                 if os.isdir(libdir) then
                     local outdir = path.join(target:targetdir(), "lib")

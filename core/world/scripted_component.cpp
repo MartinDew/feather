@@ -12,11 +12,8 @@ namespace feather {
 
 namespace {
 
-// The storage a field of each Variant type occupies inside the component.
-//
-// These are the types Variant itself holds (see its InternalVariant), not
-// wider ones: reading a field back has to produce exactly the Variant the
-// script set, and a narrower store would silently round-trip differently.
+// The storage a field of each Variant type occupies inside the component -- exactly the types Variant itself holds (see InternalVariant),
+// not wider ones: reading a field back must produce exactly the Variant the script set, and a narrower store would silently round-trip differently.
 struct FieldStorage {
 	size_t size;
 	size_t alignment;
@@ -67,17 +64,15 @@ const char* type_name(VariantType type) {
 	}
 }
 
-// Reads/writes one field of a live component instance. `base` is the raw
-// component pointer -- for a value type, ClassInfo::Property's void* is the
-// object itself, not a Reflected*.
+// Reads/writes one field of a live component instance. `base` is the raw component pointer -- for a value type,
+// ClassInfo::Property's void* is the object itself, not a Reflected*.
 template <typename T>
 void fill_accessors(ScriptedFieldLayout& field) {
 	const size_t offset = field.offset;
 	field.getter = [offset](void* base) -> Variant {
 		T value;
-		// memcpy rather than a reinterpret_cast read: the field sits at a
-		// computed offset in flecs-owned storage, so nothing guarantees the
-		// compiler's alignment assumptions for T hold at that address.
+		// memcpy rather than a reinterpret_cast read: the field sits at a computed offset in flecs-owned storage, so nothing guarantees
+		// the compiler's alignment assumptions for T hold at that address.
 		std::memcpy(&value, static_cast<const char*>(base) + offset, sizeof(T));
 		return Variant(value);
 	};
@@ -104,15 +99,8 @@ bool build_accessors(ScriptedFieldLayout& field) {
 	}
 }
 
-// StaticString is a view: it holds a string_view and never owns the characters,
-// which is what makes it cheap for the string literals the reflection macros
-// produce. A name that came from a script is not a literal, so it has to be
-// given somewhere permanent to live before a ClassInfo can point at it.
-//
-// This is not a leak that could have been avoided by storing the std::string in
-// the layout below: comparisons go through the hash, so a dangling name still
-// matches, registers and looks up correctly -- it only reads as garbage when
-// something prints it. Interning removes the question entirely.
+// StaticString is a view (cheap for the string literals reflection macros produce), so a script-provided name needs somewhere permanent to
+// live before a ClassInfo can point at it. Not a leak worth avoiding by storing std::string in the layout: comparisons hash, so a dangling name still matches -- it only reads as garbage when printed.
 std::string_view intern(const std::string& name) {
 	static auto* names = new std::deque<std::string>();
 	for (const std::string& existing : *names) {
@@ -124,10 +112,8 @@ std::string_view intern(const std::string& name) {
 	return names->back();
 }
 
-// Layouts outlive every caller: a component cannot be withdrawn from a world
-// that may already store it, so these are only ever added to. std::deque, not
-// vector, so growing the registry never invalidates a pointer handed out
-// earlier.
+// Layouts outlive every caller: a component cannot be withdrawn from a world that may already store it, so these are only ever added to.
+// std::deque, not vector, so growing the registry never invalidates a pointer handed out earlier.
 std::deque<ScriptedComponentLayout>& layouts() {
 	static std::deque<ScriptedComponentLayout> registry;
 	return registry;
@@ -156,18 +142,16 @@ Ecs::entity_t register_scripted_component(
 		return fail("a scripted component needs a name");
 	}
 	if (fields.empty()) {
-		// A zero-size flecs component is a tag, which behaves differently
-		// enough (no storage, so nothing to get or set) that silently
-		// producing one would be a surprise.
+		// A zero-size flecs component is a tag, which behaves differently enough (no storage, so nothing to get or set)
+		// that silently producing one would be a surprise.
 		return fail(std::format("scripted component '{}' has no fields", name));
 	}
 	if (world.lookup(name.c_str()).is_valid()) {
 		return fail(std::format("'{}' already exists in the world", name));
 	}
 
-	// Lay the fields out the way a C compiler would: each at the next offset
-	// meeting its alignment, the whole rounded up to the widest field's
-	// alignment so an array of them stays aligned.
+	// Lay the fields out the way a C compiler would: each at the next offset meeting its alignment, the whole rounded up
+	// to the widest field's alignment so an array of them stays aligned.
 	ScriptedComponentLayout layout;
 	layout.name = name;
 	layout.fields.reserve(fields.size());
@@ -219,9 +203,8 @@ Ecs::entity_t register_scripted_component(
 		});
 	}
 
-	// ClassDB first: it is the half that can refuse (a name collision with a
-	// C++ class), and a refused registration must not leave a component behind
-	// in the world that nothing can read.
+	// ClassDB first: it is the half that can refuse (a name collision with a C++ class), and a refused registration must
+	// not leave a component behind in the world that nothing can read.
 	if (!ClassDB::register_scripted_value_class(StaticString(intern(name)), std::move(properties))) {
 		return fail(std::format("'{}' is already a registered class", name));
 	}
@@ -238,9 +221,8 @@ Ecs::entity_t register_scripted_component(
 	component_desc.type.size = static_cast<ecs_size_t>(total_size);
 	component_desc.type.alignment = static_cast<ecs_size_t>(max_alignment);
 	component_desc.type.name = name.c_str();
-	// Zero-initialized on add, so a script reads defined values before it has
-	// written anything. Every supported field type is trivially copyable, so
-	// this is the only hook the storage needs.
+	// Zero-initialized on add, so a script reads defined values before it has written anything. Every supported field
+	// type is trivially copyable, so this is the only hook the storage needs.
 	component_desc.type.hooks.ctor = flecs_default_ctor;
 
 	const ecs_entity_t component = ecs_component_init(world.c_ptr(), &component_desc);

@@ -13,9 +13,8 @@ if not has_config("enable_cs_bindings") then
     return
 end
 
--- Nothing to generate from: the C generator's descriptor is the input, and the
--- C# these produce calls the C bindings at runtime. A note rather than an
--- error, since both options default on and turning one off is a deliberate act.
+-- Nothing to generate from: the C generator's descriptor is the input, and the C# these produce calls the C bindings at runtime.
+-- A note rather than an error, since both options default on and turning one off is a deliberate act.
 if not has_config("enable_c_bindings") then
     -- print(), not cprint(): only script scope (on_load, on_config, ...) has
     -- the colour-printing interface.
@@ -31,9 +30,8 @@ target("cs_bindings")
     set_kind("phony")
     set_group("bindings")
 
-    -- The C generation writes the descriptor this reads, and it runs as a rule
-    -- on the engine target now (see modules/c_bindings/xmake.lua); on_config
-    -- follows dependency order, so depending on the engine orders the two.
+    -- The C generation writes the descriptor this reads, and it runs as a rule on the engine target (modules/c_bindings/xmake.lua);
+    -- on_config follows dependency order, so depending on the engine orders the two.
     add_deps("feather")
     add_packages("mrbind")
 
