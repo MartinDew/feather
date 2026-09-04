@@ -61,7 +61,7 @@ end
 
 -- Local package (packages/mrbind.lua): a Clang-based C++ parser and binding generator, a host tool nothing links against. Required only
 -- when a bindings module actually needs it, since without a system Clang install the package builds LLVM from source.
-if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings", "enable_cpp_bindings") then
+if has_config("enable_c_bindings", "enable_cs_bindings", "enable_cpp_bindings") then
     -- host = true: without it a cross-compile (mingw, say) would build the parser for the target and be unable to execute it.
     -- gen_cpp_rev is passed here rather than computed inside the package, whose own install hash would never see a config it set itself.
     add_requires("mrbind", {system = false, alias = "mrbind", host = true,
@@ -72,12 +72,6 @@ if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings", "
     if is_plat("windows") then
         add_requires("libllvm", {system = false, alias = "libllvm", configs = {shared = false, clang = true}})
     end
-end
-
--- Header-only; the generated Python module's macro TU compiles against it. The platform check is here rather than in the option's
--- default: is_plat() reads as false inside an option scope (see xmake/options.lua).
-if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
-    add_requires("pybind11", {system = false, alias = "pybind11"})
 end
 
 includes(path.join(os.scriptdir(), "SimpleMath", "xmake.lua"))

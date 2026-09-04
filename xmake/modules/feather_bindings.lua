@@ -1,6 +1,6 @@
 -- MRBind pipeline helpers, shared by the feather.mrbind_api rule (which runs
 -- the parser once for the whole build) and by the three bindings modules that
--- consume its output -- see modules/{c,cs,py}_bindings/xmake.lua.
+-- consume its output -- see modules/{c,cs,cpp}_bindings/xmake.lua.
 --
 -- Must be an import()-able module, not plain xmake.lua globals: on_load/
 -- before_build sandboxes can't see description-scope globals (feather_codegen.lua's
@@ -14,11 +14,6 @@ end
 
 function api_json_path()
     return path.join(output_dir(), "api.json")
-end
-
--- The Python backend consumes macros rather than JSON (mrbind has no Python generator binary; see modules/py_bindings/xmake.lua).
-function api_macros_path()
-    return path.join(output_dir(), "api_macros.cpp")
 end
 
 local function _is_generated(filepath)
@@ -71,9 +66,6 @@ function parser_flags_id()
     for _, f in ipairs(c_abi_parser_flags()) do
         table.insert(parts, f)
     end
-    for _, f in ipairs(python_parser_flags()) do
-        table.insert(parts, f)
-    end
     return hash.strhash128(table.concat(parts, "\0"))
 end
 
@@ -115,7 +107,7 @@ function outputs_are_stale(outputs, dirs)
     return false
 end
 
--- The clang/clang++ MRBind itself was built with (parsing needs its -resource-dir; Python linking needs clang++ for the runtime auto-link).
+-- The clang MRBind itself was built with; the parse needs its -resource-dir.
 -- Mirrors mrbind.lua's own clang resolution, with an independent PATH fallback since a consuming target's package:data() isn't always readable.
 function _resolve_clang_binary(target, binname)
     import("lib.detect.find_tool")
@@ -169,10 +161,6 @@ function resolve_clang(target)
     return _resolve_clang_binary(target, "clang")
 end
 
-function resolve_clangxx(target)
-    return _resolve_clang_binary(target, "clang++")
-end
-
 function resolve_clang_resource_dir(target)
     return os.iorunv(resolve_clang(target), {"-print-resource-dir"}):trim()
 end
@@ -221,12 +209,6 @@ function mrbind_bin(target, name)
         "feather_bindings: target must add_packages(\"mrbind\")")
     local suffix = is_plat("windows") and ".exe" or ""
     return path.join(pkg:installdir(), "bin", name .. suffix)
-end
-
-function mrbind_includedir(target)
-    local pkg = assert(target:pkg("mrbind"),
-        "feather_bindings: target must add_packages(\"mrbind\")")
-    return path.join(pkg:installdir(), "include")
 end
 
 -- Content hash of the C++ generator's sources, matching thirdparty/packages/mrbind.lua's gen_cpp_rev config. KEEP IN SYNC with the copy there.
@@ -296,7 +278,7 @@ function api_parser_flags()
         "--skip-mentions-of", "/std::tuple<.*>/",
         "--skip-mentions-of", "/std::unordered_map<.*>/",
 
-        -- Third-party types reachable from core's headers. SimpleMath is handled per-parse instead (see c_abi_parser_flags/python_parser_flags).
+        -- Third-party types reachable from core's headers. SimpleMath is admitted separately (see c_abi_parser_flags).
         "--skip-mentions-of", "/flecs::.*/",
         "--skip-mentions-of", "/args::.*/",
 
@@ -380,32 +362,14 @@ function c_abi_parser_flags()
     }
 end
 
--- Exclusions specific to the Python parse (it's parsed separately anyway, for the macro format), never applied to the C/C# languages.
-function python_parser_flags()
-    return {
-        -- Pybind11 has no exposed-struct equivalent; SimpleMath was never part of the Python surface.
-        "--skip-mentions-of", "/DirectX::SimpleMath::.*/",
-        -- Pybind11 casts std::string/string_view to Python str via built-in casters.
-        -- Refuses to also register StaticString's conversion operators to those types as a class.
-        "--ignore", "/nassimp::StaticString::operator .*/",
-        -- LaunchSettings takes a `char **` argv, with no Python representation and no purpose -- the interpreter owns argv already.
-        "--skip-mentions-of", "/char \\*\\*/",
-        -- EntityRender's mesh/material are const members (deliberately immutable), so copy-assignment is deleted.
-        -- Pybind11's mutable sequence protocol for CowVector<EntityRender> needs to assign elements, though.
-        "--ignore", "feather::RenderScene::EntityRender",
-        "--skip-mentions-of", "feather::RenderScene::EntityRender",
-    }
-end
-
--- Parses the combined header into `opts.output`. `opts.format` is "json" (the API dump every generator but Python reads) or "macros" (Python's).
--- Returns the output path.
+-- Parses the combined header into `opts.output` as JSON, the API dump every
+-- generator reads. Returns the output path.
 function run_parse(target, opts)
     opts = opts or {}
     local combined_header = assert(opts.combined_header, "run_parse: opts.combined_header required")
     local output = assert(opts.output, "run_parse: opts.output required")
-    local format = opts.format or "json"
 
-    local argv = {combined_header, "-o", output, "--format=" .. format}
+    local argv = {combined_header, "-o", output, "--format=json"}
     for _, f in ipairs(api_parser_flags()) do
         table.insert(argv, f)
     end
@@ -424,7 +388,7 @@ function run_parse(target, opts)
     end
 
     os.mkdir(path.directory(output))
-    cprint("${cyan}[bindings]${reset} mrbind --format=%s -> %s", format, path.relative(output, os.projectdir()))
+    cprint("${cyan}[bindings]${reset} mrbind -> %s", path.relative(output, os.projectdir()))
     os.vrunv(mrbind_bin(target, "mrbind"), argv)
     return output
 end
@@ -781,102 +745,4 @@ function run_gen_csharp(target, opts)
 
     io.writefile(stamp, _gen_stamp_value(desc_json, csharp_flags_id))
     return output_dir
-end
-
--- Where the Python that will import this module keeps its headers. Asked of the interpreter itself, not python3-config (a separate binary that
--- can belong to a different install), since a pybind11 module built against one minor version won't import into another.
-local function _python_include_dirs()
-    import("lib.detect.find_tool")
-
-    local tool = assert(find_tool("python3") or find_tool("python"),
-        "feather_bindings: no python3 on PATH")
-
-    local script = [[
-import sysconfig
-p = sysconfig.get_paths()
-print(p['include'])
-print(p['platinclude'])
-]]
-    local out = os.iorunv(tool.program, {"-c", script})
-    local lines = out:trim():split("\n", {strict = true})
-
-    local includes = {lines[1]}
-    if lines[2] and lines[2] ~= "" and lines[2] ~= lines[1] then
-        table.insert(includes, lines[2])
-    end
-    assert(os.isfile(path.join(includes[1], "Python.h")),
-        "feather_bindings: Python.h not found under " .. includes[1]
-        .. " -- Python's development headers are required (python3-dev on Debian/Ubuntu)")
-
-    return includes
-end
-
--- Writes one small .cpp per fragment. Each sets its own MB_FRAGMENT and includes the parser's macro output, letting xmake compile and link
--- them as ordinary source files (see modules/py_bindings/xmake.lua).
-function write_python_fragments(target, opts)
-    opts = opts or {}
-    local fragment_dir = assert(opts.fragment_dir, "write_python_fragments: opts.fragment_dir required")
-    local num_fragments = opts.num_fragments or 4
-
-    local macros_cpp = api_macros_path()
-    assert(os.isfile(macros_cpp),
-        "feather_bindings: " .. macros_cpp .. " is missing -- the parser must run first")
-
-    os.mkdir(fragment_dir)
-    for i = 0, num_fragments - 1 do
-        local lines = {
-            "// Generated by feather_bindings.write_python_fragments. Do not edit.",
-            "#define MB_NUM_FRAGMENTS " .. num_fragments,
-            "#define MB_FRAGMENT " .. i,
-        }
-        if i == 0 then
-            -- Exactly one fragment carries the shared implementation; MRBind tests this with #if, so it must be defined to 1, not empty.
-            table.insert(lines, "#define MB_DEFINE_IMPLEMENTATION 1")
-        end
-        -- Absolute, so the fragment doesn't depend on the include path.
-        table.insert(lines, "#include \"" .. macros_cpp .. "\"")
-
-        local content = table.concat(lines, "\n") .. "\n"
-        local fragment = path.join(fragment_dir, "fragment_" .. i .. ".cpp")
-        -- Write-if-changed: rewriting would force a recompile of a translation unit that takes minutes.
-        if not os.isfile(fragment) or io.readfile(fragment) ~= content then
-            io.writefile(fragment, content)
-        end
-    end
-end
-
--- Points `target` at the Clang MRBind was built with and adds the flags the generated pybind11 code needs.
--- Called from the Python module's on_config, the earliest point a toolset can be resolved.
-function configure_python_target(target, opts)
-    opts = opts or {}
-    local module_name = opts.module_name or "feather"
-
-    -- The generated code only compiles with the Clang that built MRBind. Linking must go through clang++ specifically: its inputs are all
-    -- pre-compiled .o files, so plain clang can't infer a C++ link and silently skips libstdc++, failing the import with an undefined RTTI symbol.
-    local clang = resolve_clang(target)
-    local clangxx = resolve_clangxx(target)
-    target:set("toolset", "cc", clang)
-    target:set("toolset", "cxx", clangxx)
-    target:set("toolset", "ld", clangxx)
-    target:set("toolset", "sh", clangxx)
-
-    for _, dir in ipairs(_python_include_dirs()) do
-        target:add("includedirs", dir)
-    end
-    -- Python itself is deliberately not linked: a module's Python symbols resolve against whatever interpreter loads it.
-    -- That's what lets one module work with both a static and a shared libpython.
-    if is_plat("macosx") then
-        -- Mach-O rejects undefined symbols in a dylib by default.
-        target:add("shflags", "-Wl,-undefined,dynamic_lookup", {force = true})
-    end
-
-    target:add("includedirs", mrbind_includedir(target))
-    target:add("defines", "MRBIND_HEADER=<mrbind/targets/pybind11.h>")
-    target:add("defines", "MB_PB11_MODULE_NAME=" .. module_name)
-    -- Pybind11 shares internal state between modules built by the same compiler and ABI; naming ours keeps that sharing to our own modules.
-    target:add("defines", "PYBIND11_COMPILER_TYPE=\"_feather\"")
-    target:add("defines", "PYBIND11_BUILD_ABI=\"_feather\"")
-
-    -- Higher optimization makes this translation unit take considerably longer to compile for no gain: it's registration calls, not hot code.
-    target:add("cxflags", "-O1", {force = true})
 end

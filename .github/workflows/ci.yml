@@ -57,7 +57,7 @@ jobs:
           dotnet-version: "10.0.x"
 
       # ── Install xmake ─────────────────────────────────────────────────────
-      # Package cache: Linux only. Bindings pull in mrbind (built from source) plus a 4-TU Python compile -- too slow uncached on Linux.
+      # Package cache: Linux only. Bindings pull in mrbind, built from source -- too slow uncached on Linux.
       # Off on Windows: enabling it once coincided with thirdparty installs going red there, and master is green without it.
       - name: Install xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -222,9 +222,6 @@ jobs:
           check build/bindings/cpp/feather_cpp/math.hpp
           check build/bindings/cpp/feather_cpp/plugin.hpp
           check build/bindings/cpp/feather_cpp/scripted_abi.hpp
-          if [ "$RUNNER_OS" != "Windows" ]; then
-            check build/bindings/python/feather.so
-          fi
 
       # The C bindings are compiled into the engine and exported from it, what a C/C# plugin resolves imports against -- a build that generated
       # the sources but dropped them from the link would still pass every check above. Also checks scripted_abi.h's 9 flat entry points (a NativeAOT C# assembly's route around the std::function/std::vector C++ API).
@@ -245,19 +242,6 @@ jobs:
             exit 1
           fi
           echo "ok: engine exports the scripted-registration ABI"
-
-      # The Python module is deliberately NOT importable standalone: it leaves engine symbols undefined and binds to a running engine process
-      # (modules/py_bindings/xmake.lua). Checking it's built with those undefined symbols is the honest test; running it needs an engine, covered by run_examples_test.sh.
-      - name: Check the Python module targets the engine process
-        if: runner.os != 'Windows'
-        run: |
-          set -e
-          if nm -D --undefined-only build/bindings/python/feather.so | grep -q feather; then
-            echo "ok: feather.so binds to the engine process"
-          else
-            echo "feather.so has no undefined engine symbols -- it was linked standalone"
-            exit 1
-          fi
 
       # ── The plugin-facing contract ─────────────────────────────────────────
       # A plugin builds from the exported API alone -- no engine checkout, no LLVM, no Windows library the engine had to publish -- through

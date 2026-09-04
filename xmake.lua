@@ -53,8 +53,8 @@ includes("xmake/public_api.lua")
 
 -- ---- Bindings API ---------------------------------------------------------
 -- The shared MRBind parse (build/bindings/api.json) that modules/*_bindings generate from -- before the engine targets, whose
--- dependencies on it must already be defined.
-if has_config("enable_c_bindings", "enable_cs_bindings", "enable_py_bindings") then
+-- dependencies on it must already be defined. Every language is generated from the C bindings, so only that option gates the parse.
+if has_config("enable_c_bindings") then
     includes("xmake/bindings.lua")
 end
 

@@ -1,6 +1,6 @@
 -- The one MRBind parse the whole build shares. Every language binding is
 -- generated from its output, so the parse happens once, here, rather than once
--- per language: see modules/{c,cs,py}_bindings/xmake.lua for the consumers.
+-- per language: see modules/{c,cs,cpp}_bindings/xmake.lua for the consumers.
 --
 -- Deliberately on_config rather than before_build. before_build hooks run in
 -- parallel across targets and are NOT ordered by target dependencies (both
@@ -25,9 +25,6 @@ rule("feather.mrbind_api")
         import("feather_codegen")
 
         local outputs = {feather_bindings.api_json_path()}
-        if has_config("enable_py_bindings") then
-            table.insert(outputs, feather_bindings.api_macros_path())
-        end
 
         -- Reflection codegen first: core's headers #include their own "<name>.gen.h", absent on a fresh checkout until this runs, and
         -- the feather target's own before_build codegen is much too late for a parse happening at config time.
@@ -56,24 +53,10 @@ rule("feather.mrbind_api")
         feather_bindings.run_parse(target, {
             combined_header = combined_header,
             output = feather_bindings.api_json_path(),
-            format = "json",
-            -- The C ABI binds SimpleMath's math types; the Python parse below
-            -- does not. See feather_bindings.c_abi_parser_flags.
+            -- Admits the SimpleMath types the C ABI carries; see
+            -- feather_bindings.c_abi_parser_flags.
             extra_parser_flags = feather_bindings.c_abi_parser_flags(),
         })
-
-        -- The Python backend needs the same parse in mrbind's macro format -- it has no generator binary and compiles the parse output
-        -- directly (see modules/py_bindings/xmake.lua).
-        if has_config("enable_py_bindings") then
-            feather_bindings.run_parse(target, {
-                combined_header = combined_header,
-                output = feather_bindings.api_macros_path(),
-                format = "macros",
-                -- A separate parse anyway, so the handful of things only pybind11 objects to are dropped here rather than from the
-                -- shared set the C and C# bindings read.
-                extra_parser_flags = feather_bindings.python_parser_flags(),
-            })
-        end
 
         -- Last, so an interrupted or failed parse doesn't leave a stamp
         -- claiming the outputs match the current flags.

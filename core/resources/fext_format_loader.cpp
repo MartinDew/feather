@@ -3,7 +3,6 @@
 #include "extension.h"
 #include "extension_loading.h"
 #include "resource_loader.h"
-#include "script_extension_runner.h"
 
 #include <framework/shared_library.h>
 
@@ -12,7 +11,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <print>
 
 namespace feather {
 
@@ -79,47 +77,12 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 		return nullptr;
 	}
 
+	// The only kind an extension can be: a native library exporting a void(uint8_t) entry point, whatever language produced it.
 	const auto type = manifest.value("type", std::string { "native" });
-
 	if (type != "native") {
-		// A scripted extension: no library to load, no entry point to resolve. Whichever module can run this type registered a
-		// runner at InitLevel::Core; core itself knows nothing about interpreters.
-		const auto* runner = find_script_extension_runner(type);
-		if (!runner) {
-			std::cerr << "FextFormatLoader: Extension '" << name << "' is type \"" << type
-					  << "\", which this build has no runner for";
-			if (type == "python") {
-				std::cerr << " (configure with --enable_py_host=y)";
-			}
-			std::cerr << ": " << path << std::endl;
-			return nullptr;
-		}
-
-		const auto script = manifest.value("script", std::string {});
-		if (script.empty()) {
-			std::cerr << "FextFormatLoader: Scripted extension '" << name << "' has no \"script\": " << path
-					  << std::endl;
-			return nullptr;
-		}
-
-		auto script_path = resolve_relative(path, script);
-		if (!std::filesystem::exists(script_path)) {
-			std::cerr << "FextFormatLoader: Extension '" << name << "' names a script that doesn't exist: "
-					  << script_path << " (from " << path << ")" << std::endl;
-			return nullptr;
-		}
-
-		if (!(*runner)(script_path)) {
-			std::cerr << "FextFormatLoader: Extension '" << name << "' failed to run: " << script_path << std::endl;
-			return nullptr;
-		}
-
-		// Recorded as a resource so the manifest counts as indexed and isn't picked up again. It carries no library and no entry
-		// point: a script runs once, here, rather than being called back per init level.
-		auto script_ext = std::make_shared<Extension>(name, std::string_view {});
-		script_ext->set_path(path);
-		std::println(std::cout, "FextFormatLoader: Ran {} extension '{}' from {}", type, name, script_path.string());
-		return script_ext;
+		std::cerr << "FextFormatLoader: Extension '" << name << "' has type \"" << type
+				  << "\"; only \"native\" extensions are supported: " << path << std::endl;
+		return nullptr;
 	}
 
 	if (!manifest.contains("libraries") || !manifest["libraries"].is_object()) {
@@ -168,10 +131,6 @@ std::shared_ptr<Resource> FextFormatLoader::instantiate(const Path& path) {
 
 void FextFormatLoader::load(std::shared_ptr<Resource> resource, const Path& path) {
 	auto ext = std::static_pointer_cast<Extension>(resource);
-	if (!ext->_library_handle) {
-		// A scripted extension; it already ran in instantiate().
-		return;
-	}
 	resolve_and_register_extension_entry(ext, ext->_library_handle, path, "FextFormatLoader");
 }
 

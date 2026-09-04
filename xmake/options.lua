@@ -51,13 +51,6 @@ option("enable_cpp_bindings")
     set_description("Generate C++ wrappers from the C bindings' descriptor (build/bindings/cpp)")
 option_end()
 
--- Ignored on windows/mingw, treated as off: the module must be built by a Clang in MSVC-compatible mode against the official
--- Python's ABI, which this repo's Windows toolchain setup doesn't cover yet (modules/py_bindings/xmake.lua). The check can't live in set_default() -- is_plat() reads as false inside an option scope regardless of platform.
-option("enable_py_bindings")
-    set_default(true)
-    set_description("Build the pybind11 Python extension module (build/bindings/python); ignored on Windows")
-option_end()
-
 -- Toolchain selection is done via CLI flags, not options:
 --   LLVM/Clang (non-Windows):  xmake f --toolchain=llvm
 --   Clang-CL (Windows):        xmake f --toolchain=clang-cl

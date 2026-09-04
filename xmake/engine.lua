@@ -10,12 +10,7 @@ local FEATHER_ROOT = path.directory(os.scriptdir())
 -- add_files() resolves relative paths against this file's own directory, not the engine root, so every entry joins FEATHER_ROOT explicitly.
 local function core_path(p) return path.join(FEATHER_ROOT, p) end
 
--- feather_main.cpp is core's entry point (main()), so it's the one file a
--- library form of core leaves out -- see feather_core below.
-local CORE_MAIN = "core/main/feather_main.cpp"
-
 local CORE_SOURCES = {}
-local CORE_SOURCES_NO_MAIN = {}
 for _, p in ipairs({
     "core/framework/alloc.cpp",
     "core/framework/callable.cpp",
@@ -53,9 +48,7 @@ for _, p in ipairs({
     "core/resources/texture_format_loader.cpp",
     "core/resources/extension.cpp",
     "core/resources/extension_loading.cpp",
-    "core/resources/script_extension_runner.cpp",
     "core/resources/fext_format_loader.cpp",
-    "core/resources/script_format_loader.cpp",
     "core/world/ecs_module.cpp",
     "core/world/rendering_world_module.cpp",
     "core/world/math_module.cpp",
@@ -67,9 +60,6 @@ for _, p in ipairs({
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))
-    if p ~= CORE_MAIN then
-        table.insert(CORE_SOURCES_NO_MAIN, core_path(p))
-    end
 end
 
 local GENERATED_SOURCE = {}
@@ -109,39 +99,6 @@ local function apply_compile_flags(target)
     feather_flags.apply(target)
 end
 
--- ---- Engine core, as a library --------------------------------------------
--- Everything the executable is made of except its entry point, so something other than feather's own main() can host the engine --
--- the Python extension module today (modules/py_bindings), since a .so can't link against an executable. The executable keeps compiling its own sources rather than linking this (mingw/Windows link line is delicate; compiling core twice is the accepted cost).
-if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
-    target("feather_core")
-        set_kind("static")
-        add_files(CORE_SOURCES_NO_MAIN)
-        add_files(GENERATED_SOURCE, {always_added = true})
-        add_files(path.join(FEATHER_ROOT, "modules", "modules.gen.cpp"))
-        add_includedirs(FEATHER_ROOT, path.join(FEATHER_ROOT, "core"))
-
-        if is_mode("debug", "releasedbg") then
-            add_defines("BETA")
-        end
-        if is_mode("release") then
-            add_defines("PRODUCTION")
-        end
-
-        add_deps("feather_public_api")
-        add_deps("simplemath")
-        add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
-
-        -- Linked into a shared library, so every object has to be position
-        -- independent -- not the default for a static library's objects.
-        if not is_plat("windows") then
-            add_cxflags("-fPIC", {force = true})
-        end
-
-        before_build(run_codegen)
-        on_config(apply_compile_flags)
-    target_end()
-end
-
 -- ---- Main executable ------------------------------------------------------
 target("feather")
     set_kind("binary")
@@ -168,8 +125,8 @@ target("feather")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
-        -- Exports the engine's own symbols to what it dlopens: the generated C bindings a plugin calls, and the engine
-        -- symbols py_bindings leaves undefined.
+        -- Exports the engine's own symbols to what it dlopens: the generated C
+        -- bindings a plugin calls, and sdl3's copy (xmake/public_api.lua).
         add_ldflags("-rdynamic", {force = true})
     end
 

@@ -255,11 +255,6 @@ package("mrbind")
                 .. path.join(builddir, preferred) .. " (also checked " .. fallback .. ")")
             os.cp(built, bindir)
         end
-
-        -- The Python backend has no generator binary: the parser emits macros (--format=macros) compiled against mrbind's own target
-        -- header, so the source tree's include/ has to ship too (modules/py_bindings, mrbind's docs/generating_python.md).
-        assert(os.isdir("include"), "mrbind: source tree has no include/ -- upstream layout changed")
-        os.cp("include", package:installdir())
     end)
 
     on_test(function (package)
