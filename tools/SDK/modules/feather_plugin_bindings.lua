@@ -424,9 +424,32 @@ end
 -- reimplementing the generator's naming rules and keeping them in step forever.
 -- The headers are the generator's own answer to the same question, so they
 -- cannot disagree with what the engine exports.
+--
+-- The ECS entry points are the exception: they are FEATHER_NO_BIND, so no
+-- generated header mentions them, yet the engine exports them and a plugin in
+-- any native language may call them. Listed by hand for the same reason the C#
+-- bootstrap and feather_cpp/scripted_abi.hpp declare them by hand.
+-- KEEP IN SYNC with core/world/scripted_abi.h.
+local SCRIPTED_ABI_EXPORTS = {
+    "feather_script_add_component",
+    "feather_script_component_handle",
+    "feather_script_create_entity",
+    "feather_script_define_component",
+    "feather_script_define_system",
+    "feather_script_field_count",
+    "feather_script_field_info",
+    "feather_script_get_field",
+    "feather_script_set_field",
+}
+
 local function import_lib_names(header_dir)
     local names = {}
     local seen = {}
+
+    for _, name in ipairs(SCRIPTED_ABI_EXPORTS) do
+        seen[name] = true
+        table.insert(names, name)
+    end
 
     for _, header in ipairs(os.files(path.join(header_dir, "**.h"))) do
         local content = io.readfile(header)
@@ -451,7 +474,10 @@ end
 -- Builds the import library, and returns its directory and link name.
 local function build_import_lib(target, out, engine_binary)
     local names = import_lib_names(out.header_dir)
-    assert(#names > 0, "FeatherPluginSDK: found no exported functions in the generated headers")
+    -- Counted against the hand-listed names, so an empty or unwritten header
+    -- tree still trips this rather than yielding a .def of just those.
+    assert(#names > #SCRIPTED_ABI_EXPORTS,
+        "FeatherPluginSDK: found no exported functions in the generated headers")
 
     local libname = "feather_imports"
     local def_path = path.join(bindings_dir(), libname .. ".def")
