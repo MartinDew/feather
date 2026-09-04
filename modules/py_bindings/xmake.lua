@@ -85,7 +85,7 @@ target("py_bindings")
     -- Headers only for the static packages: the engine's headers need them to compile, but linking their archives would give
     -- this module a second copy of state the engine process already owns. flecs is a real shared library, so it links normally.
     add_deps("feather_public_api")
-    add_deps("simplemath")
+    
     add_packages("flecs")
     add_packages("assimp", {links = {}})
     add_packages("sdl3", {links = {}})

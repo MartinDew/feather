@@ -128,8 +128,7 @@ if has_config("enable_py_bindings") and not is_plat("windows", "mingw") then
         end
 
         add_deps("feather_public_api")
-        add_deps("simplemath")
-        add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
+        add_packages("flecs", "rtm", "assimp", "sdl3", "taywee_args", "nlohmann_json")
 
         -- Linked into a shared library, so every object has to be position
         -- independent -- not the default for a static library's objects.
@@ -163,8 +162,8 @@ target("feather")
     add_deps("feather_public_api")
     -- Direct, not just via feather_public_api (see public_api.lua): the C bindings rule needs directxmath's include dir by name
     -- (feather_bindings.directxmath_includedir), and a package reached only through a dep isn't in target:pkg().
-    add_deps("simplemath")
-    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json", "directxmath")
+    
+    add_packages("flecs", "rtm", "assimp", "sdl3", "taywee_args", "nlohmann_json", "directxmath")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")

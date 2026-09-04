@@ -24,6 +24,12 @@ add_requires("flecs 4.1.5", {
     configs = {shared = true},
 })
 
+add_requires("rtm 2.3.1", {
+    system = false,
+     alias = "rtm",
+      configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")}
+})
+
 -- Local package (packages/assimp.lua) builds assimp's bundled minizip instead of
 -- the system one, whose pkgconfig omits the include dir on Linux.
 add_requires("assimp 6.0.4", {
@@ -40,7 +46,6 @@ add_requires("assimp 6.0.4", {
 -- Not in feather_public_api: it stays out of the engine's public headers.
 add_requires("nlohmann_json", {system = false, alias = "nlohmann_json"})
 
-add_requires("directxmath_feather", {system = false, alias = "directxmath"})
 -- SDL3 owns process-global state too; same reasoning as flecs above.
 add_requires("sdl3_feather", {system = false, alias = "sdl3", configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")}})
 
