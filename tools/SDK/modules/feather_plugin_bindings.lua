@@ -361,7 +361,7 @@ function generate(target, opts, langs)
 end
 
 -- Windows has no ELF/Mach-O-style lazy symbol resolution: a plugin needs a synthesized import library, built here (not shipped) from names
--- scraped out of the generated headers. The ECS entry points are FEATHER_NO_BIND and so listed by hand. KEEP IN SYNC with core/world/scripted_abi.h.
+-- scraped out of the generated headers. The ECS entry points never appear in a generated header, so they are listed by hand. KEEP IN SYNC with modules/c_bindings/scripted_abi.h.
 local SCRIPTED_ABI_EXPORTS = {
     "feather_script_add_component",
     "feather_script_component_handle",

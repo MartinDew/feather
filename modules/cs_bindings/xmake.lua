@@ -26,13 +26,12 @@ local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 local OUTPUT_DIR = path.join(FEATHER_ROOT, "build", "bindings", "csharp")
 
 -- Phony: the output is C# source, which nothing in this build compiles.
-target("cs_bindings")
-    set_kind("phony")
-    set_group("bindings")
+-- c_bindings writes the descriptor this reads, and on_config follows dependency
+-- order, so depending on that module orders the two generators.
+feather_module_target("cs_bindings", os.scriptdir(), {},
+    {kind = "phony", deps = {"c_bindings"}})
 
-    -- The C generation writes the descriptor this reads, and it runs as a rule on the engine target (modules/c_bindings/xmake.lua);
-    -- on_config follows dependency order, so depending on the engine orders the two.
-    add_deps("feather")
+target("cs_bindings")
     add_packages("mrbind")
 
     on_config(function (target)

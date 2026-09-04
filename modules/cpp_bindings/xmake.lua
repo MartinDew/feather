@@ -26,13 +26,12 @@ local SDK_CPP_DIR = path.join(FEATHER_ROOT, "tools", "SDK", "cpp")
 local C_INCLUDE_DIR = path.join(FEATHER_ROOT, "build", "bindings", "c", "include")
 
 -- Phony: the output is header-only source, compiled by the check target below.
-target("cpp_bindings")
-    set_kind("phony")
-    set_group("bindings")
+-- c_bindings writes the descriptor this reads, and on_config follows dependency
+-- order, so depending on that module orders the two generators.
+feather_module_target("cpp_bindings", os.scriptdir(), {},
+    {kind = "phony", deps = {"c_bindings"}})
 
-    -- The C generation writes the descriptor this reads, and it runs as a rule on the engine target; on_config follows
-    -- dependency order, so depending on the engine orders the two.
-    add_deps("feather")
+target("cpp_bindings")
     add_packages("mrbind")
 
     on_config(function (target)

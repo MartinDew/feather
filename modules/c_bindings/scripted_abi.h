@@ -8,11 +8,10 @@
 // A flat C entry point for defining ECS types from a language that cannot call
 // C++ at all.
 //
-// The C++ API this wraps (scripted_component.h, scripted_system.h) takes
-// std::vector, std::function and World& -- fine for the embedded Python host,
-// which is C++, and impossible for a NativeAOT C# assembly, which reaches the
-// engine only through P/Invoke. Everything here is therefore plain C: pointers,
-// integers, and one function pointer.
+// The C++ API this wraps (core/world/scripted_component.h, scripted_system.h)
+// takes std::vector, std::function and World&, none of which a NativeAOT C#
+// assembly reaching the engine through P/Invoke can express. Everything here is
+// therefore plain C: pointers, integers, and one function pointer.
 //
 // Values cross as doubles, however many a field needs: one for bool, int and
 // float, two for a vec2, three for a vec3, four for a color. That is uniform
@@ -24,9 +23,9 @@
 // do for scripted ones -- a caller can query Transform without knowing that it
 // was not defined by a script.
 //
-// FEATHER_NO_BIND throughout: mrbind has no spelling for a function pointer,
-// and these are hand-declared on the other side (the SDK's generated C#
-// bootstrap) rather than generated.
+// Never generated: the parse covers core/ only, and mrbind has no spelling for
+// a function pointer anyway. Each side redeclares these by hand (the SDK's C#
+// bootstrap, feather_cpp/scripted_abi.hpp).
 
 extern "C" {
 
@@ -65,7 +64,7 @@ typedef void (*FeatherScriptSystemFn)(
 
 // Returns the component id, or 0 on failure. On failure `error` receives a
 // message (truncated to error_size, always null-terminated) when non-null.
-FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_component(
+FEATHER_C_ABI uint64_t feather_script_define_component(
 		const char* name,
 		int32_t field_count,
 		const char* const* field_names,
@@ -76,7 +75,7 @@ FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_component(
 
 // Returns the system id, or 0 on failure. `user_data` is handed back to the callback untouched and never freed (the engine cannot
 // know what it is). The callback outlives the call and must remain valid for the process.
-FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_system(
+FEATHER_C_ABI uint64_t feather_script_define_system(
 		const char* name,
 		int32_t component_count,
 		const char* const* component_names,
@@ -89,21 +88,21 @@ FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_define_system(
 
 // Returns the entity id, or 0 on failure. An empty or null name makes an
 // unnamed entity.
-FEATHER_NO_BIND FEATHER_C_ABI uint64_t feather_script_create_entity(const char* name);
+FEATHER_C_ABI uint64_t feather_script_create_entity(const char* name);
 
 // Non-zero on success.
-FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_add_component(uint64_t entity, const char* component_name);
+FEATHER_C_ABI int32_t feather_script_add_component(uint64_t entity, const char* component_name);
 
 // A handle to one component of one entity, for use outside a system callback. Valid until the entity's archetype changes (adding or
 // removing a component moves its storage), so it is meant to be used and dropped.
-FEATHER_NO_BIND FEATHER_C_ABI void* feather_script_component_handle(uint64_t entity, const char* component_name);
+FEATHER_C_ABI void* feather_script_component_handle(uint64_t entity, const char* component_name);
 
 // How many fields a component has, or -1 if it names no registered component.
-FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_field_count(const char* component_name);
+FEATHER_C_ABI int32_t feather_script_field_count(const char* component_name);
 
 // Describes one field. `out_name` receives a pointer to a string owned by the
 // engine and valid for the process. Non-zero on success.
-FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_field_info(
+FEATHER_C_ABI int32_t feather_script_field_info(
 		const char* component_name,
 		int32_t index,
 		const char** out_name,
@@ -112,7 +111,7 @@ FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_field_info(
 
 // Reads a field into `values`, writing how many doubles it used to
 // `out_count`. Non-zero on success.
-FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_get_field(
+FEATHER_C_ABI int32_t feather_script_get_field(
 		void* component_handle,
 		const char* component_name,
 		const char* field_name,
@@ -123,7 +122,7 @@ FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_get_field(
 
 // Writes a field from `values`. Non-zero on success; fails if the count does
 // not match what the field's type needs.
-FEATHER_NO_BIND FEATHER_C_ABI int32_t feather_script_set_field(
+FEATHER_C_ABI int32_t feather_script_set_field(
 		void* component_handle,
 		const char* component_name,
 		const char* field_name,

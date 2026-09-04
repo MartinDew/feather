@@ -50,10 +50,15 @@ rule_end()
 
 -- feather_module_target(name, module_dir, files, opts)
 --
--- Creates a {name} static lib and re-opens the feather target to link it in.
--- Module-specific build/deploy logic belongs in a rule (opts.exe_rules).
+-- Creates the {name} module target and re-opens the feather target to pull it
+-- in. Module-specific build/deploy logic belongs in a rule (opts.exe_rules).
 --
 -- opts:
+--   kind                 : "static" (default), "object" for code the
+--                          executable must keep even though nothing references
+--                          it (a static archive drops those members), or
+--                          "phony" for a module that only generates files
+--   deps                 : other targets this module needs ordered before it
 --   exe_packages         : packages added to the executable
 --   exe_packages_windows : same, Windows-only
 --   exe_rules             : rule names attached to the executable
@@ -64,7 +69,7 @@ function feather_module_target(name, module_dir, files, opts)
     opts = opts or {}
 
     target(name)
-        set_kind("static")
+        set_kind(opts.kind or "static")
         set_warnings("none")
         set_group("modules")
         for _, f in ipairs(files or {}) do
@@ -82,6 +87,9 @@ function feather_module_target(name, module_dir, files, opts)
         add_includedirs(path.join(FEATHER_ROOT, "core"), {public = true})
         add_includedirs(module_dir, {public = false})
         add_deps("feather_public_api")
+        for _, dep in ipairs(opts.deps or {}) do
+            add_deps(dep)
+        end
     target_end()
 
     target("feather")

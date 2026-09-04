@@ -2,7 +2,7 @@
 
 // Defining ECS components and systems from a plugin.
 //
-// Hand-written, not generated: core/world/scripted_abi.h carries FEATHER_NO_BIND
+// Hand-written, not generated: modules/c_bindings/scripted_abi.h is outside the mrbind parse
 // because mrbind has no spelling for a function pointer, so the flat C entry
 // points are redeclared here -- the same arrangement the C# bootstrap uses.
 // What this adds over them is only ergonomics: std types, real enums, and a
@@ -22,7 +22,7 @@
 
 extern "C"
 {
-    // Mirrors core/world/scripted_abi.h. Values cross as doubles, however many a field needs: one for bool/int/float,
+    // Mirrors modules/c_bindings/scripted_abi.h. Values cross as doubles, however many a field needs: one for bool/int/float,
     // two for a vec2, three for a vec3, four for a color.
     typedef void (*FeatherScriptSystemFn)(
         void *user_data, std::uint64_t entity, void *const *components,

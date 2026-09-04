@@ -1,7 +1,7 @@
 #include "scripted_abi.h"
 
-#include "scripted_component.h"
-#include "scripted_system.h"
+#include <world/scripted_component.h>
+#include <world/scripted_system.h>
 
 #include <main/class_db.h>
 #include <main/world_sim.h>

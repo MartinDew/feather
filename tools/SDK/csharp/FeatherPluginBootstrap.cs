@@ -200,7 +200,7 @@ internal static class Native {
 public static class Bootstrap {
 
 	// Field type codes, matching FeatherScriptFieldType in
-	// core/world/scripted_abi.h.
+	// modules/c_bindings/scripted_abi.h.
 	private const byte FieldBool = 0, FieldInt = 1, FieldFloat = 2;
 	private const byte FieldVec2 = 3, FieldVec3 = 4, FieldColor = 5;
 

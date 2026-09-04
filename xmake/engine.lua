@@ -56,7 +56,6 @@ for _, p in ipairs({
     "core/world/core_world_module.cpp",
     "core/world/scripted_component.cpp",
     "core/world/scripted_system.cpp",
-    "core/world/scripted_abi.cpp",
     "core/world/components/scene.cpp",
 }) do
     table.insert(CORE_SOURCES, core_path(p))
@@ -118,10 +117,10 @@ target("feather")
     end
 
     add_deps("feather_public_api")
-    -- Direct, not just via feather_public_api (see public_api.lua): the C bindings rule needs directxmath's include dir by name
-    -- (feather_bindings.directxmath_includedir), and a package reached only through a dep isn't in target:pkg().
+    -- Direct, not just via feather_public_api (see public_api.lua): an
+    -- object-kind dep's .o files don't propagate across a second headeronly hop.
     add_deps("simplemath")
-    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json", "directxmath")
+    add_packages("flecs", "assimp", "sdl3", "taywee_args", "nlohmann_json")
 
     if is_plat("linux") then
         add_rpathdirs("$ORIGIN/lib", "$ORIGIN/runtime")
