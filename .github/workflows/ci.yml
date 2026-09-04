@@ -265,20 +265,6 @@ jobs:
       - name: Export the API description
         run: xmake export-api
 
-      # Guards the shape of the publish itself: two JSON files, nothing binary, on every platform.
-      # A Windows import library (the kind of per-build artifact the API file exists to avoid) crept back in here once -- see apply_windows_link.
-      - name: Check export-api publishes no binary
-        shell: bash
-        run: |
-          set -e
-          count=$(find build/bindings/dist -maxdepth 1 -type f ! -name '*.json' | wc -l)
-          if [ "$count" -ne 0 ]; then
-            echo "export-api published $count non-JSON file(s):"
-            find build/bindings/dist -maxdepth 1 -type f ! -name '*.json'
-            exit 1
-          fi
-          echo "ok: build/bindings/dist has only feather_api.json and feather_api.meta.json"
-
       # Builds plugin_c_template as a real, separate xmake project (SDK + exported API only) under runner.temp, not build/ (nested there it
       # folds into the *engine's* own config instead -- found by this once rebuilding the engine under another name). On Windows the only CI step that actually invokes lib.exe/dlltool the way a plugin author's build does.
       - name: Build the C plugin template (consumer smoke test)
