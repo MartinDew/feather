@@ -30,8 +30,8 @@ namespace
 
         if (level == feather::InitLevel::World)
         {
-            // A component and a system defined at runtime, the same way a C# or
-            // Python plugin defines them.
+            // A component and a system defined at runtime, through the same
+            // flat C ABI a C# plugin uses.
             const feather::ecs::Field fields[] = {
                 {.name = "speed", .type = feather::ecs::FieldType::Float},
                 {.name = "ticks", .type = feather::ecs::FieldType::Int},
