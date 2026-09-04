@@ -65,30 +65,30 @@ function read_api_meta(api_json, api_meta)
     return meta, api_meta
 end
 
--- The C++ types emitted as real C structs (cross the ABI by value) rather than opaque pointers.
--- KEEP IN SYNC with exposed_struct_types() in the engine's xmake/modules/feather_bindings.lua.
-function exposed_struct_types()
-    return {
-        "DirectX::SimpleMath::Vector2",
-        "DirectX::SimpleMath::Vector3",
-        "DirectX::SimpleMath::Vector4",
-        "DirectX::SimpleMath::Quaternion",
-        "DirectX::SimpleMath::Color",
-    }
-end
+-- -- The C++ types emitted as real C structs (cross the ABI by value) rather than opaque pointers.
+-- -- KEEP IN SYNC with exposed_struct_types() in the engine's xmake/modules/feather_bindings.lua.
+-- function exposed_struct_types()
+--     return {
+--         "DirectX::SimpleMath::Vector2",
+--         "DirectX::SimpleMath::Vector3",
+--         "DirectX::SimpleMath::Vector4",
+--         "DirectX::SimpleMath::Quaternion",
+--         "DirectX::SimpleMath::Color",
+--     }
+-- end
 
--- The math types a C++ plugin defines itself, compiling the same vendored SimpleMath sources rather than reaching through a wrapper.
--- Matrix is here too though not an exposed struct -- it crosses as a pointer to a copy. KEEP IN SYNC with the engine's native_math_types().
-function native_math_types()
-    return {
-        "DirectX::SimpleMath::Vector2",
-        "DirectX::SimpleMath::Vector3",
-        "DirectX::SimpleMath::Vector4",
-        "DirectX::SimpleMath::Quaternion",
-        "DirectX::SimpleMath::Color",
-        "DirectX::SimpleMath::Matrix",
-    }
-end
+-- -- The math types a C++ plugin defines itself, compiling the same vendored SimpleMath sources rather than reaching through a wrapper.
+-- -- Matrix is here too though not an exposed struct -- it crosses as a pointer to a copy. KEEP IN SYNC with the engine's native_math_types().
+-- function native_math_types()
+--     return {
+--         "DirectX::SimpleMath::Vector2",
+--         "DirectX::SimpleMath::Vector3",
+--         "DirectX::SimpleMath::Vector4",
+--         "DirectX::SimpleMath::Quaternion",
+--         "DirectX::SimpleMath::Color",
+--         "DirectX::SimpleMath::Matrix",
+--     }
+-- end
 
 -- KEEP IN SYNC with gen_cpp_shape_flags() in the engine's feather_bindings.lua.
 local function gen_cpp_shape_flags()

@@ -54,11 +54,11 @@ target("cpp_bindings_check")
     set_warnings("none")
 
     add_deps("cpp_bindings")
-    add_deps("simplemath", {inherit = false}) -- for its include dirs only
+    -- add_deps("simplemath", {inherit = false}) -- for its include dirs only
     add_packages("directxmath")
 
     add_includedirs(OUTPUT_DIR, C_INCLUDE_DIR,
-        path.join(FEATHER_ROOT, "tools", "SDK", "thirdparty", "SimpleMath"))
+        path.join(FEATHER_ROOT, "tools", "SDK", "thirdparty"))
     add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
 
     on_config(function (target)

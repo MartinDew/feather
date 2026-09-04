@@ -18,7 +18,7 @@ target("feather_public_api")
     add_packages("directxmath", {public = true})
     -- Also direct-linked by binary targets: an object-kind dep's .o files
     -- don't propagate across a second headeronly hop either.
-    add_deps("simplemath", {public = true})
+    -- add_deps("simplemath", {public = true})
     -- flecs is a real shared library on every platform now (thirdparty/xmake.lua), so it links normally: one copy in the
     -- process, and a consumer's undefined flecs symbols resolve against it through DT_NEEDED rather than hoping the host exported them.
     add_packages("flecs", {public = true})
