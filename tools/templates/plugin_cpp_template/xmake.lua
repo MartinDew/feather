@@ -7,7 +7,7 @@
 --        cd <FeatherEngine> && xmake export-api
 --        cp build/bindings/dist/feather_api.* <your project>/api/
 --   3. copy the SDK itself in, once:
---        cp -r <FeatherEngine>/tools/SDK/{FeatherPluginSDK.lua,modules,packages,cpp,gen_cpp,thirdparty} <your project>/sdk/
+--        cp -r <FeatherEngine>/tools/SDK/{FeatherPluginSDK.lua,modules,packages,feather_cpp} <your project>/sdk/
 --   4. xmake
 --
 -- There is deliberately no path to a FeatherEngine checkout anywhere in here.

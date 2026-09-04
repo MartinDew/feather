@@ -8,19 +8,17 @@
 --   * The engine parsed its own headers once and published the result as
 --     feather_api.json (see the `export-api` task). A plugin turns that JSON
 --     into C headers, C++ wrappers or C# sources with generators that link no
---     Clang and need no engine source -- so this file, the modules/ and
---     packages/ directories next to it, and an api/ file are the whole
---     toolchain.
+--     Clang and need no engine source.
 --   * mrbind also emits C++ glue that calls the engine. It is deliberately
 --     never compiled here: the engine already has that glue compiled into its
 --     own binary. A plugin's feather_* imports stay undefined and bind to the
 --     engine process when it dlopens the plugin.
 --
--- Vendor this file, modules/, packages/ and the api/ files into the plugin
--- repo -- the same way a Godot project vendors nothing but its .gdextension.
--- A C# plugin also needs csharp/ (feather_cs_plugin copies its one file,
--- FeatherPluginBootstrap.cs, in beside the generated bindings).
--- See tools/templates/plugin_c_template/ and plugin_cs_template/.
+-- Vendor this file, modules/, packages/ and the feather_<lang>/ directory for
+-- each language you build, alongside an api/ file -- the same way a Godot
+-- project vendors nothing but its .gdextension. A language whose directory is
+-- absent simply has no feather_<lang>_plugin().
+-- See tools/templates/plugin_{c,cpp,cs}_template/.
 --
 -- Usage (in the plugin's xmake.lua):
 --
@@ -43,7 +41,17 @@ local SDK_DIR = os.scriptdir()
 
 -- The C++ half of the SDK (wrapper generator, headers, math sources) is optional.
 -- A C or C# plugin vendors none of it and must not be made to build a generator it never runs, nor fetch DirectXMath.
-local HAVE_CPP_SDK = os.isdir(path.join(SDK_DIR, "gen_cpp"))
+local HAVE_CPP_SDK = os.isdir(path.join(SDK_DIR, "feather_cpp", "gen_cpp"))
+
+-- Shared link setup: a plugin links nothing of the engine's. On ELF its feather_* imports stay undefined and bind against the running engine
+-- executable (-rdynamic, bindings compiled in) when it dlopens the plugin. Windows instead gets an import library in on_config (apply_windows_link), since PE has no load-time binding and the description scope can't run a tool.
+-- Global, not local: the per-language plugin.lua files included below call it.
+function feather_plugin_link_setup()
+    if is_plat("macosx") then
+        -- Mach-O rejects undefined symbols in a dylib by default.
+        add_shflags("-undefined", "dynamic_lookup", {force = true})
+    end
+end
 
 -- Call once, before any feather_*_plugin().
 function feather_plugin_sdk_init()
@@ -52,163 +60,39 @@ function feather_plugin_sdk_init()
     if HAVE_CPP_SDK then
         -- Header-only, and the C++ wrappers alias its types rather than
         -- wrapping them; a C or C# plugin never resolves it.
-        includes(path.join(SDK_DIR, "packages", "directxmath.lua"))
+        includes(path.join(SDK_DIR, "feather_cpp", "packages", "directxmath.lua"))
         add_requires("directxmath_feather", {system = false, alias = "directxmath"})
     end
     -- host = true: these are build tools this machine runs, not libraries the
     -- plugin links, so a cross-compiling plugin build still gets runnable ones.
     add_requires("mrbind_generators", {system = false, host = true,
-        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(SDK_DIR, "gen_cpp"))}})
+        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(SDK_DIR, "feather_cpp", "gen_cpp"))}})
 end
 
--- Shared link setup: a plugin links nothing of the engine's. On ELF its feather_* imports stay undefined and bind against the running engine
--- executable (-rdynamic, bindings compiled in) when it dlopens the plugin. Windows instead gets an import library in on_config (apply_windows_link), since PE has no load-time binding and the description scope can't run a tool.
-local function apply_plugin_link_setup()
-    if is_plat("macosx") then
-        -- Mach-O rejects undefined symbols in a dylib by default.
-        add_shflags("-undefined", "dynamic_lookup", {force = true})
+-- Each language's feather_<lang>_plugin() lives beside the files it needs, so a
+-- plugin repo vendors only the languages it builds.
+local function have_lang(lang)
+    local plugin_lua = path.join(SDK_DIR, "feather_" .. lang, "plugin.lua")
+    if os.isfile(plugin_lua) then
+        includes(plugin_lua)
+        return true
     end
+    return false
 end
 
--- Declares a C extension.
---
---   opts.files             sources (string or list), required
---   opts.api_json          the designated API file, required
---   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
---   opts.engine_binary     Windows only: the file name of the engine executable
---                          the plugin will be loaded into. Defaults to
---                          "feather.exe"; the import table records it, so a
---                          renamed host needs it set.
-function feather_c_plugin(name, opts)
-    opts = opts or {}
-
-    -- The description scope has no assert(); report and skip rather than
-    -- failing with an opaque error from add_files().
-    if not opts.files then
-        print("FeatherPluginSDK: feather_c_plugin(\"" .. name .. "\") needs opts.files; skipping.")
-        return
-    end
-
-    target(name)
-        set_kind("shared")
-        set_basename(name)
-        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll -- the .fext manifest has to name one file, so pin the spelling
-        -- that does not depend on which toolchain built it.
-        if is_plat("windows", "mingw") then
-            set_prefixname("")
-        end
-        -- Flat, not bin/$(mode): the engine finds extensions by walking the project directory, and a per-mode subdirectory would leave
-        -- stale copies of other configurations for it to load too.
-        set_targetdir(path.join(os.projectdir(), "bin"))
-        add_files(opts.files)
-        -- Generated before the compiler runs; see on_config below.
-        add_includedirs(path.join(os.projectdir(), "build", "feather_bindings", "include"))
-        add_packages("mrbind_generators")
-
-        apply_plugin_link_setup()
-
-        -- on_config, not before_build: the include directory above needs real headers before the compiler runs, and on_config runs
-        -- serially in dependency order. opts is captured as an upvalue -- only *globals* differ between scopes, and set_values() can't carry a table.
-        on_config(function (target)
-            import("feather_plugin_bindings")
-            local out = feather_plugin_bindings.generate(target, opts, {})
-            feather_plugin_bindings.apply_windows_link(target, opts, out)
-        end)
-    target_end()
+-- A language whose directory wasn't vendored gets a stub saying so, rather than failing as an unknown global.
+-- Assigned by name, one per language: the description sandbox has no _G to index.
+local function missing(lang)
+    print("FeatherPluginSDK: this project calls feather_" .. lang .. "_plugin(), but the SDK's feather_"
+        .. lang .. "/ directory was not vendored; skipping.")
 end
 
--- Declares a C++ extension: compiles the generated wrappers, which resolve to the same flat feather_* symbols a C plugin uses.
---
---   opts.files             sources (string or list), required
---   opts.api_json          the designated API file, required
---   opts.api_meta          defaults to <api_json basename>.meta.json alongside it
---   opts.engine_binary     Windows only: the file name of the engine executable
---                          the plugin will be loaded into. Defaults to
---                          "feather.exe"; the import table records it, so a
---                          renamed host needs it set.
-function feather_cpp_plugin(name, opts)
-    opts = opts or {}
-
-    -- The description scope has no assert(); report and skip rather than
-    -- failing with an opaque error from add_files().
-    if not opts.files then
-        print("FeatherPluginSDK: feather_cpp_plugin(\"" .. name .. "\") needs opts.files; skipping.")
-        return
-    end
-    if not HAVE_CPP_SDK then
-        print("FeatherPluginSDK: feather_cpp_plugin(\"" .. name .. "\") needs the SDK's C++ half; skipping.")
-        print("FeatherPluginSDK:   vendor cpp/, gen_cpp/ and thirdparty/ alongside modules/ and packages/.")
-        return
-    end
-
-    target(name)
-        set_kind("shared")
-        set_basename(name)
-        set_languages("cxx23")
-        -- mingw would name this libmy_plugin.dll and MSVC my_plugin.dll -- the .fext manifest has to name one file, so pin the spelling
-        -- that does not depend on which toolchain built it.
-        if is_plat("windows", "mingw") then
-            set_prefixname("")
-        end
-        -- Flat, not bin/$(mode): the engine finds extensions by walking the project directory, and a per-mode subdirectory would leave
-        -- stale copies of other configurations for it to load too.
-        set_targetdir(path.join(os.projectdir(), "bin"))
-        add_files(opts.files)
-        -- The same SimpleMath the engine compiled, built here rather than linking the engine's -- what makes the math types cross as
-        -- themselves: the layouts agree because the sources do, and the generated headers assert it.
-        add_files(path.join(SDK_DIR, "thirdparty", "SimpleMath", "SimpleMath.cpp"))
-        add_includedirs(path.join(SDK_DIR, "thirdparty", "SimpleMath"))
-        add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
-        -- Generated before the compiler runs; see on_config below.
-        add_includedirs(
-            path.join(os.projectdir(), "build", "feather_bindings", "include"),
-            path.join(os.projectdir(), "build", "feather_bindings", "cpp"))
-        add_packages("mrbind_generators", "directxmath")
-
-        -- Only the entry point is meant to be findable; everything else, including this plugin's own copy of SimpleMath's statics,
-        -- stays private to the library.
-        if not is_plat("windows") then
-            add_cxflags("-fvisibility=hidden")
-        end
-
-        apply_plugin_link_setup()
-
-        on_config(function (target)
-            import("feather_plugin_bindings")
-            local out = feather_plugin_bindings.generate(target, opts, {cpp = true})
-            feather_plugin_bindings.apply_windows_link(target, opts, out)
-        end)
-    target_end()
+if not have_lang("c") then
+    function feather_c_plugin() missing("c") end
 end
-
--- Declares a C# extension, published with NativeAOT into an ordinary native shared library the engine loads like a C one (no .NET runtime hosted).
---
---   opts.csproj          the project file, required
---   opts.api_json        the designated API file, required
---   opts.published_name  file dotnet publish emits (default: the csproj's own
---                          filename plus the host's native shared-library
---                          extension -- .dll/.so/.dylib; override if
---                          <AssemblyName> in the .csproj differs)
---   opts.output_name     name to stage into bin/ as (default: lib<name>.so,
---                          matching feather_c_plugin's own naming -- <name>.dll
---                          with no "lib" prefix on Windows, lib<name>.dylib on
---                          macOS)
---   opts.runtime         .NET RID passed to dotnet publish (default: the host's
---                          own RID -- NativeAOT cannot cross the OS boundary,
---                          so this is the only default that always works)
-function feather_cs_plugin(name, opts)
-    opts = opts or {}
-
-    target(name)
-        -- Phony: dotnet does the building. xmake only sequences it and stages
-        -- the result.
-        set_kind("phony")
-        add_packages("mrbind_generators")
-
-        on_build(function (target)
-            import("feather_plugin_bindings")
-            local out = feather_plugin_bindings.generate(target, opts, {csharp = true})
-            feather_plugin_bindings.publish_csharp(target, opts, out)
-        end)
-    target_end()
+if not have_lang("cpp") then
+    function feather_cpp_plugin() missing("cpp") end
+end
+if not have_lang("cs") then
+    function feather_cs_plugin() missing("cs") end
 end

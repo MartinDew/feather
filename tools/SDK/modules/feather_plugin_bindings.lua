@@ -277,10 +277,10 @@ function generate(target, opts, langs)
     end
 
     if langs.csharp then
-        local bootstrap = path.join(sdk_dir(), "csharp", "FeatherPluginBootstrap.cs")
+        local bootstrap = path.join(sdk_dir(), "feather_cs", "FeatherPluginBootstrap.cs")
         assert(os.isfile(bootstrap),
             "FeatherPluginSDK: missing " .. bootstrap .. "\n"
-            .. "  Vendor the SDK's csharp/ directory alongside modules/ and packages/.")
+            .. "  Vendor the SDK's feather_cs/ directory alongside modules/ and packages/.")
 
         local cs_stamp = out.csharp_dir .. ".stamp"
         if gen_stale(cs_stamp, out.desc_json, #os.files(path.join(out.csharp_dir, "**.cs")) > 0) then
@@ -316,10 +316,10 @@ function generate(target, opts, langs)
     end
 
     if langs.cpp then
-        local sdk_cpp = path.join(sdk_dir(), "cpp", "feather_cpp")
+        local sdk_cpp = path.join(sdk_dir(), "feather_cpp", "include", "feather_cpp")
         assert(os.isdir(sdk_cpp),
             "FeatherPluginSDK: missing " .. sdk_cpp .. "\n"
-            .. "  Vendor the SDK's cpp/ directory alongside modules/ and packages/.")
+            .. "  Vendor the SDK's feather_cpp/ directory alongside modules/ and packages/.")
 
         local generator = generator_bin(target, "feather_gen_cpp")
         local generator_id = hash.sha256(generator)

@@ -1,9 +1,9 @@
--- The sources live in tools/SDK/thirdparty/SimpleMath: a plugin vendors them
+-- The sources live in tools/SDK/feather_cpp/thirdparty/SimpleMath: a plugin vendors them
 -- and compiles the same math types the engine does, which is what lets those
 -- types cross the C boundary as themselves rather than as opaque handles. This
 -- target is the engine's own view of that one copy.
 local SDK_SIMPLEMATH = path.join(path.directory(path.directory(os.scriptdir())),
-    "tools", "SDK", "thirdparty", "SimpleMath")
+    "tools", "SDK", "feather_cpp", "thirdparty", "SimpleMath")
 
 target("simplemath")
     -- object, not static: avoids MSVC's per-lib RuntimeLibrary/LNK2038

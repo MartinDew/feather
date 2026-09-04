@@ -1,5 +1,5 @@
 -- C++ wrappers for the public API, generated from the C bindings' descriptor
--- by tools/SDK/gen_cpp -- the same input the C# generator reads.
+-- by tools/SDK/feather_cpp/gen_cpp -- the same input the C# generator reads.
 --
 -- The deliverable is header-only source under build/bindings/cpp, which a
 -- plugin compiles with its own toolchain. Nothing in the engine uses it: the
@@ -22,7 +22,7 @@ end
 
 local FEATHER_ROOT = path.directory(path.directory(os.scriptdir()))
 local OUTPUT_DIR = path.join(FEATHER_ROOT, "build", "bindings", "cpp")
-local SDK_CPP_DIR = path.join(FEATHER_ROOT, "tools", "SDK", "cpp")
+local SDK_CPP_DIR = path.join(FEATHER_ROOT, "tools", "SDK", "feather_cpp", "include")
 local C_INCLUDE_DIR = path.join(FEATHER_ROOT, "build", "bindings", "c", "include")
 
 -- Phony: the output is header-only source, compiled by the check target below.
@@ -39,7 +39,7 @@ target("cpp_bindings")
         feather_bindings.run_gen_cpp(target, {
             output_dir = OUTPUT_DIR,
             sdk_cpp_dir = SDK_CPP_DIR,
-            gen_cpp_dir = path.join(FEATHER_ROOT, "tools", "SDK", "gen_cpp"),
+            gen_cpp_dir = path.join(FEATHER_ROOT, "tools", "SDK", "feather_cpp", "gen_cpp"),
         })
     end)
 target_end()
@@ -57,7 +57,7 @@ target("cpp_bindings_check")
     add_packages("directxmath")
 
     add_includedirs(OUTPUT_DIR, C_INCLUDE_DIR,
-        path.join(FEATHER_ROOT, "tools", "SDK", "thirdparty", "SimpleMath"))
+        path.join(FEATHER_ROOT, "tools", "SDK", "feather_cpp", "thirdparty", "SimpleMath"))
     add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
 
     on_config(function (target)

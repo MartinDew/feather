@@ -75,7 +75,7 @@ jobs:
           path: |
             ~/AppData/Local/.xmake/packages/**/m/mrbind
             ~/AppData/Local/.xmake/packages/**/m/mrbind_generators
-          key: mrbind-${{ matrix.mode }}-${{ hashFiles('thirdparty/packages/mrbind.lua', 'tools/SDK/packages/mrbind_generators.lua', 'tools/SDK/gen_cpp/**') }}
+          key: mrbind-${{ matrix.mode }}-${{ hashFiles('thirdparty/packages/mrbind.lua', 'tools/SDK/packages/mrbind_generators.lua', 'tools/SDK/feather_cpp/gen_cpp/**') }}
           restore-keys: mrbind-${{ matrix.mode }}-
 
       # ── CMake/Ninja ───────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ jobs:
           mkdir -p "$smoke/sdk" "$smoke/api"
           cp -r tools/templates/plugin_c_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
-          cp -r tools/SDK/modules tools/SDK/packages "$smoke/sdk/"
+          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_c "$smoke/sdk/"
           cp build/bindings/dist/*.json "$smoke/api/"
           cd "$smoke"
           # A failed package build (mrbind_generators, no engine-repo cache to fall back on) reports only "expected build output missing" by default.
@@ -296,7 +296,7 @@ jobs:
           mkdir -p "$smoke/sdk" "$smoke/api"
           cp -r tools/templates/plugin_cpp_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
-          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/cpp tools/SDK/gen_cpp tools/SDK/thirdparty "$smoke/sdk/"
+          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_cpp "$smoke/sdk/"
           cp build/bindings/dist/*.json "$smoke/api/"
           cd "$smoke"
           if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then
@@ -346,7 +346,7 @@ jobs:
           mkdir -p "$smoke/sdk" "$smoke/api"
           cp -r tools/templates/plugin_cs_template/* "$smoke/"
           cp tools/SDK/FeatherPluginSDK.lua "$smoke/sdk/"
-          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/csharp "$smoke/sdk/"
+          cp -r tools/SDK/modules tools/SDK/packages tools/SDK/feather_cs "$smoke/sdk/"
           cp build/bindings/dist/*.json "$smoke/api/"
           cd "$smoke"
           if ! xmake f -v -D -m ${{ matrix.mode }} ${{ matrix.config.toolchain_flag }} ${{ matrix.config.plat_flag }} -y; then

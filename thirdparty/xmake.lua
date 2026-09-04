@@ -5,7 +5,7 @@ end
 
 -- DirectXMath's package lives in the SDK instead, next to the SimpleMath sources it supplies a sal.h shim for: a plugin vendors both and
 -- builds the same math types the engine did, which is what lets those types cross the C boundary as themselves.
-includes(path.join(path.directory(os.scriptdir()), "tools", "SDK", "packages", "directxmath.lua"))
+includes(path.join(path.directory(os.scriptdir()), "tools", "SDK", "feather_cpp", "packages", "directxmath.lua"))
 
 -- CMake's Development config mapped to RelWithDebInfo, so thirdparties built in
 -- release mode; mirror that by only requesting debug packages in debug mode.
@@ -65,7 +65,7 @@ if has_config("enable_c_bindings", "enable_cs_bindings", "enable_cpp_bindings") 
     -- host = true: without it a cross-compile (mingw, say) would build the parser for the target and be unable to execute it.
     -- gen_cpp_rev is passed here rather than computed inside the package, whose own install hash would never see a config it set itself.
     add_requires("mrbind", {system = false, alias = "mrbind", host = true,
-        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(path.directory(os.scriptdir()), "tools", "SDK", "gen_cpp"))}})
+        configs = {gen_cpp_rev = feather_gen_cpp_rev(path.join(path.directory(os.scriptdir()), "tools", "SDK", "feather_cpp", "gen_cpp"))}})
 
     -- Windows always takes mrbind's libllvm path (packages/mrbind.lua's on_load). Required directly, not just transitively, so the
     -- bindings modules get a usable target:pkg("libllvm") handle for resolving mrbind's own clang (xmake/modules/feather_bindings.lua).

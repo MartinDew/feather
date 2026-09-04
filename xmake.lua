@@ -100,7 +100,7 @@ task("export-api")
             -- Likewise for DirectXMath's headers, reached through SimpleMath's bases and living outside the engine tree, so they
             -- need a path mapping of their own.
             directxmath_root = feather_bindings.to_forward_slashes(
-                feather_bindings.directxmath_includedir(project.target("feather"))),
+                feather_bindings.directxmath_includedir_global()),
             engine_commit = commit,
             gen_c_flags_id = feather_bindings.gen_c_flags_id(),
             -- Which mrbind produced this file. The schema is undocumented, so

@@ -15,13 +15,13 @@
 -- parser's JSON schema is undocumented and unversioned upstream, so a
 -- generator from a different revision may not read the engine's api.json.
 --
--- Feather's own C++ wrapper generator (../gen_cpp) is grafted into this source
+-- Feather's own C++ wrapper generator (../feather_cpp/gen_cpp) is grafted into this source
 -- tree and installed as a third tool, feather_gen_cpp. See
 -- _graft_feather_gen_cpp below for why it is built here rather than separately.
 
 -- Where the grafted generator's sources live. Captured as a value while this file loads, not computed inside a callback: os.scriptdir()
 -- during on_install resolves against a different script (same pattern as FeatherPluginSDK.lua's SDK_DIR). One level up is the SDK root, not os.projectdir() (the vendoring plugin project's own directory).
-local FEATHER_GEN_CPP_DIR = path.join(path.directory(os.scriptdir()), "gen_cpp")
+local FEATHER_GEN_CPP_DIR = path.join(path.directory(os.scriptdir()), "feather_cpp", "gen_cpp")
 
 -- Content hash of the grafted generator's sources, passed by the requiring side as a package config -- a package's install hash only follows
 -- configs it's asked for, so setting this from inside the package itself would never invalidate it. KEEP IN SYNC with thirdparty/packages/mrbind.lua.
@@ -114,7 +114,7 @@ package("mrbind_generators")
             -- silently leave the check in and break the math bindings.
             assert(not io.readfile(f):find("I ain't dealing with those", 1, true),
                 "mrbind_generators: could not remove the --expose-as-struct no-bases check from " .. f
-                .. " -- upstream source moved; see the SDK's gen_cpp/patches/")
+                .. " -- upstream source moved; see the SDK's feather_cpp/gen_cpp/patches/")
         end
 
         -- Copies Feather's C++ wrapper generator into the fetched source tree and hooks it into mrbind's own CMakeLists. Grafted rather than

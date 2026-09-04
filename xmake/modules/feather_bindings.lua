@@ -233,6 +233,15 @@ function directxmath_includedir(target)
     return path.join(pkg:installdir(), "include")
 end
 
+-- The same directory, resolved without a target handle: a task runs outside the
+-- target graph, where project.target() sees only part of it.
+function directxmath_includedir_global()
+    import("core.project.project")
+    local pkg = assert(project.required_package("directxmath"),
+        "feather_bindings: the directxmath package is not required by this configuration")
+    return path.join(pkg:installdir(), "include")
+end
+
 -- Entities excluded from the parse for every language at once -- each exclusion is a type mrbind can't express, not an API choice.
 -- --ignore drops the entity itself; --skip-mentions-of also drops any function naming it.
 function api_parser_flags()
@@ -656,7 +665,7 @@ function run_gen_cpp(target, opts)
         local recorded = os.isfile(manifest) and io.readfile(manifest):match('gen_cpp_rev = "([^"]*)"')
         local current = feather_gen_cpp_rev(opts.gen_cpp_dir)
         if recorded and recorded ~= "" and current ~= "" and recorded ~= current then
-            raise("feather_gen_cpp was built from different sources than tools/SDK/gen_cpp holds now.\n"
+            raise("feather_gen_cpp was built from different sources than tools/SDK/feather_cpp/gen_cpp holds now.\n"
                 .. "  It lives in the mrbind package, whose install xmake has cached, so editing it\n"
                 .. "  does not reinstall on its own. Rebuild with:  xmake f -c -y")
         end

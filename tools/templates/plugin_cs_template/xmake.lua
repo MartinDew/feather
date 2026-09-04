@@ -9,7 +9,7 @@
 --        cd <FeatherEngine> && xmake export-api
 --        cp build/bindings/dist/feather_api.* <your project>/api/
 --   3. copy the SDK itself in, once:
---        cp -r <FeatherEngine>/tools/SDK/{FeatherPluginSDK.lua,modules,packages,csharp} <your project>/sdk/
+--        cp -r <FeatherEngine>/tools/SDK/{FeatherPluginSDK.lua,modules,packages,feather_cs} <your project>/sdk/
 --   4. xmake     (requires the .NET SDK on PATH)
 --
 -- The result is published with NativeAOT, so it is an ordinary native shared

@@ -4,14 +4,14 @@
 -- just builds and installs the binaries; nothing in the engine links against
 -- it (yet).
 --
--- Feather's own C++ wrapper generator (tools/SDK/gen_cpp) is grafted into this
+-- Feather's own C++ wrapper generator (tools/SDK/feather_cpp/gen_cpp) is grafted into this
 -- source tree and installed as a fourth tool, feather_gen_cpp. See
 -- _graft_feather_gen_cpp below for why it is built here rather than separately.
 
 -- Where the grafted generator's sources live. Captured as a value while this file loads, not computed inside a callback: os.scriptdir()
 -- during on_install resolves against a different script (same pattern as FeatherPluginSDK.lua's SDK_DIR). Two levels up is the engine root, not os.projectdir() (a consumer's project cross-repo).
 local FEATHER_GEN_CPP_DIR = path.join(path.directory(path.directory(os.scriptdir())),
-    "tools", "SDK", "gen_cpp")
+    "tools", "SDK", "feather_cpp", "gen_cpp")
 
 -- Content hash of the grafted generator's sources, passed by the requiring side as a package config -- a package's install hash only follows
 -- configs it's asked for, so setting this from inside the package itself would never invalidate it. KEEP IN SYNC with mrbind_generators.lua.
@@ -198,7 +198,7 @@ package("mrbind")
         end
 
         -- Lets --expose-as-struct accept standard-layout classes with base classes -- what SimpleMath's Vector2/3/4, Quaternion and Color are,
-        -- fields inherited from XMFLOAT2/3/4. Size/alignment/offset validation is untouched. Rationale: tools/SDK/gen_cpp/patches/expose-as-struct-standard-layout-bases.md. KEEP IN SYNC with mrbind_generators.lua.
+        -- fields inherited from XMFLOAT2/3/4. Size/alignment/offset validation is untouched. Rationale: tools/SDK/feather_cpp/gen_cpp/patches/expose-as-struct-standard-layout-bases.md. KEEP IN SYNC with mrbind_generators.lua.
         local function _allow_exposed_structs_with_bases()
             local f = path.join("src", "generators", "c", "generator.cpp")
             local needle = '                // Must have no bases. I ain\'t dealing with those.\n'
@@ -215,7 +215,7 @@ package("mrbind")
             -- silently leave the check in and break the math bindings.
             assert(not io.readfile(f):find("I ain't dealing with those", 1, true),
                 "mrbind: could not remove the --expose-as-struct no-bases check from " .. f
-                .. " -- upstream source moved; see tools/SDK/gen_cpp/patches/")
+                .. " -- upstream source moved; see tools/SDK/feather_cpp/gen_cpp/patches/")
         end
 
         -- Copies Feather's C++ wrapper generator into the fetched source tree and hooks it into mrbind's own CMakeLists. Grafted rather than
