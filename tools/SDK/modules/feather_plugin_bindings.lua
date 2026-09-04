@@ -389,9 +389,9 @@ local function import_lib_names(header_dir)
         -- The name is the last identifier before it.
         for declaration in content:gmatch("FEATHER_C_API(.-)%(") do
             local name = declaration:match("([%a_][%w_]*)%s*$")
-            -- Prefix-checked so the macro's own definition in exports.h
-            -- (FEATHER_C_API __declspec(dllexport)) contributes nothing.
-            if name and (name:startswith("feather_") or name:startswith("Feather_")) and not seen[name] then
+            -- Excludes only the macro's own definition in exports.h (FEATHER_C_API __declspec(dllexport)/__attribute__(...)), the one
+            -- false match this regex produces; a feather_/Feather_ prefix check here also silently dropped every non-feather --allow'd type (DirectX::SimpleMath::*, nassimp::*). __ is reserved in C, so no real export is ever spelled that way.
+            if name and not name:startswith("__") and not seen[name] then
                 seen[name] = true
                 table.insert(names, name)
             end
