@@ -244,9 +244,13 @@ function generate(target, opts, langs)
     local meta, meta_path = read_api_meta(api_json, opts.api_meta)
     check_flags_id(meta, meta_path)
 
+    local c_generator = generator_bin(target, "mrbind_gen_c")
+    -- Keyed on api_json alone, this stamp would miss a shape_flags()/gen_c_argv() edit or a rebuilt generator binary that leaves
+    -- api_json's bytes unchanged, leaving a stale header tree the .def scrape below reads as complete when it isn't.
+    local c_extra = gen_c_flags_id() .. ":" .. hash.sha256(c_generator)
     local c_stamp = path.join(bindings_dir(), ".gen_c_stamp")
     if gen_stale(c_stamp, api_json,
-            os.isfile(out.desc_json) and os.isdir(out.header_dir)) then
+            os.isfile(out.desc_json) and os.isdir(out.header_dir), c_extra) then
         -- The generators rewrite every file on every run, so stage the output and copy across only what differs (see sync_tree).
         -- Keeps an unchanged regeneration from rebuilding the plugin.
         local stage = bindings_dir() .. "/.c-stage"
@@ -260,7 +264,7 @@ function generate(target, opts, langs)
         os.mkdir(staged.source_dir)
         cprint("${cyan}[feather]${reset} mrbind_gen_c -> %s",
             path.relative(out.header_dir, os.projectdir()))
-        os.vrunv(generator_bin(target, "mrbind_gen_c"),
+        os.vrunv(c_generator,
             gen_c_argv(api_json, meta.feather_root, meta.directxmath_root, staged))
 
         os.mkdir(out.header_dir)
@@ -269,7 +273,7 @@ function generate(target, opts, langs)
         sync_tree(staged.source_dir, out.source_dir)
         sync_file(staged.desc_json, out.desc_json)
         os.tryrm(stage)
-        write_gen_stamp(c_stamp, api_json)
+        write_gen_stamp(c_stamp, api_json, c_extra)
     end
 
     if langs.csharp then
