@@ -239,6 +239,14 @@ function directxmath_root_in(api_json_content)
     return api_json_content:match('"([^"]*)/DirectXMath%.h"')
 end
 
+-- The prefix every generator must strip from DirectXMath's filenames: what the parse recorded, since that is what the filenames being
+-- mapped actually say. Falls back to the configured package for a parse that names no DirectXMath header at all.
+function directxmath_map_root(target)
+    local recorded = os.isfile(api_json_path())
+        and directxmath_root_in(io.readfile(api_json_path()))
+    return to_forward_slashes(recorded or directxmath_includedir(target))
+end
+
 -- Entities excluded from the parse for every language at once -- each exclusion is a type mrbind can't express, not an API choice.
 -- --ignore drops the entity itself; --skip-mentions-of also drops any function naming it.
 function api_parser_flags()
@@ -577,6 +585,10 @@ function run_gen_c(target, opts)
     os.mkdir(stage_headers)
     os.mkdir(stage_sources)
 
+    -- Taken from the parse, not the configuration: these prefixes are matched against the filenames inside api.json, and a package's
+    -- install directory is hashed from the config that built it, so the two drift apart across a reconfigure.
+    local directxmath_root = directxmath_map_root(target)
+
     local argv = {
         "--input", api_json_path(),
         "--output-header-dir", stage_headers,
@@ -588,11 +600,11 @@ function run_gen_c(target, opts)
         -- or a generated .cpp's quoted/angled includes would resolve identically, leaving resolution to -I order alone.
         "--map-path", to_forward_slashes(feather_root) .. "/core", "feather_c",
         "--map-path", to_forward_slashes(feather_root), "feather_c/_root",
-        -- Parsed from outside the engine tree; see directxmath_includedir.
-        "--map-path", to_forward_slashes(directxmath_includedir(target)), "feather_c/_ext/directxmath",
+        -- Parsed from outside the engine tree; see directxmath_map_root.
+        "--map-path", directxmath_root, "feather_c/_ext/directxmath",
         "--assume-include-dir", to_forward_slashes(feather_root),
         -- The glue includes the real <DirectXMath.h> to call into it, distinct from the mapping above (which spells the generated header).
-        "--assume-include-dir", to_forward_slashes(directxmath_includedir(target)),
+        "--assume-include-dir", directxmath_root,
         "--clean-output-dirs",
         "--output-desc-json", stage_desc,
         -- The C# bindings need this header regardless of whether the C bindings alone would have pulled it in, so it's always emitted.

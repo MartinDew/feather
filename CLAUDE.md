@@ -25,6 +25,8 @@ xmake build feather                               # build just the engine execut
 
 Modes: `debug` (-O0 + BETA), `releasedbg` (-O2 + BETA, no NDEBUG), `release` (-O3, NDEBUG, symbols stripped).
 
+Turning a bindings option off and back on leaves the executable linked as it was: xmake does not treat the target that reappeared as a reason to relink, so `xmake build` reports success while `feather` still exports nothing. `xmake build -r` after such a toggle.
+
 Reflection codegen (`tools/codegen/generate_reflection.py`) and embedded-resource codegen run automatically via a `before_build` hook — never invoke them by hand or edit `*.gen.h`/`*.gen.cpp` files directly.
 
 Key build options (`xmake f --<option>=y|n`, see `xmake/options.lua` and `modules/*/xmake.lua`):
