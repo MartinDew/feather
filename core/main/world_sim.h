@@ -6,6 +6,7 @@
 #include <framework/reflection_macros.h>
 #include <world/components/scene.h>
 #include <world/ecs_defs.h>
+#include <world/world.h>
 
 #include <flecs.h>
 #include <flecs/addons/cpp/world.hpp>
@@ -38,7 +39,7 @@ class WorldSim final : public Simulation {
 protected:
 	template <std::derived_from<class EcsModule> T>
 	void _import_feature() {
-		_world.import <T>();
+		_world.import_module<T>();
 	}
 
 public:
@@ -76,7 +77,7 @@ public:
 	// Build a query scoped to the active scene
 	template <class... TComps>
 	auto scene_query() {
-		return _world.query_builder<TComps...>().template with<ActiveScene>().up(Ecs::ChildOf).build();
+		return _world.ecs().query_builder<TComps...>().template with<ActiveScene>().up(Ecs::ChildOf).build();
 	}
 
 	template <class... TComps>

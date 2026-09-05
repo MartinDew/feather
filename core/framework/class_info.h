@@ -18,6 +18,20 @@ enum class AccessLevel : uint8_t {
 	Private,
 };
 
+// How to store and move instances of a value type without naming it. ECS storage is raw memory the world constructs, copies and destroys
+// on the engine's behalf, so it needs these; capturing them where the C++ type is still known (ClassDB::register_value_class) is what lets a
+// component be registered later from nothing but its class name.
+struct ValueTypeOps {
+	size_t size = 0;
+	size_t alignment = 1;
+	// Null for a type that is trivial in that respect, which is also how the
+	// ECS spells "no hook needed" -- see World::register_component.
+	void (*default_construct)(void* ptr, size_t count) = nullptr;
+	void (*destruct)(void* ptr, size_t count) = nullptr;
+	void (*copy)(void* dst, const void* src, size_t count) = nullptr;
+	void (*move)(void* dst, void* src, size_t count) = nullptr;
+};
+
 struct ClassInfo {
 	StaticString name = ""_ss;
 	StaticString parent = ""_ss;
@@ -56,6 +70,10 @@ struct ClassInfo {
 	std::vector<Method> methods;
 
 	std::function<Variant()> object_create_func;
+
+	// Set for a value type only (is_value_type), and only when one was
+	// supplied: a class described at runtime lays its own storage out instead.
+	ValueTypeOps value_ops;
 };
 
 } //namespace feather

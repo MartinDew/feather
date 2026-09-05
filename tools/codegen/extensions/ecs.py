@@ -1,16 +1,17 @@
 """
-ecs.py — Flecs ECS modifiers: EcsModule, Component.
+ecs.py — Flecs ECS modifiers: EcsModule.
 
-Unlike core_modifiers.py these aren't part of the base modifier vocabulary in
-principle (a headless, non-ECS consumer of this generator wouldn't need them),
-but FeatherEngine's own core/world/* uses them, so they're shipped and always
-loaded the same way core_modifiers.py is. A project (or a future core
-subsystem) that never applies EcsModule/Component is unaffected either way --
-these hooks only ever run for a class that actually carries the modifier
-(Component's emit_dir is the one exception; see its docstring).
+A component needs no modifier: it derives from Component (core/world/component.h)
+and ClassDB records that parent, which is what World watches to register it.
+
+Unlike core_modifiers.py this isn't part of the base modifier vocabulary in
+principle (a headless, non-ECS consumer of this generator wouldn't need it),
+but FeatherEngine's own core/world/* uses it, so it ships and is always loaded
+the same way core_modifiers.py is. A project that never applies EcsModule is
+unaffected: the hooks only run for a class carrying the modifier.
 """
 
-from modifier_api import DirEmission, Modifier
+from modifier_api import Modifier
 
 
 class EcsModuleModifier(Modifier):
@@ -40,35 +41,9 @@ class EcsModuleModifier(Modifier):
     def register_cpp_definitions(self, cls, ctx):
         return [
             f"void {cls.name}::_import_module(WorldSim* sim) {{",
-            f"\tsim->get_world()->import<{cls.name}>();",
+            f"\tsim->get_world()->import_module<{cls.name}>();",
             "}",
         ]
 
 
-class ComponentModifier(Modifier):
-    """FSTRUCT(Component) (or FCLASS(novtable, Component)) marks a value type
-    as a Flecs component. Doesn't touch the class body or _bind_members at
-    all -- world.component<T>("T") needs a live flecs::world&, which neither
-    the per-class .gen.h macro nor _bind_members()/ClassDB ever has access to.
-    Instead, registration is aggregated per source directory into one
-    register_<dir>_components(World&) via emit_dir(), which the engine calls
-    once it actually has a world (see register_core_ecs_features)."""
-    name = "Component"
-    targets = frozenset({"class"})
-    value_type = True
-
-    def emit_dir(self, classes, ctx):
-        members = [c for c in classes if any(m.name == self.name for m, _ in c.resolved_modifiers)]
-        func = f"register_{ctx.dir_name}_components"
-        cpp_lines = [f"void {func}(World& world) {{"]
-        cpp_lines += [f'\tworld.component<{c.name}>("{c.name}");' for c in members]
-        cpp_lines += ["}", ""]
-        return DirEmission(
-            header_includes=["world/ecs_defs.h"],
-            header_decls=[f"void {func}(World& world);", ""],
-            cpp_includes=["world/ecs_defs.h"],
-            cpp_lines=cpp_lines,
-        )
-
-
-MODIFIERS = [EcsModuleModifier(), ComponentModifier()]
+MODIFIERS = [EcsModuleModifier()]

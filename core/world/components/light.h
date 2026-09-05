@@ -2,6 +2,7 @@
 
 #include <framework/reflection_macros.h>
 #include <math/math_defs.h>
+#include <world/component.h>
 #include <cstdint>
 
 #ifndef FEATHER_REFLECTION_PARSER
@@ -19,8 +20,8 @@ enum class LightType : uint8_t {
 	Spot
 };
 
-struct Light {
-	FSTRUCT(Component);
+struct Light : Component {
+	FSTRUCT();
 
 	[[get, set]] LightType type = LightType::Directional;
 	[[get, set]] Vector3 position = Vector3::zero;

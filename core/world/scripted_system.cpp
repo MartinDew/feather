@@ -117,7 +117,7 @@ Ecs::entity_t register_scripted_system(
 	for (size_t term = 0; term < component_names.size(); term++) {
 		const std::string& component_name = component_names[term];
 
-		const auto component = world.lookup(component_name.c_str());
+		const auto component = world.ecs().lookup(component_name.c_str());
 		if (!component.is_valid()) {
 			return fail(std::format(
 					"scripted system '{}': no component named '{}' in this world", name, component_name
@@ -126,7 +126,7 @@ Ecs::entity_t register_scripted_system(
 
 		// The size flecs actually stores, rather than anything recomputed here: for a C++ component this is the only place it
 		// is known, and for a scripted one it double-checks the layout that was registered.
-		const ecs_type_info_t* type_info = ecs_get_type_info(world.c_ptr(), component);
+		const ecs_type_info_t* type_info = ecs_get_type_info(world.ecs().c_ptr(), component);
 		if (!type_info || type_info->size <= 0) {
 			return fail(std::format(
 					"scripted system '{}': '{}' is a tag, not a component with fields", name, component_name
@@ -161,7 +161,7 @@ Ecs::entity_t register_scripted_system(
 	const ecs_id_t add_ids[] = { phase_pair, phase_id, 0 };
 	entity_desc.add = add_ids;
 
-	desc.entity = ecs_entity_init(world.c_ptr(), &entity_desc);
+	desc.entity = ecs_entity_init(world.ecs().c_ptr(), &entity_desc);
 	if (!desc.entity) {
 		return fail(std::format("could not create an entity for scripted system '{}'", name));
 	}
@@ -170,7 +170,7 @@ Ecs::entity_t register_scripted_system(
 	desc.callback_ctx = context.get();
 	desc.callback_ctx_free = destroy_context;
 
-	const ecs_entity_t system = ecs_system_init(world.c_ptr(), &desc);
+	const ecs_entity_t system = ecs_system_init(world.ecs().c_ptr(), &desc);
 	if (!system) {
 		return fail(std::format("flecs rejected scripted system '{}'", name));
 	}

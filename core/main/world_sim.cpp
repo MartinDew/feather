@@ -3,22 +3,20 @@
 #include "engine.h"
 #include "world/ecs_module.h"
 #include <world/components/scene.h>
-#include <world/register_core_features.h>
 #include <framework/static_string.hpp>
 
 namespace feather {
 
 FSINGLETON_INSTANCE(WorldSim);
 
-WorldSim::WorldSim() : fixed_tick { _world.timer().interval(Engine::simulation_time) } {
+WorldSim::WorldSim() : fixed_tick { _world.ecs().timer().interval(Engine::simulation_time) } {
 	FSINGLETON_CONSTRUCT_INSTANCE()
 #if BETA
-	_world.set<Ecs::Rest>({});
+	_world.ecs().set<Ecs::Rest>({});
 #endif
 
-	// Declared here rather than in init(), because registering a component type is pure declaration (world.component<T>("Name"),
-	// no instances or dependencies): an extension or script loaded during project indexing, long before init(), can already query Transform or define a system over it.
-	register_core_components(_world);
+	// Component types need no registration pass here: World subscribes to ClassDB for Component's children when it is constructed, so
+	// everything reflected is already a component, and anything an extension registers later becomes one as it arrives.
 }
 
 WorldSim::~WorldSim() {
@@ -54,20 +52,20 @@ void WorldSim::init() {
 void WorldSim::update(double delta) {
 	// Ecs::query<Transform, MeshInstance, MaterialInstance> q
 
-	bool result = _world.progress(/*delta*/);
+	bool result = _world.progress(delta);
 }
 
 Entity WorldSim::create_scene(const std::string& name) const {
 	Scene s { { name } };
-	return _world.entity(name.c_str()).is_a(_scene_prefab).set<Scene>(s);
+	return _world.create_entity(name).is_a(_scene_prefab).set<Scene>(s);
 }
 
 Entity WorldSim::create_entity(const std::string& name) const {
-	return _world.entity(name.c_str());
+	return _world.create_entity(name);
 }
 
 Entity WorldSim::create_entity(const Entity& parent_entity, const std::string& name) const {
-	return _world.entity(name.c_str()).child_of(parent_entity);
+	return _world.create_entity(parent_entity, name);
 }
 
 void WorldSim::add_to_scene(Entity entity) const {

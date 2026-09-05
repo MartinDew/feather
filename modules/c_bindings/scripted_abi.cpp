@@ -267,7 +267,7 @@ uint64_t feather_script_create_entity(const char* name) {
 	if (!world) {
 		return 0;
 	}
-	auto entity = (name && *name) ? world->entity(name) : world->entity();
+	auto entity = (name && *name) ? world->create_entity(name) : world->create_entity();
 	return static_cast<uint64_t>(entity.id());
 }
 
@@ -276,11 +276,11 @@ int32_t feather_script_add_component(uint64_t entity, const char* component_name
 	if (!world || !component_name) {
 		return 0;
 	}
-	const auto component = world->lookup(component_name);
+	const auto component = world->ecs().lookup(component_name);
 	if (!component.is_valid()) {
 		return 0;
 	}
-	ecs_add_id(world->c_ptr(), entity, component);
+	ecs_add_id(world->ecs().c_ptr(), entity, component);
 	return 1;
 }
 
@@ -289,15 +289,15 @@ void* feather_script_component_handle(uint64_t entity, const char* component_nam
 	if (!world || !component_name) {
 		return nullptr;
 	}
-	const auto component = world->lookup(component_name);
+	const auto component = world->ecs().lookup(component_name);
 	if (!component.is_valid()) {
 		return nullptr;
 	}
-	const ecs_type_info_t* type_info = ecs_get_type_info(world->c_ptr(), component);
-	if (!type_info || type_info->size <= 0 || !ecs_has_id(world->c_ptr(), entity, component)) {
+	const ecs_type_info_t* type_info = ecs_get_type_info(world->ecs().c_ptr(), component);
+	if (!type_info || type_info->size <= 0 || !ecs_has_id(world->ecs().c_ptr(), entity, component)) {
 		return nullptr;
 	}
-	return ecs_ensure_id(world->c_ptr(), entity, component, static_cast<size_t>(type_info->size));
+	return ecs_ensure_id(world->ecs().c_ptr(), entity, component, static_cast<size_t>(type_info->size));
 }
 
 int32_t feather_script_field_count(const char* component_name) {

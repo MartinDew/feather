@@ -6,9 +6,9 @@
 
 namespace feather {
 
-// Scene/ActiveScene/InScene are registered with Flecs by register_world_components(), called once up front in
-// register_core_ecs_features() before any EcsModule import (this one included), so there's nothing left to do here.
-CoreWorldModule::CoreWorldModule(World world) {
+// Scene/ActiveScene/InScene reach the ECS through World's ClassDB subscription
+// the moment they are reflected, so there is nothing left to do here.
+CoreWorldModule::CoreWorldModule(World& world) {
 }
 
 } //namespace feather

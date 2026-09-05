@@ -53,7 +53,6 @@ for _, p in ipairs({
     "core/world/world.cpp",
     "core/world/rendering_world_module.cpp",
     "core/world/math_module.cpp",
-    "core/world/register_core_features.cpp",
     "core/world/core_world_module.cpp",
     "core/world/scripted_component.cpp",
     "core/world/scripted_system.cpp",

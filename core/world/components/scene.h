@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include <framework/reflection_macros.h>
+#include <world/component.h>
 #include <world/ecs_defs.h>
 #include <framework/static_string.hpp>
 
@@ -11,8 +12,8 @@
 
 namespace feather {
 
-struct Scene {
-	FSTRUCT(Component);
+struct Scene : Component {
+	FSTRUCT();
 
 	[[get, set]] int64_t _scene_id = -1;
 
@@ -27,12 +28,12 @@ struct Scene {
 };
 
 // Relationship Tag
-struct ActiveScene {
-	FSTRUCT(Component);
+struct ActiveScene : Component {
+	FSTRUCT();
 };
 
-struct InScene {
-	FSTRUCT(Component);
+struct InScene : Component {
+	FSTRUCT();
 };
 
 } //namespace feather

@@ -315,6 +315,18 @@ function api_parser_flags()
         -- ClassInfo carries a Variant-returning factory field -- same cascade.
         "--ignore", "feather::ClassInfo",
         "--skip-mentions-of", "feather::ClassInfo",
+        -- --ignore doesn't cascade into nested types, and Property's std::function
+        -- accessors have no C spelling any more than ClassInfo's own do.
+        "--ignore", "feather::ClassInfo::Property",
+        "--skip-mentions-of", "feather::ClassInfo::Property",
+        "--ignore", "feather::ClassInfo::Method",
+        "--skip-mentions-of", "feather::ClassInfo::Method",
+        -- Raw function pointers describing a value type's lifecycle (framework/class_info.h); mrbind has no spelling for one.
+        "--ignore", "feather::ValueTypeOps",
+        "--skip-mentions-of", "feather::ValueTypeOps",
+        -- Takes both of the above, so it drops out with them; named here too because
+        -- --skip-mentions-of doesn't reach a parameter spelled through a container.
+        "--ignore", "feather::World::register_described_component",
 
         -- Delegate<T>, instantiated exhaustively as bindings do, surfaces a pre-existing bug: class_db.h's subclass_delegate_t fails to compile
         -- delegate.h's forwarding call once actually instantiated.

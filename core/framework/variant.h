@@ -113,6 +113,9 @@ class Variant {
 
 	InternalVariant _data;
 	VariantType _type;
+	// sizeof the C++ value this was built from, so storage sized for it can be laid out without knowing the type again --
+	// what a component built out of Variants needs (core/world/world.cpp). Zero when there is no such value: NIL, or an OBJECT, which is a pointer to one.
+	uint32_t _stored_size = 0;
 	ClassInfo* _object_info = nullptr;
 
 	void set_class_info(StaticString class_name);
@@ -128,13 +131,22 @@ public:
 	Variant(Reflected& ref);
 
 	// String literal constructor
-	Variant(const char* str) : _data(std::string(str)), _type(VariantType::STRING) {}
+	Variant(const char* str) :
+		_data(std::string(str)), _type(VariantType::STRING), _stored_size(sizeof(std::string)) {}
 
 	// Generic constructor with concept constraint
 	template <VariantCompatible T>
 	Variant(T value) {
 		constexpr VariantType type = get_variant_type<T>();
 		_type = type;
+		// An OBJECT is a pointer to the value, not the value, so it has no
+		// stored size of its own; NIL has nothing to size.
+		if constexpr (type == VariantType::OBJECT || type == VariantType::NIL) {
+			_stored_size = 0;
+		}
+		else {
+			_stored_size = static_cast<uint32_t>(sizeof(T));
+		}
 
 		if constexpr (type == VariantType::BOOL) {
 			_data = std::move(value);
@@ -190,6 +202,8 @@ public:
 
 	// Type checking
 	VariantType get_type() const { return _type; }
+	// Bytes the value this was constructed from occupies; 0 for NIL and OBJECT.
+	[[nodiscard]] uint32_t get_stored_size() const { return _stored_size; }
 	bool is_type(VariantType type) const { return type == _type; }
 	bool is_nil() const { return _type == VariantType::NIL; }
 

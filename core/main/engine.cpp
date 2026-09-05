@@ -47,7 +47,7 @@ Engine::~Engine() {
 #if BETA
 inline void _setup_demo_scene(WorldSim& _world_sim) {
 	// test script
-	auto w = *_world_sim.get_world();
+	World& w = *_world_sim.get_world();
 	Transform t1 { { 0, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one };
 	Transform t2 { { -2, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one };
 	Transform t3 { { 2, -1, -3 }, Quaternion::create_from_yaw_pitch_roll(1.f, 0, 0), Vector3::one };
@@ -72,13 +72,13 @@ inline void _setup_demo_scene(WorldSim& _world_sim) {
 				.emplace<MaterialInstance>(material)
 				.add<Move>();
 
-	w.entity(s, "Box3")
+	w.create_entity(s, "Box3")
 			.emplace<Transform>(t3)
 			.emplace<MeshInstance>(std::make_shared<BoxMesh>())
 			.emplace<MaterialInstance>(material)
 			.add<Move>();
 
-	w.entity("BoxChild").emplace<Transform>(t4).emplace<MeshInstance>(std::make_shared<BoxMesh>()).child_of(_);
+	w.create_entity("BoxChild").emplace<Transform>(t4).emplace<MeshInstance>(std::make_shared<BoxMesh>()).child_of(_);
 
 	_world_sim.create_entity(s, "Floor")
 			.emplace<Transform>(
@@ -95,9 +95,9 @@ inline void _setup_demo_scene(WorldSim& _world_sim) {
 			  .color = Color(1.0f, 1.0f, 1.0f, 1.0f),
 			  .intensity = 10.0f,
 			  .cast_shadows = true };
-	w.entity(s, "Directional").emplace<Light>(std::move(l));
+	w.create_entity(s, "Directional").emplace<Light>(std::move(l));
 
-	w.system<const MeshInstance, Transform>("Spin")
+	w.ecs().system<const MeshInstance, Transform>("Spin")
 			.with<Move>()
 			.kind(flecs::OnUpdate)
 			.write<Transform>()
@@ -106,7 +106,7 @@ inline void _setup_demo_scene(WorldSim& _world_sim) {
 						Quaternion::create_from_yaw_pitch_roll(Vector3 { 0, static_cast<real_t>(it.delta_time()), 0 });
 			});
 
-	auto q = w.query_builder<Transform, MeshInstance, MaterialInstance*>("Test")
+	auto q = w.ecs().query_builder<Transform, MeshInstance, MaterialInstance*>("Test")
 					 .with<ActiveScene>()
 					 .optional()
 					 .parent()

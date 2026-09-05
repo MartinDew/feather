@@ -2,6 +2,7 @@
 
 #include "math_defs.h"
 #include <framework/reflection_macros.h>
+#include <world/component.h>
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "transform.gen.h"
@@ -9,8 +10,8 @@
 
 namespace feather {
 
-struct Transform {
-	FSTRUCT(Component);
+struct Transform : Component {
+	FSTRUCT();
 
 	// Feather uses right-handed coordinates
 	// up = Y

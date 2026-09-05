@@ -1,6 +1,7 @@
 #include "scripted_component.h"
 
 #include <main/class_db.h>
+#include <framework/class_info.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -146,9 +147,6 @@ Ecs::entity_t register_scripted_component(
 		// that silently producing one would be a surprise.
 		return fail(std::format("scripted component '{}' has no fields", name));
 	}
-	if (world.lookup(name.c_str()).is_valid()) {
-		return fail(std::format("'{}' already exists in the world", name));
-	}
 
 	// Lay the fields out the way a C compiler would: each at the next offset meeting its alignment, the whole rounded up
 	// to the widest field's alignment so an array of them stays aligned.
@@ -203,31 +201,17 @@ Ecs::entity_t register_scripted_component(
 		});
 	}
 
-	// ClassDB first: it is the half that can refuse (a name collision with a C++ class), and a refused registration must
-	// not leave a component behind in the world that nothing can read.
-	if (!ClassDB::register_scripted_value_class(StaticString(intern(name)), std::move(properties))) {
-		return fail(std::format("'{}' is already a registered class", name));
-	}
+	// Every supported field type is trivially copyable, so the storage needs no
+	// lifecycle hooks -- World zero-initializes it on add.
+	ValueTypeOps ops;
+	ops.size = total_size;
+	ops.alignment = max_alignment;
 
-	ecs_entity_desc_t entity_desc {};
-	entity_desc.name = name.c_str();
-	const ecs_entity_t entity = ecs_entity_init(world.c_ptr(), &entity_desc);
-	if (!entity) {
-		return fail(std::format("could not create an entity for scripted component '{}'", name));
-	}
-
-	ecs_component_desc_t component_desc {};
-	component_desc.entity = entity;
-	component_desc.type.size = static_cast<ecs_size_t>(total_size);
-	component_desc.type.alignment = static_cast<ecs_size_t>(max_alignment);
-	component_desc.type.name = name.c_str();
-	// Zero-initialized on add, so a script reads defined values before it has written anything. Every supported field
-	// type is trivially copyable, so this is the only hook the storage needs.
-	component_desc.type.hooks.ctor = flecs_default_ctor;
-
-	const ecs_entity_t component = ecs_component_init(world.c_ptr(), &component_desc);
+	// World owns both halves of a registration (ClassDB and the ECS) and undoes
+	// neither behind the other's back; the layout below is this file's own record.
+	const Ecs::entity_t component = world.register_described_component(name, std::move(properties), ops, error);
 	if (!component) {
-		return fail(std::format("flecs rejected the layout for scripted component '{}'", name));
+		return 0;
 	}
 
 	layout.component = component;

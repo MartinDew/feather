@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "ecs_defs.h"
 #include "ecs_module.h"
+#include "world.h"
 
 #ifndef FEATHER_REFLECTION_PARSER
 #include "core_world_module.gen.h"
@@ -13,7 +14,7 @@ class CoreWorldModule : public EcsModule {
 
 public:
 	CoreWorldModule() = default;
-	CoreWorldModule(World world);
+	CoreWorldModule(World& world);
 };
 
 } //namespace feather

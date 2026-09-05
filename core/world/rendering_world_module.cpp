@@ -20,26 +20,26 @@ inline void _update_meshes(Entity e, Transform transform, MeshInstance& mesh, Ma
 	RenderingServer::get()->add_entity({ transform, mesh.mesh->get_mesh_data(), mat ? mat->material : nullptr });
 }
 
-RenderingWorldModule::RenderingWorldModule(World world) {
+RenderingWorldModule::RenderingWorldModule(World& world) {
 	std::println("importing module {} ", get_class_static());
-	world.module<Type>();
+	Ecs::world& ecs = world.ecs();
 
-	world.system("Begin Render Scene").kind(flecs::PreStore).run(&_begin_render_scene);
+	ecs.system("Begin Render Scene").kind(flecs::PreStore).run(&_begin_render_scene);
 
-	world.system<Transform, MeshInstance, MaterialInstance*>("Fill Render Scene")
+	ecs.system<Transform, MeshInstance, MaterialInstance*>("Fill Render Scene")
 			.with<ActiveScene>()
 			.up()
 			.kind(flecs::PreStore)
 			.multi_threaded(false)
 			.each(_update_meshes);
 
-	world.system<const Light>("Fill lights")
+	ecs.system<const Light>("Fill lights")
 			.kind(flecs::PreStore)
 			.with<ActiveScene>()
 			.up()
 			.each([](Entity e, const Light& light) { RenderingServer::get()->add_light(light); });
 
-	world.system("Commit Render Scene").kind(flecs::OnStore).run([](const flecs::iter&) {
+	ecs.system("Commit Render Scene").kind(flecs::OnStore).run([](const flecs::iter&) {
 		RenderingServer::get()->commit_scene_frame();
 	});
 }

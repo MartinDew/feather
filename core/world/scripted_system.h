@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ecs_defs.h"
+#include "world.h"
 
 #include <framework/class_info.h>
 
