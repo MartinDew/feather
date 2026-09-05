@@ -1,6 +1,7 @@
 #pragma once
 #include "component.h"
 #include "ecs_defs.h"
+#include <math/transform.h>
 #include "ecs_module.h"
 #include "world.h"
 
@@ -39,6 +40,11 @@ struct MaterialInstance : Component {
 
 class RenderingWorldModule : public EcsModule {
 	FCLASS(EcsModule);
+
+	// [[system]] says these run against the world rather than an instance, and
+	// holds them to it: static, and members of the module that declares them.
+	[[system]] static void _begin_render_scene(const Ecs::iter& it);
+	[[system]] static void _update_meshes(Entity e, Transform transform, MeshInstance& mesh, MaterialInstance* mat);
 
 public:
 	RenderingWorldModule() = default;

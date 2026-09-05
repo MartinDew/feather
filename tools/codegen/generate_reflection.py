@@ -769,6 +769,25 @@ def _handle_method(cls: ClassDesc, info: dict, access: str, condition: str, offs
     attrs = info["attrs"]
     if "ignore" in attrs:
         return
+
+    # [[system]] marks an ECS system. It binds nothing on its own -- a module
+    # declares its systems in its constructor -- but it says where a system is
+    # allowed to live, and that is checked here rather than left to a comment.
+    if "system" in attrs:
+        line = _line_of(body, offset) + fclass_line - 1
+        if not any(m.name == "EcsModule" for m, _ in cls.resolved_modifiers):
+            raise ParseError(
+                f"{header}: class {cls.name} method '{name}' near line {line}: "
+                f"[[system]] is only allowed on an EcsModule subclass. A system belongs to the "
+                f"module that declares it, so the world can be told who owns it."
+            )
+        if not info["is_static"]:
+            raise ParseError(
+                f"{header}: class {cls.name} method '{name}' near line {line}: "
+                f"[[system]] is only allowed on a static method. A system runs against the world, "
+                f"not against a module instance -- the module object does not outlive its import."
+            )
+
     # Opt-in: only [[method]] (or [[method(name)]] to rebind) binds a method.
     forced = "method" in attrs
     if not forced:
