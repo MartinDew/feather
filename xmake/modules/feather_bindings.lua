@@ -295,6 +295,13 @@ function api_parser_flags()
         -- Third-party types reachable from core's headers. SimpleMath is admitted separately (see c_abi_parser_flags).
         "--skip-mentions-of", "/flecs::.*/",
         "--skip-mentions-of", "/args::.*/",
+        -- RTM's register types are compiler vector typedefs (__m128), which no C ABI can carry. Feather's math types are plain structs
+        -- that convert to and from them; only the conversions drop out here.
+        "--skip-mentions-of", "/rtm::.*/",
+        "--ignore", "feather::math::RtmTraits",
+        "--skip-mentions-of", "feather::math::RtmTraits",
+        "--ignore", "feather::math::RtmStorage",
+        "--skip-mentions-of", "feather::math::RtmStorage",
 
         -- EngineSettings is a private-constructor singleton holding an unordered_map<string_view, unique_ptr<...>>.
         -- mrbind still attempts a copy-constructor wrapper for the class and fails to compile it.

@@ -16,6 +16,7 @@ target("feather_public_api")
     -- xmake doesn't propagate public include dirs across a second headeronly hop.
     add_includedirs(path.join(FEATHER_ROOT, "tools", "SDK", "feather_cpp", "thirdparty", "SimpleMath"), {public = true})
     add_packages("directxmath", {public = true})
+    add_packages("rtm", {public = true})
     -- Also direct-linked by binary targets: an object-kind dep's .o files
     -- don't propagate across a second headeronly hop either.
     add_deps("simplemath", {public = true})

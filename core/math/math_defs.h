@@ -1,4 +1,15 @@
 #pragma once
+// The engine's math types, still SimpleMath's.
+//
+// Feather's own RTM-backed types live beside this (vector3.h, quaternion.h,
+// matrix.h, ...) and compile, but the names below still resolve to SimpleMath.
+// Switching them over means defining FEATHER_MATH_USE_RTM (math/precision.h)
+// and, in the same change: rewriting transform.cpp and projection.cpp off the
+// XMVECTOR intrinsics they use today, moving the C ABI's exposed structs and
+// native math types onto the Feather types (xmake/modules/feather_bindings.lua),
+// and giving the plugin SDK a copy of the math headers that does not reach the
+// reflection stack -- an FSTRUCT pulls in ClassDB, which a plugin has no
+// business compiling. That last one is the open design question.
 #include <format>
 #include <type_traits>
 #include <utility>

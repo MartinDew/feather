@@ -29,6 +29,7 @@ for _, p in ipairs({
     "core/main/simulation.cpp",
     "core/main/world_sim.cpp",
     "core/math/math_defs.cpp",
+    "core/math/math_types.cpp",
     "core/math/projection.cpp",
     "core/math/transform.cpp",
     "core/rendering/mesh_data.cpp",

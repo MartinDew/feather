@@ -41,6 +41,9 @@ add_requires("assimp 6.0.4", {
 add_requires("nlohmann_json", {system = false, alias = "nlohmann_json"})
 
 add_requires("directxmath_feather", {system = false, alias = "directxmath"})
+-- Realtime Math: header-only SIMD math. Feather's own math types compute through
+-- it (core/math/rtm_interop.h) while staying plain structs the engine reflects.
+add_requires("rtm 2.3.1", {system = false, alias = "rtm"})
 -- SDL3 owns process-global state too; same reasoning as flecs above.
 add_requires("sdl3_feather", {system = false, alias = "sdl3", configs = {shared = FEATHER_FORCE_SHARED_DEPS or not has_config("static_deps")}})
 
